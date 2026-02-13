@@ -14,6 +14,8 @@ async def create_entry(
     content: str,
     entry_type: str = "fact",
     additional_notes: str = "",
+    difficulty: int | None = None,
+    speed_testable: bool = False,
 ) -> KnowledgeEntry:
     """Create a new knowledge entry under a topic."""
     entry = KnowledgeEntry(
@@ -22,6 +24,8 @@ async def create_entry(
         content=content,
         entry_type=entry_type,
         additional_notes=additional_notes,
+        difficulty=difficulty,
+        speed_testable=speed_testable,
     )
     session.add(entry)
     await session.flush()
@@ -57,6 +61,8 @@ async def update_entry(
     content: str | None = None,
     entry_type: str | None = None,
     additional_notes: str | None = None,
+    difficulty: int | None = None,
+    speed_testable: bool | None = None,
 ) -> KnowledgeEntry:
     """Update an entry's fields. Only provided (non-None) fields are changed."""
     entry = await session.get(KnowledgeEntry, entry_id)
@@ -70,6 +76,10 @@ async def update_entry(
         entry.entry_type = entry_type
     if additional_notes is not None:
         entry.additional_notes = additional_notes
+    if difficulty is not None:
+        entry.difficulty = difficulty
+    if speed_testable is not None:
+        entry.speed_testable = speed_testable
     await session.flush()
     return entry
 

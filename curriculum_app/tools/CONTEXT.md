@@ -8,7 +8,7 @@ Async tool functions for the agent/TUI to interact with the database. Every publ
 
 - **topics.py** — `create_topic`, `get_topic`, `list_topics`, `update_topic`, `delete_topic`. Topics are scoped to a curriculum (unique name within a curriculum); delete cascades to entries.
 
-- **entries.py** — `create_entry`, `get_entry`, `list_entries`, `update_entry`, `delete_entry`, `search_entries`. Entries have an `entry_type` (default "fact"). `search_entries` does case-insensitive LIKE on title+content, with optional `topic_id` or `curriculum_id` scoping.
+- **entries.py** — `create_entry`, `get_entry`, `list_entries`, `update_entry`, `delete_entry`, `search_entries`. Entries have an `entry_type` (default "fact"), `difficulty` (nullable int), and `speed_testable` (bool, default false). `search_entries` does case-insensitive LIKE on title+content, with optional `topic_id` or `curriculum_id` scoping.
 
 - **tags.py** — `create_tag`, `list_tags`, `tag_entry`, `untag_entry`, `get_entries_by_tag`. Tags are lowercase-normalized. `tag_entry` auto-creates the tag if missing and is idempotent. `untag_entry` is a no-op if the tag/association doesn't exist. `get_entries_by_tag` supports optional curriculum scoping.
 

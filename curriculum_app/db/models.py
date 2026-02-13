@@ -1,8 +1,10 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -72,6 +74,8 @@ class KnowledgeEntry(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     additional_notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     entry_type: Mapped[str] = mapped_column(String, nullable=False, server_default="fact")
+    difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    speed_testable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         nullable=False, server_default=func.now(), onupdate=func.now()
