@@ -3,10 +3,9 @@
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Input
-
 from curriculum_app.tui.commands import COMMANDS, parse_input
 from curriculum_app.tui.state import AppState, ChatMessage
+from curriculum_app.tui.widgets.chat_input import ChatInput
 from curriculum_app.tui.widgets.message import MessageWidget
 from curriculum_app.tui.widgets.status_bar import StatusBar
 
@@ -33,6 +32,9 @@ class ChatScreen(Screen):
     #chat-input {
         dock: bottom;
         margin: 0 0 1 0;
+        height: auto;
+        min-height: 3;
+        max-height: 10;
     }
     """
 
@@ -42,15 +44,14 @@ class ChatScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
-        yield Input(placeholder="Type a message or /command ...", id="chat-input")
+        yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield StatusBar(id="status-bar")
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         text = event.value.strip()
         if not text:
             return
 
-        event.input.value = ""
         command = parse_input(text)
 
         if command is not None:
