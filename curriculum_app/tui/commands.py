@@ -60,6 +60,24 @@ async def _handle_options(_state: AppState, _args: str) -> str:
     return "/options — settings coming soon"
 
 
+async def _handle_help(_state: AppState, args: str) -> str:
+    """Show available commands, or details for a specific command."""
+    if args:
+        name = args.strip().lstrip("/")
+        cmd = COMMANDS.get(name)
+        if cmd is None:
+            return f"Unknown command: /{name}\nType /help to see available commands."
+        return f"/{cmd.name} — {cmd.description}"
+
+    lines = ["**Available commands:**", ""]
+    for name in sorted(COMMANDS):
+        cmd = COMMANDS[name]
+        lines.append(f"  /{cmd.name} — {cmd.description}")
+    lines.append("")
+    lines.append("Type /help <command> for details.")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Command registry.
 # /quit is intentionally absent — it is TUI-only and handled directly
@@ -67,6 +85,7 @@ async def _handle_options(_state: AppState, _args: str) -> str:
 # ---------------------------------------------------------------------------
 
 COMMANDS: dict[str, Command] = {
+    "help": Command("help", "Show available commands and usage", _handle_help),
     "learn": Command("learn", "Enter learning mode: set curriculum and topic context", _handle_learn),
     "review": Command("review", "Enter review mode: quizzes and practice", _handle_review),
     "options": Command("options", "Open settings and configuration", _handle_options),

@@ -77,7 +77,7 @@ class ChatScreen(Screen):
 
         async def _run() -> None:
             message = await handler(self.state, args)
-            self.notify(message)
+            self._post_agent_message(message)
             self._sync_status_bar()
 
         self.run_worker(_run())
@@ -89,6 +89,13 @@ class ChatScreen(Screen):
         area = self.query_one("#message-area", VerticalScroll)
         widget = MessageWidget(role="user", content=text)
         area.mount(widget)
+        area.scroll_end(animate=False)
+
+    def _post_agent_message(self, text: str) -> None:
+        """Append an agent-role message to chat history and display it."""
+        self.state.chat_history.append(ChatMessage(role="agent", content=text))
+        area = self.query_one("#message-area", VerticalScroll)
+        area.mount(MessageWidget(role="agent", content=text))
         area.scroll_end(animate=False)
 
     def _sync_status_bar(self) -> None:
