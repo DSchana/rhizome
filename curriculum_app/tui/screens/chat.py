@@ -20,7 +20,7 @@ class ChatScreen(Screen):
         grid-rows: 1fr auto auto;
     }
     #message-area {
-        border: round $surface-lighten-2;
+        background: $surface-darken-1;
         padding: 1;
     }
     #status-bar {
@@ -46,6 +46,9 @@ class ChatScreen(Screen):
         yield VerticalScroll(id="message-area")
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield StatusBar(id="status-bar")
+
+    def on_mount(self) -> None:
+        self.query_one("#chat-input", ChatInput).focus()
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         text = event.value.strip()
