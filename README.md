@@ -1,0 +1,1 @@
+Entrypoint: `uv run python -m curriculum_app.tui`
