@@ -5,8 +5,9 @@ Database layer. Defines the ORM schema and provides async engine/session managem
 ## Files
 
 - **models.py** — SQLAlchemy ORM models (all use `Mapped`/`mapped_column` typed syntax):
-  - `Curriculum` — top-level subject (unique name). Owns topics via cascade delete.
-  - `Topic` — sub-area within a curriculum (unique per curriculum). Owns entries via cascade delete.
+  - `Curriculum` — top-level subject area (unique name). Has topics via `CurriculumTopic` junction (many-to-many). Deleting a curriculum removes junction rows but not the topics themselves.
+  - `CurriculumTopic` — junction table: curriculum ↔ topic (many-to-many with `position` for ordering). Composite PK on (`curriculum_id`, `topic_id`).
+  - `Topic` — knowledge area organized as a tree (adjacency list via `parent_id` self-FK). Root topics have `parent_id=NULL`. Sibling names must be unique (`UniqueConstraint("parent_id", "name")`). Owns entries via cascade delete.
   - `KnowledgeEntry` — core knowledge unit (fact/concept/definition). Has `title`, `content`, `additional_notes`, `entry_type`, `difficulty` (nullable int), `speed_testable` (bool, default false). Connected to tags (many-to-many) and other entries (directed graph).
   - `Tag` — freeform label (unique, lowercase-normalized).
   - `KnowledgeEntryTag` — junction table for entry-tag many-to-many.
@@ -19,4 +20,4 @@ Database layer. Defines the ORM schema and provides async engine/session managem
 
 ## `__init__.py` exports
 
-All 7 model classes, plus `get_engine`, `get_session_factory`, and `init_db`. Import from `curriculum_app.db` directly.
+All 8 model classes (`Base`, `Curriculum`, `CurriculumTopic`, `Topic`, `KnowledgeEntry`, `Tag`, `KnowledgeEntryTag`, `RelatedKnowledgeEntries`), plus `get_engine`, `get_session_factory`, and `init_db`. Import from `curriculum_app.db` directly.

@@ -14,6 +14,7 @@ from curriculum_app.db import get_session_factory, init_db
 from curriculum_app.tools import (
     CycleError,
     add_relation,
+    add_topic_to_curriculum,
     create_curriculum,
     create_entry,
     create_tag,
@@ -26,12 +27,17 @@ from curriculum_app.tools import (
     get_entries_by_tag,
     get_entry,
     get_related_entries,
+    get_subtree,
     get_topic,
+    list_children,
     list_curricula,
     list_entries,
+    list_root_topics,
     list_tags,
-    list_topics,
+    list_topics_in_curriculum,
     remove_relation,
+    remove_topic_from_curriculum,
+    reorder_topic_in_curriculum,
     search_entries,
     tag_entry,
     untag_entry,
@@ -92,36 +98,79 @@ async def main() -> None:
         check(updated.name == "Vim", "update_curriculum changes name")
         check(updated.description == "Vim editor", "update_curriculum changes description")
 
+        vim_id = c.id
         await s.commit()
 
-    # ── Topics ──────────────────────────────────────────────────
+    # ── Topics (tree structure) ──────────────────────────────────
     print("\n=== Topics ===")
     async with factory() as s:
-        curricula = await list_curricula(s)
-        vim_id = next(c.id for c in curricula if c.name == "Vim")
+        # Root topics
+        motions = await create_topic(s, name="motions", description="Cursor movement")
+        check(motions.id is not None, "create_topic returns id")
+        check(motions.parent_id is None, "root topic has no parent")
 
-        t = await create_topic(s, curriculum_id=vim_id, name="motions")
-        check(t.id is not None, "create_topic returns id")
+        operators = await create_topic(s, name="operators")
 
-        await create_topic(s, curriculum_id=vim_id, name="operators")
-        topics = await list_topics(s, vim_id)
-        check(len(topics) == 2, f"list_topics returns 2 (got {len(topics)})")
+        roots = await list_root_topics(s)
+        check(len(roots) == 2, f"list_root_topics returns 2 (got {len(roots)})")
 
-        fetched = await get_topic(s, t.id)
+        # Child topic
+        advanced = await create_topic(s, name="advanced motions", parent_id=motions.id)
+        check(advanced.parent_id == motions.id, "child topic has parent_id set")
+
+        children = await list_children(s, motions.id)
+        check(len(children) == 1, f"list_children returns 1 (got {len(children)})")
+
+        # Grandchild for subtree test
+        text_objects = await create_topic(s, name="text objects", parent_id=advanced.id)
+
+        subtree = await get_subtree(s, motions.id)
+        check(len(subtree) == 2, f"get_subtree returns 2 descendants (got {len(subtree)})")
+        check(subtree[0]["topic"].id == advanced.id, "subtree depth-1 is advanced")
+        check(subtree[0]["depth"] == 1, "subtree depth-1 has depth=1")
+        check(subtree[1]["topic"].id == text_objects.id, "subtree depth-2 is text_objects")
+        check(subtree[1]["depth"] == 2, "subtree depth-2 has depth=2")
+
+        fetched = await get_topic(s, motions.id)
         check(fetched is not None, "get_topic")
 
-        updated = await update_topic(s, t.id, description="Cursor movement")
-        check(updated.description == "Cursor movement", "update_topic")
+        updated = await update_topic(s, motions.id, description="All cursor motions")
+        check(updated.description == "All cursor motions", "update_topic")
 
+        motions_id = motions.id
+        operators_id = operators.id
+        advanced_id = advanced.id
+        text_objects_id = text_objects.id
+
+        await s.commit()
+
+    # ── Curriculum-Topic membership ──────────────────────────────
+    print("\n=== Curriculum-Topic Membership ===")
+    async with factory() as s:
+        ct = await add_topic_to_curriculum(s, curriculum_id=vim_id, topic_id=motions_id, position=0)
+        check(ct.curriculum_id == vim_id, "add_topic_to_curriculum")
+
+        await add_topic_to_curriculum(s, curriculum_id=vim_id, topic_id=operators_id, position=1)
+
+        topics_in = await list_topics_in_curriculum(s, vim_id)
+        check(len(topics_in) == 2, f"list_topics_in_curriculum returns 2 (got {len(topics_in)})")
+        check(topics_in[0].name == "motions", "list_topics_in_curriculum respects position order")
+
+        await reorder_topic_in_curriculum(s, curriculum_id=vim_id, topic_id=operators_id, new_position=-1)
+        reordered = await list_topics_in_curriculum(s, vim_id)
+        check(reordered[0].name == "operators", "reorder_topic_in_curriculum changes order")
+
+        await remove_topic_from_curriculum(s, curriculum_id=vim_id, topic_id=operators_id)
+        after_remove = await list_topics_in_curriculum(s, vim_id)
+        check(len(after_remove) == 1, f"remove_topic_from_curriculum (got {len(after_remove)})")
+
+        # Re-add for later tests
+        await add_topic_to_curriculum(s, curriculum_id=vim_id, topic_id=operators_id, position=1)
         await s.commit()
 
     # ── Entries ──────────────────────────────────────────────────
     print("\n=== Entries ===")
     async with factory() as s:
-        topics = await list_topics(s, vim_id)
-        motions_id = next(t.id for t in topics if t.name == "motions")
-        operators_id = next(t.id for t in topics if t.name == "operators")
-
         e1 = await create_entry(s, topic_id=motions_id, title="Word motion", content="w moves forward one word")
         e2 = await create_entry(s, topic_id=motions_id, title="Motion definition", content="A motion moves the cursor", entry_type="definition")
         e3 = await create_entry(s, topic_id=operators_id, title="Delete operator", content="d is the delete operator")
@@ -199,8 +248,7 @@ async def main() -> None:
         except CycleError:
             ok("cycle detection raises CycleError")
 
-        # Dependency chain: e3 -> e4 -> e2  (e3 depends_on nothing, but e3 example_of e4)
-        # Only follows depends_on, so chain from e4 should be [e2]
+        # Dependency chain: only follows depends_on, so chain from e4 should be [e2]
         chain = await get_dependency_chain(s, e4.id)
         check(len(chain) == 1, f"get_dependency_chain from e4 (got {len(chain)})")
         check(chain[0]["entry"].id == e2.id, "dependency chain contains e2")
@@ -219,15 +267,26 @@ async def main() -> None:
         await delete_entry(s, e1.id)
         check(await get_entry(s, e1.id) is None, "delete_entry removes entry")
 
+        # Delete leaf topic first (text_objects has no children)
+        await delete_topic(s, text_objects_id)
+        check(await get_topic(s, text_objects_id) is None, "delete_topic removes leaf topic")
+
+        # Delete advanced (now also a leaf since text_objects is gone)
+        await delete_topic(s, advanced_id)
+        check(await get_topic(s, advanced_id) is None, "delete_topic removes topic")
+
+        # Delete operators — should cascade to its entries
         await delete_topic(s, operators_id)
         check(await get_topic(s, operators_id) is None, "delete_topic removes topic")
-
-        # entries under operators should be gone
         entries_after = await list_entries(s, operators_id)
         check(len(entries_after) == 0, "delete_topic cascades to entries")
 
+        # Delete curriculum — topics should survive
         await delete_curriculum(s, vim_id)
         check(await get_curriculum(s, vim_id) is None, "delete_curriculum removes curriculum")
+
+        # motions topic should still exist (not cascade-deleted)
+        check(await get_topic(s, motions_id) is not None, "delete_curriculum does not delete topics")
 
         await s.commit()
 

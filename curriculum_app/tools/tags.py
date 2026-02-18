@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from curriculum_app.db import KnowledgeEntry, KnowledgeEntryTag, Tag, Topic
+from curriculum_app.db import CurriculumTopic, KnowledgeEntry, KnowledgeEntryTag, Tag, Topic
 
 
 async def create_tag(
@@ -85,8 +85,11 @@ async def get_entries_by_tag(
         .where(Tag.name == tag_name)
     )
     if curriculum_id is not None:
-        stmt = stmt.join(Topic, KnowledgeEntry.topic_id == Topic.id).where(
-            Topic.curriculum_id == curriculum_id
+        stmt = (
+            stmt
+            .join(Topic, KnowledgeEntry.topic_id == Topic.id)
+            .join(CurriculumTopic, Topic.id == CurriculumTopic.topic_id)
+            .where(CurriculumTopic.curriculum_id == curriculum_id)
         )
     result = await session.execute(stmt)
     return list(result.scalars().all())

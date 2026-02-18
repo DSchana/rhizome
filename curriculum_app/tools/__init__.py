@@ -1,10 +1,14 @@
 """Database tool functions for the curriculum agent."""
 
 from .curricula import (
+    add_topic_to_curriculum,
     create_curriculum,
     delete_curriculum,
     get_curriculum,
     list_curricula,
+    list_topics_in_curriculum,
+    remove_topic_from_curriculum,
+    reorder_topic_in_curriculum,
     update_curriculum,
 )
 from .entries import (
@@ -32,8 +36,10 @@ from .tags import (
 from .topics import (
     create_topic,
     delete_topic,
+    get_subtree,
     get_topic,
-    list_topics,
+    list_children,
+    list_root_topics,
     update_topic,
 )
 
@@ -44,10 +50,16 @@ __all__ = [
     "list_curricula",
     "update_curriculum",
     "delete_curriculum",
+    "add_topic_to_curriculum",
+    "remove_topic_from_curriculum",
+    "reorder_topic_in_curriculum",
+    "list_topics_in_curriculum",
     # topics
     "create_topic",
     "get_topic",
-    "list_topics",
+    "list_root_topics",
+    "list_children",
+    "get_subtree",
     "update_topic",
     "delete_topic",
     # entries

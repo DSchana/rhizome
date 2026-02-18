@@ -1,6 +1,6 @@
-"""CRUD operations for Topic objects."""
+"""CRUD operations for Topic objects (tree structure via adjacency list)."""
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from curriculum_app.db import Topic
@@ -9,12 +9,12 @@ from curriculum_app.db import Topic
 async def create_topic(
     session: AsyncSession,
     *,
-    curriculum_id: int,
     name: str,
+    parent_id: int | None = None,
     description: str | None = None,
 ) -> Topic:
-    """Create a new topic under a curriculum."""
-    topic = Topic(curriculum_id=curriculum_id, name=name, description=description)
+    """Create a new topic, optionally as a child of another topic."""
+    topic = Topic(parent_id=parent_id, name=name, description=description)
     session.add(topic)
     await session.flush()
     return topic
@@ -28,15 +28,57 @@ async def get_topic(
     return await session.get(Topic, topic_id)
 
 
-async def list_topics(
-    session: AsyncSession,
-    curriculum_id: int,
-) -> list[Topic]:
-    """Return all topics for a given curriculum."""
+async def list_root_topics(session: AsyncSession) -> list[Topic]:
+    """Return all root topics (those with no parent)."""
     result = await session.execute(
-        select(Topic).where(Topic.curriculum_id == curriculum_id)
+        select(Topic).where(Topic.parent_id.is_(None))
     )
     return list(result.scalars().all())
+
+
+async def list_children(
+    session: AsyncSession,
+    parent_id: int,
+) -> list[Topic]:
+    """Return all direct children of a topic."""
+    result = await session.execute(
+        select(Topic).where(Topic.parent_id == parent_id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_subtree(
+    session: AsyncSession,
+    root_topic_id: int,
+    *,
+    max_depth: int = 10,
+) -> list[dict]:
+    """Return all descendants of a topic using a recursive CTE.
+
+    Returns a list of {"topic": Topic, "depth": int} dicts,
+    ordered by depth then id. The root itself is not included.
+    """
+    rows = await session.execute(
+        text("""
+            WITH RECURSIVE subtree(topic_id, depth) AS (
+                SELECT id, 1
+                FROM topic
+                WHERE parent_id = :root_id
+                UNION ALL
+                SELECT t.id, subtree.depth + 1
+                FROM topic t
+                JOIN subtree ON t.parent_id = subtree.topic_id
+                WHERE subtree.depth < :max_depth
+            )
+            SELECT topic_id, depth FROM subtree ORDER BY depth, topic_id
+        """),
+        {"root_id": root_topic_id, "max_depth": max_depth},
+    )
+    results = []
+    for row in rows:
+        topic = await session.get(Topic, row.topic_id)
+        results.append({"topic": topic, "depth": row.depth})
+    return results
 
 
 async def update_topic(
@@ -62,7 +104,11 @@ async def delete_topic(
     session: AsyncSession,
     topic_id: int,
 ) -> None:
-    """Delete a topic. Cascades to entries via ORM relationship."""
+    """Delete a topic. Cascades to entries via ORM relationship.
+
+    Raises an integrity error if the topic has child topics;
+    callers should handle children first.
+    """
     topic = await session.get(Topic, topic_id)
     if topic is None:
         raise ValueError(f"Topic {topic_id} not found")

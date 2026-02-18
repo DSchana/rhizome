@@ -1,6 +1,7 @@
 from .models import (
     Base,
     Curriculum,
+    CurriculumTopic,
     KnowledgeEntry,
     KnowledgeEntryTag,
     RelatedKnowledgeEntries,
@@ -12,6 +13,7 @@ from .engine import get_engine, get_session_factory, init_db
 __all__ = [
     "Base",
     "Curriculum",
+    "CurriculumTopic",
     "KnowledgeEntry",
     "KnowledgeEntryTag",
     "RelatedKnowledgeEntries",

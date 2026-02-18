@@ -10,11 +10,13 @@ Typical usage (programmatic):
 
 ```python
 from curriculum_app.db import init_db, get_session_factory
-from curriculum_app.tools import create_curriculum, create_topic, search_entries
+from curriculum_app.tools import create_curriculum, create_topic, add_topic_to_curriculum
 
 engine = await init_db("my.db")
 factory = get_session_factory(engine)
 async with factory() as session:
     c = await create_curriculum(session, name="vim")
+    t = await create_topic(session, name="motions")
+    await add_topic_to_curriculum(session, curriculum_id=c.id, topic_id=t.id, position=0)
     await session.commit()
 ```

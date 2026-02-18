@@ -33,20 +33,41 @@ class Curriculum(Base):
         nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    topics: Mapped[list["Topic"]] = relationship(
-        back_populates="curriculum", cascade="all, delete-orphan"
+    curriculum_topics: Mapped[list["CurriculumTopic"]] = relationship(
+        cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
         return f"<Curriculum id={self.id} name={self.name!r}>"
 
 
+class CurriculumTopic(Base):
+    __tablename__ = "curriculum_topic"
+    __table_args__ = (UniqueConstraint("curriculum_id", "topic_id"),)
+
+    curriculum_id: Mapped[int] = mapped_column(
+        ForeignKey("curriculum.id"), primary_key=True
+    )
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic.id"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    def __repr__(self) -> str:
+        return (
+            f"<CurriculumTopic curriculum={self.curriculum_id} "
+            f"topic={self.topic_id} pos={self.position}>"
+        )
+
+
 class Topic(Base):
     __tablename__ = "topic"
-    __table_args__ = (UniqueConstraint("curriculum_id", "name"),)
+    __table_args__ = (UniqueConstraint("parent_id", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    curriculum_id: Mapped[int] = mapped_column(ForeignKey("curriculum.id"), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("topic.id"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
@@ -54,7 +75,10 @@ class Topic(Base):
         nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    curriculum: Mapped["Curriculum"] = relationship(back_populates="topics")
+    parent: Mapped["Topic | None"] = relationship(
+        back_populates="children", remote_side="Topic.id"
+    )
+    children: Mapped[list["Topic"]] = relationship(back_populates="parent")
     entries: Mapped[list["KnowledgeEntry"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan"
     )
