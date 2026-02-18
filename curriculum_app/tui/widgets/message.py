@@ -12,10 +12,10 @@ class MessageWidget(Static):
         padding: 0 1;
     }
     MessageWidget.user-message {
-        color: $text;
+        background: rgb(31, 31, 31);
     }
     MessageWidget.agent-message {
-        color: $accent;
+        background: rgb(24, 24, 24);
     }
     """
 
