@@ -1,10 +1,13 @@
 """Main chat screen — message list + input box."""
 
+from __future__ import annotations
+
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.screen import Screen
+
 from curriculum_app.tui.commands import COMMANDS, parse_input
-from curriculum_app.tui.state import AppState, ChatMessage
+from curriculum_app.tui.state import ChatMessage
 from curriculum_app.tui.widgets.chat_input import ChatInput
 from curriculum_app.tui.widgets.message import MessageWidget
 from curriculum_app.tui.widgets.status_bar import StatusBar
@@ -38,9 +41,9 @@ class ChatScreen(Screen):
     }
     """
 
-    def __init__(self, state: AppState) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.state = state
+        self.messages: list[ChatMessage] = []
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -49,6 +52,10 @@ class ChatScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#chat-input", ChatInput).focus()
+        # Bind the status bar to the app's reactive properties.
+        bar = self.query_one("#status-bar", StatusBar)
+        self.watch(self.app, "mode", lambda val: setattr(bar, "mode", val))
+        self.watch(self.app, "context", lambda val: setattr(bar, "context", val))
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         text = event.value.strip()
@@ -56,7 +63,6 @@ class ChatScreen(Screen):
             return
 
         command = parse_input(text)
-
         if command is not None:
             self._handle_command(command.name, command.args)
         else:
@@ -76,32 +82,18 @@ class ChatScreen(Screen):
         if handler is None:
             self.notify(f"Error: command /{name} doesn't have an associated handler", severity="error")
             return
-        assert handler and callable(handler)
 
         async def _run() -> None:
-            message = await handler(self.state, args)
-            self._post_agent_message(message)
-            self._sync_status_bar()
+            await handler(self.app, args)
 
         self.run_worker(_run())
 
     def _handle_chat(self, text: str) -> None:
-        msg = ChatMessage(role="user", content=text)
-        self.state.chat_history.append(msg)
+        self.append_message(ChatMessage(role="user", content=text))
 
+    def append_message(self, msg: ChatMessage) -> None:
+        """Append a message to the history and mount its widget."""
+        self.messages.append(msg)
         area = self.query_one("#message-area", VerticalScroll)
-        widget = MessageWidget(role="user", content=text)
-        area.mount(widget)
+        area.mount(MessageWidget(role=msg.role, content=msg.content))
         area.scroll_end(animate=False)
-
-    def _post_agent_message(self, text: str) -> None:
-        """Append an agent-role message to chat history and display it."""
-        self.state.chat_history.append(ChatMessage(role="agent", content=text))
-        area = self.query_one("#message-area", VerticalScroll)
-        area.mount(MessageWidget(role="agent", content=text))
-        area.scroll_end(animate=False)
-
-    def _sync_status_bar(self) -> None:
-        bar = self.query_one("#status-bar", StatusBar)
-        bar.mode = self.state.mode.value
-        bar.context = self.state.context_label

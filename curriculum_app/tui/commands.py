@@ -1,9 +1,13 @@
 """Slash command parser and registry."""
 
+from __future__ import annotations
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from curriculum_app.tui.state import AppState
+if TYPE_CHECKING:
+    from curriculum_app.tui.app import CurriculumApp
 
 
 @dataclass
@@ -24,7 +28,7 @@ class Command:
 
     name: str
     description: str
-    handler: Callable[[AppState, str], Awaitable[str]] | None
+    handler: Callable[[CurriculumApp, str], Awaitable[None]] | None
 
 
 def parse_input(text: str) -> ParsedCommand | None:
@@ -48,34 +52,54 @@ def parse_input(text: str) -> ParsedCommand | None:
 # These will be replaced with real implementations in later phases.
 # ---------------------------------------------------------------------------
 
-async def _handle_learn(_state: AppState, _args: str) -> str:
-    return "/learn — context selection coming soon"
+
+async def _handle_learn(app: CurriculumApp, _args: str) -> None:
+    from curriculum_app.tui.screens.chat import ChatScreen
+    from curriculum_app.tui.state import ChatMessage
+
+    chat = app.query_one(ChatScreen)
+    chat.append_message(ChatMessage(role="agent", content="/learn — context selection coming soon"))
 
 
-async def _handle_review(_state: AppState, _args: str) -> str:
-    return "/review — review mode coming soon"
+async def _handle_review(app: CurriculumApp, _args: str) -> None:
+    from curriculum_app.tui.screens.chat import ChatScreen
+    from curriculum_app.tui.state import ChatMessage
+
+    chat = app.query_one(ChatScreen)
+    chat.append_message(ChatMessage(role="agent", content="/review — review mode coming soon"))
 
 
-async def _handle_options(_state: AppState, _args: str) -> str:
-    return "/options — settings coming soon"
+async def _handle_options(app: CurriculumApp, _args: str) -> None:
+    from curriculum_app.tui.screens.chat import ChatScreen
+    from curriculum_app.tui.state import ChatMessage
+
+    chat = app.query_one(ChatScreen)
+    chat.append_message(ChatMessage(role="agent", content="/options — settings coming soon"))
 
 
-async def _handle_help(_state: AppState, args: str) -> str:
+async def _handle_help(app: CurriculumApp, args: str) -> None:
     """Show available commands, or details for a specific command."""
+    from curriculum_app.tui.screens.chat import ChatScreen
+    from curriculum_app.tui.state import ChatMessage
+
     if args:
         name = args.strip().lstrip("/")
         cmd = COMMANDS.get(name)
         if cmd is None:
-            return f"Unknown command: /{name}\nType /help to see available commands."
-        return f"/{cmd.name} — {cmd.description}"
+            text = f"Unknown command: /{name}\nType /help to see available commands."
+        else:
+            text = f"/{cmd.name} — {cmd.description}"
+    else:
+        lines = ["**Available commands:**", ""]
+        for name in sorted(COMMANDS):
+            cmd = COMMANDS[name]
+            lines.append(f"  /{cmd.name} — {cmd.description}")
+        lines.append("")
+        lines.append("Type /help <command> for details.")
+        text = "\n".join(lines)
 
-    lines = ["**Available commands:**", ""]
-    for name in sorted(COMMANDS):
-        cmd = COMMANDS[name]
-        lines.append(f"  /{cmd.name} — {cmd.description}")
-    lines.append("")
-    lines.append("Type /help <command> for details.")
-    return "\n".join(lines)
+    chat = app.query_one(ChatScreen)
+    chat.append_message(ChatMessage(role="agent", content=text))
 
 
 # ---------------------------------------------------------------------------

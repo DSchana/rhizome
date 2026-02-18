@@ -9,7 +9,7 @@ class MessageWidget(Static):
     DEFAULT_CSS = """
     MessageWidget {
         margin: 0 0 1 0;
-        padding: 0 1;
+        padding: 1 1;
     }
     MessageWidget.user-message {
         background: rgb(31, 31, 31);
