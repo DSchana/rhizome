@@ -15,6 +15,9 @@ class ChatInput(TextArea):
             self.input = input
             self.value = value
 
+    class FocusTreeRequested(Message):
+        """Posted when the user presses Ctrl+Enter with an empty input."""
+
     def __init__(
         self,
         *,
@@ -47,7 +50,10 @@ class ChatInput(TextArea):
         # terminals (WSL2, default macOS Terminal, etc.) do not.  If Kitty
         # protocol support becomes relevant, add those as additional matches.
         elif event.key == "ctrl+j":
-            self.insert("\n")
+            if not self.text.strip():
+                self.post_message(self.FocusTreeRequested())
+            else:
+                self.insert("\n")
             event.stop()
             event.prevent_default()
         else:

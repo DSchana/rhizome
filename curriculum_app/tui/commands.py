@@ -54,32 +54,49 @@ def parse_input(text: str) -> ParsedCommand | None:
 
 
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    from curriculum_app.tui.screens.chat import ChatScreen
     from curriculum_app.tui.state import ChatMessage
 
-    chat = app.query_one(ChatScreen)
-    chat.append_message(ChatMessage(role="agent", content="/learn — context selection coming soon"))
+    app.screen.append_message(ChatMessage(role="agent", content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    from curriculum_app.tui.screens.chat import ChatScreen
     from curriculum_app.tui.state import ChatMessage
 
-    chat = app.query_one(ChatScreen)
-    chat.append_message(ChatMessage(role="agent", content="/review — review mode coming soon"))
+    app.screen.append_message(ChatMessage(role="agent", content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, _args: str) -> None:
-    from curriculum_app.tui.screens.chat import ChatScreen
     from curriculum_app.tui.state import ChatMessage
 
-    chat = app.query_one(ChatScreen)
-    chat.append_message(ChatMessage(role="agent", content="/options — settings coming soon"))
+    app.screen.append_message(ChatMessage(role="agent", content="/options — settings coming soon"))
+
+
+async def _handle_explore(app: CurriculumApp, _args: str) -> None:
+    from curriculum_app.tui.widgets.chat_input import ChatInput
+    from curriculum_app.tui.widgets.topic_tree import TopicTree
+
+    screen = app.screen
+    # If a topic tree already exists, just focus it instead of creating a new one.
+    existing = list(screen.query(TopicTree))
+    if existing:
+        tree = existing[-1]
+        tree.query_one("#topic-tree-help").update(
+            "Use arrow keys to navigate, enter to select a topic."
+        )
+        tree.focus()
+    else:
+        area = screen.query_one("#message-area")
+        tree = TopicTree(id="topic-tree")
+        await area.mount(tree)
+        area.scroll_end(animate=False)
+        tree.focus()
+    screen.query_one("#chat-input", ChatInput).placeholder = (
+        "Use Ctrl+Enter to exit the topic viewer"
+    )
 
 
 async def _handle_help(app: CurriculumApp, args: str) -> None:
     """Show available commands, or details for a specific command."""
-    from curriculum_app.tui.screens.chat import ChatScreen
     from curriculum_app.tui.state import ChatMessage
 
     if args:
@@ -98,7 +115,7 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
         lines.append("Type /help <command> for details.")
         text = "\n".join(lines)
 
-    chat = app.query_one(ChatScreen)
+    chat = app.screen
     chat.append_message(ChatMessage(role="agent", content=text))
 
 
@@ -109,6 +126,7 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
 # ---------------------------------------------------------------------------
 
 COMMANDS: dict[str, Command] = {
+    "explore": Command("explore", "Browse and select topics from the topic tree", _handle_explore),
     "help": Command("help", "Show available commands and usage", _handle_help),
     "learn": Command("learn", "Enter learning mode: set curriculum and topic context", _handle_learn),
     "review": Command("review", "Enter review mode: quizzes and practice", _handle_review),

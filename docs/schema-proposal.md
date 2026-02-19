@@ -19,12 +19,13 @@ SQLite is the right fit for a local single-user (or small group) TUI app. The ag
 
 ## Tables
 
-6 tables, one domain:
+7 tables, one domain:
 
 | Table | Purpose |
 |---|---|
 | `curriculum` | Top-level subject area |
-| `topic` | Sub-area within a curriculum |
+| `curriculum_topic` | Junction: curriculum ↔ topic (ordered, many-to-many) |
+| `topic` | Tree-structured knowledge area (self-referencing via `parent_id`) |
 | `knowledge_entry` | A single learned concept, fact, or definition |
 | `tag` | Freeform cross-cutting label |
 | `knowledge_entry_tag` | Junction: entry ↔ tag |
@@ -46,20 +47,34 @@ A subject area (e.g., "gcloud", "vim", "AWS").
 
 ---
 
+### `curriculum_topic`
+
+Junction table linking curricula to topics in a specific order. A topic can belong to multiple curricula.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `curriculum_id` | INTEGER | FK → `curriculum.id`, PK |
+| `topic_id` | INTEGER | FK → `topic.id`, PK |
+| `position` | INTEGER | NOT NULL, DEFAULT 0 |
+
+UNIQUE(`curriculum_id`, `topic_id`)
+
+---
+
 ### `topic`
 
-A sub-area within a curriculum (e.g., "vim motions", "IAM policies").
+A knowledge area that forms a tree via self-referencing `parent_id` (e.g., "vim" → "motions" → "word motions"). Topics are independent of curricula and linked via `curriculum_topic`.
 
 | Column | Type | Constraints |
 |---|---|---|
 | `id` | INTEGER | PK, autoincrement |
-| `curriculum_id` | INTEGER | FK → `curriculum.id`, NOT NULL |
+| `parent_id` | INTEGER | FK → `topic.id`, nullable |
 | `name` | TEXT | NOT NULL |
 | `description` | TEXT | |
 | `created_at` | TIMESTAMP | NOT NULL, DEFAULT now |
 | `updated_at` | TIMESTAMP | NOT NULL, DEFAULT now |
 
-UNIQUE(`curriculum_id`, `name`)
+UNIQUE(`parent_id`, `name`)
 
 ---
 
@@ -153,7 +168,11 @@ SELECT 1 FROM reachable WHERE entry_id = :source_entry_id LIMIT 1;
 ## Entity-Relationship Diagram
 
 ```
-curriculum 1──* topic 1──* knowledge_entry *──* tag
+curriculum *──* topic (via curriculum_topic, ordered)
+                 │
+                 ├── parent_id → topic  (tree structure)
+                 │
+                 └── 1──* knowledge_entry *──* tag
                                   │
                                   │ (related_knowledge_entries)
                                   ▼
@@ -182,9 +201,10 @@ ORDER BY created_at;
 SELECT ke.id, ke.title, ke.content, ke.entry_type, t.name AS topic_name
 FROM knowledge_entry ke
 JOIN topic t ON ke.topic_id = t.id
+JOIN curriculum_topic ct ON ct.topic_id = t.id
 JOIN knowledge_entry_tag ket ON ket.knowledge_entry_id = ke.id
 JOIN tag ON ket.tag_id = tag.id
-WHERE t.curriculum_id = :curriculum_id
+WHERE ct.curriculum_id = :curriculum_id
   AND tag.name = :tag_name;
 ```
 

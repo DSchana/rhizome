@@ -5,12 +5,14 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.screen import Screen
+from textual.widgets import Static
 
 from curriculum_app.tui.commands import COMMANDS, parse_input
 from curriculum_app.tui.state import ChatMessage
 from curriculum_app.tui.widgets.chat_input import ChatInput
 from curriculum_app.tui.widgets.message import MessageWidget
 from curriculum_app.tui.widgets.status_bar import StatusBar
+from curriculum_app.tui.widgets.topic_tree import TopicTree
 
 
 class ChatScreen(Screen):
@@ -84,7 +86,7 @@ class ChatScreen(Screen):
             return
 
         async def _run() -> None:
-            await handler(self.app, args)
+            await handler(self.app, args) # pyright: ignore[reportArgumentType]
 
         self.run_worker(_run())
 
@@ -97,3 +99,44 @@ class ChatScreen(Screen):
         area = self.query_one("#message-area", VerticalScroll)
         area.mount(MessageWidget(role=msg.role, content=msg.content))
         area.scroll_end(animate=False)
+
+    def _restore_chat_input(self) -> None:
+        """Restore focus and placeholder to the chat input."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.placeholder = "Type a message or /command ..."
+        chat_input.focus()
+
+    def _focus_latest_topic_tree(self) -> bool:
+        """Focus the last TopicTree in the message area. Returns True if found."""
+        trees = list(self.query(TopicTree))
+        if not trees:
+            return False
+        tree = trees[-1]
+        tree.query_one("#topic-tree-help", Static).update(
+            "Use arrow keys to navigate, enter to select a topic."
+        )
+        tree.focus()
+        self.query_one("#chat-input", ChatInput).placeholder = (
+            "Use Ctrl+Enter to exit the topic viewer"
+        )
+        return True
+
+    def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
+        topic = event.topic
+        self.app.update_context(None, topic)  # type: ignore[attr-defined]
+        self.append_message(ChatMessage(role="agent", content=f"Selected topic: {topic.name}"))
+        for tree in self.query(TopicTree):
+            tree.remove()
+        self._restore_chat_input()
+
+    def on_topic_tree_focus_released(self, event: TopicTree.FocusReleased) -> None:
+        # Update the tree's help text to hint how to return.
+        trees = list(self.query(TopicTree))
+        if trees:
+            trees[-1].query_one("#topic-tree-help", Static).update(
+                "Use Ctrl+Enter to navigate back to the topic explorer (in empty message box)"
+            )
+        self._restore_chat_input()
+
+    def on_chat_input_focus_tree_requested(self, event: ChatInput.FocusTreeRequested) -> None:
+        self._focus_latest_topic_tree()

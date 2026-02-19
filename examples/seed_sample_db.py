@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from curriculum_app.db import (
     Curriculum,
+    CurriculumTopic,
     KnowledgeEntry,
     KnowledgeEntryTag,
     RelatedKnowledgeEntries,
@@ -43,28 +44,47 @@ async def main() -> None:
         session.add_all([vim, aws])
         await session.flush()
 
-        # -- Topics --
-        motions = Topic(
-            curriculum_id=vim.id,
-            name="motions",
-            description="Moving the cursor around",
-        )
-        operators = Topic(
-            curriculum_id=vim.id,
-            name="operators",
-            description="Actions that operate on text",
-        )
-        iam = Topic(
-            curriculum_id=aws.id,
-            name="IAM",
-            description="Identity and Access Management",
-        )
+        # -- Topics (depth 1: roots) --
+        motions = Topic(name="motions", description="Moving the cursor around")
+        operators = Topic(name="operators", description="Actions that operate on text")
+        iam = Topic(name="IAM", description="Identity and Access Management")
         session.add_all([motions, operators, iam])
+        await session.flush()
+
+        # -- Topics (depth 2) --
+        word_motions = Topic(parent_id=motions.id, name="word motions", description="Moving by words")
+        char_motions = Topic(parent_id=motions.id, name="character motions", description="Moving by characters")
+        search_motions = Topic(parent_id=motions.id, name="search motions", description="Moving by search")
+        delete_op = Topic(parent_id=operators.id, name="delete", description="Deleting text")
+        change_op = Topic(parent_id=operators.id, name="change", description="Changing text")
+        yank_op = Topic(parent_id=operators.id, name="yank", description="Yanking (copying) text")
+        iam_policies = Topic(parent_id=iam.id, name="policies", description="IAM policy documents")
+        iam_roles = Topic(parent_id=iam.id, name="roles", description="IAM roles and trust")
+        session.add_all([word_motions, char_motions, search_motions, delete_op, change_op, yank_op, iam_policies, iam_roles])
+        await session.flush()
+
+        # -- Topics (depth 3) --
+        w_motion = Topic(parent_id=word_motions.id, name="w / W", description="Forward word motion")
+        b_motion = Topic(parent_id=word_motions.id, name="b / B", description="Backward word motion")
+        e_motion = Topic(parent_id=word_motions.id, name="e / E", description="End-of-word motion")
+        f_search = Topic(parent_id=search_motions.id, name="f / F", description="Find character on line")
+        slash_search = Topic(parent_id=search_motions.id, name="/ and ?", description="Pattern search")
+        policy_structure = Topic(parent_id=iam_policies.id, name="policy structure", description="Effect, Action, Resource")
+        policy_conditions = Topic(parent_id=iam_policies.id, name="conditions", description="Condition keys and operators")
+        session.add_all([w_motion, b_motion, e_motion, f_search, slash_search, policy_structure, policy_conditions])
+        await session.flush()
+
+        # -- Link root topics to curricula --
+        session.add_all([
+            CurriculumTopic(curriculum_id=vim.id, topic_id=motions.id, position=0),
+            CurriculumTopic(curriculum_id=vim.id, topic_id=operators.id, position=1),
+            CurriculumTopic(curriculum_id=aws.id, topic_id=iam.id, position=0),
+        ])
         await session.flush()
 
         # -- Knowledge entries --
         e_word = KnowledgeEntry(
-            topic_id=motions.id,
+            topic_id=w_motion.id,
             title="Word motion",
             content="w moves forward one word",
             entry_type="fact",
@@ -76,7 +96,7 @@ async def main() -> None:
             entry_type="definition",
         )
         e_delete = KnowledgeEntry(
-            topic_id=operators.id,
+            topic_id=delete_op.id,
             title="Delete operator",
             content="d is the delete operator",
             entry_type="fact",
@@ -88,7 +108,7 @@ async def main() -> None:
             entry_type="concept",
         )
         e_iam = KnowledgeEntry(
-            topic_id=iam.id,
+            topic_id=policy_structure.id,
             title="IAM Policy",
             content="A JSON document that defines permissions",
             entry_type="definition",
