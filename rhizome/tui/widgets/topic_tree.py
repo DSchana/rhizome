@@ -95,6 +95,7 @@ class TopicTree(Vertical):
     DEFAULT_CSS = """
     TopicTree {
         height: auto;
+        margin-top: 1;
         border: round $accent;
         padding: 1 0 0 1;
     }
