@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Curriculum-app is a knowledge management system designed for LLM agent integration. It supports structured learning (storing knowledge entries) and practice (quizzes). The database layer and tool functions are complete; TUI (Textual) and agent layers are planned.
+Rhizome is a knowledge management system designed for LLM agent integration. It supports structured learning (storing knowledge entries) and practice (quizzes). The database layer and tool functions are complete; TUI (Textual) and agent layers are planned.
 
 **Tech stack:** Python 3.14+, SQLAlchemy 2.x (async), aiosqlite, SQLite
 
@@ -28,15 +28,15 @@ There is no formal test framework (pytest, etc.) yet. `examples/exercise_tools.p
 
 ## CONTEXT.md Files
 
-Each directory under `curriculum_app/` contains a `CONTEXT.md` describing its contents, purpose, and how it fits into the larger system. These files are essential context for working in this codebase:
+Each directory under `rhizome/` contains a `CONTEXT.md` describing its contents, purpose, and how it fits into the larger system. These files are essential context for working in this codebase:
 
 - **Always read** the relevant `CONTEXT.md` files before planning changes or writing new code in a directory.
 - **Always update** the affected `CONTEXT.md` files after any major code change (adding/removing modules, changing public API, altering architectural patterns).
-- **Always create** a `CONTEXT.md` when adding a new directory under `curriculum_app/`.
+- **Always create** a `CONTEXT.md` when adding a new directory under `rhizome/`.
 
 ## Architecture
 
-### Database Layer (`curriculum_app/db/`)
+### Database Layer (`rhizome/db/`)
 - **models.py** — 8 SQLAlchemy ORM models using modern `Mapped`/`mapped_column` syntax:
   - `Curriculum` — subject area, linked to topics via `CurriculumTopic` junction (many-to-many with ordering)
   - `CurriculumTopic` — junction table with `position` for ordered curriculum-topic membership
@@ -45,7 +45,7 @@ Each directory under `curriculum_app/` contains a `CONTEXT.md` describing its co
   - `RelatedKnowledgeEntries` — directed graph edges between entries (acyclic, enforced via recursive CTE)
 - **engine.py** — Async engine factory (`get_engine`), session factory (`get_session_factory`), and `init_db()` for table creation
 
-### Tool Functions (`curriculum_app/tools/`)
+### Tool Functions (`rhizome/tools/`)
 Pure async functions that accept `AsyncSession` as their first argument. Each module maps to a domain:
 - **curricula.py** — CRUD for Curriculum + curriculum-topic membership (`add_topic_to_curriculum`, `remove_topic_from_curriculum`, `reorder_topic_in_curriculum`, `list_topics_in_curriculum`)
 - **topics.py** — CRUD for Topic tree (`create_topic` with optional `parent_id`, `list_root_topics`, `list_children`, `get_subtree`)

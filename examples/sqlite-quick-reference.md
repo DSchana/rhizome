@@ -1,6 +1,6 @@
 # SQLite Quick Reference
 
-A beginner-friendly guide to exploring your curriculum-app database with the `sqlite3` command-line tool.
+A beginner-friendly guide to exploring your rhizome database with the `sqlite3` command-line tool.
 
 ## Setup
 

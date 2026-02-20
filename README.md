@@ -1,1 +1,1 @@
-Entrypoint: `uv run python -m curriculum_app.tui`
+Entrypoint: `uv run python -m rhizome.tui`

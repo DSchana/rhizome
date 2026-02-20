@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from curriculum_app.db import get_session_factory, init_db
-from curriculum_app.tools import (
+from rhizome.db import get_session_factory, init_db
+from rhizome.tools import (
     CycleError,
     add_relation,
     add_topic_to_curriculum,

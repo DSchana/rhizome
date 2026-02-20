@@ -2,7 +2,7 @@
 
 ## Context
 
-This is the foundational data layer for curriculum-app. The database and a set of queries will be exposed as **tools for an LLM agent**. The agent reads/writes knowledge entries and uses them to generate quizzes, speed tests, etc. on the fly — the database stores *knowledge*, not quiz state.
+This is the foundational data layer for rhizome. The database and a set of queries will be exposed as **tools for an LLM agent**. The agent reads/writes knowledge entries and uses them to generate quizzes, speed tests, etc. on the fly — the database stores *knowledge*, not quiz state.
 
 ## Technology Choices
 

@@ -1,6 +1,6 @@
 # MVVM Architecture Proposal
 
-This document describes a potential MVVM (Model-View-ViewModel) architecture for the curriculum-app TUI. This approach introduces a dedicated ViewModel layer between the Model (`db/` + `tools/`) and the View (`tui/screens/` + `tui/widgets/`), providing a clean separation between state management and rendering. This is not currently implemented — it is a reference for future consideration if the fused architecture (see `architecture.md`) proves insufficient as complexity grows.
+This document describes a potential MVVM (Model-View-ViewModel) architecture for the rhizome TUI. This approach introduces a dedicated ViewModel layer between the Model (`db/` + `tools/`) and the View (`tui/screens/` + `tui/widgets/`), providing a clean separation between state management and rendering. This is not currently implemented — it is a reference for future consideration if the fused architecture (see `architecture.md`) proves insufficient as complexity grows.
 
 ## When to consider this approach
 

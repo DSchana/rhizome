@@ -1,6 +1,6 @@
 # TUI Architecture
 
-This document describes the architecture of the curriculum-app TUI. It serves as the primary reference for designing new features and understanding how components interact.
+This document describes the architecture of the rhizome TUI. It serves as the primary reference for designing new features and understanding how components interact.
 
 ## Overview
 

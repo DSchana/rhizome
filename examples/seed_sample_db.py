@@ -15,7 +15,7 @@ from pathlib import Path
 # Ensure the project root is on sys.path when running as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from curriculum_app.db import (
+from rhizome.db import (
     Curriculum,
     CurriculumTopic,
     KnowledgeEntry,

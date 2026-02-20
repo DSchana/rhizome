@@ -2,16 +2,16 @@
 
 ## What was built
 
-The database layer for curriculum-app — four new Python files that define how your data is structured and stored in SQLite.
+The database layer for rhizome — four new Python files that define how your data is structured and stored in SQLite.
 
 ### New files
 
 | File | Purpose |
 |---|---|
-| `curriculum_app/__init__.py` | Makes `curriculum_app` a Python package (empty file, but required) |
-| `curriculum_app/db/__init__.py` | Makes `curriculum_app.db` a package and re-exports everything so you can write `from curriculum_app.db import Curriculum` |
-| `curriculum_app/db/models.py` | Defines the 6 database tables as Python classes |
-| `curriculum_app/db/engine.py` | Creates the database connection and can set up the tables on first run |
+| `rhizome/__init__.py` | Makes `rhizome` a Python package (empty file, but required) |
+| `rhizome/db/__init__.py` | Makes `rhizome.db` a package and re-exports everything so you can write `from rhizome.db import Curriculum` |
+| `rhizome/db/models.py` | Defines the 6 database tables as Python classes |
+| `rhizome/db/engine.py` | Creates the database connection and can set up the tables on first run |
 
 ### Modified files
 
@@ -103,7 +103,7 @@ This matters because the app will eventually run a TUI (Textual) and an LLM agen
 uv sync                          # install the new dependencies
 uv run python -c "
 import asyncio
-from curriculum_app.db import init_db
+from rhizome.db import init_db
 asyncio.run(init_db('test.db'))
 print('Database created successfully')
 "
