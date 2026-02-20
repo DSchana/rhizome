@@ -1,24 +1,31 @@
-"""Chat message display widget."""
+"""Chat message display widget built on Textual's Markdown."""
 
-from textual.widgets import Static
+from textual.widgets import Markdown
 
 
-class MessageWidget(Static):
-    """Renders a single chat message with role-based styling."""
+class ChatMessage(Markdown):
+    """Renders a single chat message with role-based styling and markdown support."""
 
     DEFAULT_CSS = """
-    MessageWidget {
+    ChatMessage {
         padding: 1 1;
     }
-    MessageWidget.user-message {
+    ChatMessage.user-message {
         background: rgb(31, 31, 31);
     }
-    MessageWidget.agent-message {
+    ChatMessage.agent-message {
         background: rgb(40, 40, 40);
     }
     """
 
-    def __init__(self, role: str, content: str) -> None:
-        prefix = "you" if role == "user" else "agent"
-        super().__init__(f"[bold]{prefix}:[/bold] {content}")
+    def __init__(self, role: str, content: str = "") -> None:
+        self._role = role
+        self._prefix = "**you:** " if role == "user" else "**agent:** "
+        self._body = content
+        super().__init__(self._prefix + self._body)
         self.add_class(f"{role}-message")
+
+    @property
+    def content_text(self) -> str:
+        """The raw body text (without the role prefix)."""
+        return self._body

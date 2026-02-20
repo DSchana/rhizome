@@ -54,21 +54,21 @@ def parse_input(text: str) -> ParsedCommand | None:
 
 
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    from curriculum_app.tui.state import ChatMessage
+    from curriculum_app.tui.state import ChatEntry
 
-    app.screen.append_message(ChatMessage(role="agent", content="/learn — context selection coming soon"))
+    app.screen.append_message(ChatEntry(role="agent", content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    from curriculum_app.tui.state import ChatMessage
+    from curriculum_app.tui.state import ChatEntry
 
-    app.screen.append_message(ChatMessage(role="agent", content="/review — review mode coming soon"))
+    app.screen.append_message(ChatEntry(role="agent", content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, _args: str) -> None:
-    from curriculum_app.tui.state import ChatMessage
+    from curriculum_app.tui.state import ChatEntry
 
-    app.screen.append_message(ChatMessage(role="agent", content="/options — settings coming soon"))
+    app.screen.append_message(ChatEntry(role="agent", content="/options — settings coming soon"))
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:
@@ -97,7 +97,7 @@ async def _handle_explore(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_help(app: CurriculumApp, args: str) -> None:
     """Show available commands, or details for a specific command."""
-    from curriculum_app.tui.state import ChatMessage
+    from curriculum_app.tui.state import ChatEntry
 
     if args:
         name = args.strip().lstrip("/")
@@ -116,7 +116,7 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
         text = "\n".join(lines)
 
     chat = app.screen
-    chat.append_message(ChatMessage(role="agent", content=text))
+    chat.append_message(ChatEntry(role="agent", content=text))
 
 
 # ---------------------------------------------------------------------------

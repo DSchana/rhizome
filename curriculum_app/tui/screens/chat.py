@@ -5,13 +5,14 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Static
+from textual.widgets import Markdown, Static
 
 from curriculum_app.tui.commands import COMMANDS, parse_input
-from curriculum_app.tui.state import ChatMessage
+from curriculum_app.tui.state import ChatEntry
 from curriculum_app.tui.widgets.chat_input import ChatInput
-from curriculum_app.tui.widgets.message import MessageWidget
+from curriculum_app.tui.widgets.message import ChatMessage
 from curriculum_app.tui.widgets.status_bar import StatusBar
+from curriculum_app.tui.widgets.thinking import ThinkingIndicator
 from curriculum_app.tui.widgets.topic_tree import TopicTree
 
 
@@ -45,7 +46,7 @@ class ChatScreen(Screen):
 
     def __init__(self) -> None:
         super().__init__()
-        self.messages: list[ChatMessage] = []
+        self.messages: list[ChatEntry] = []
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -91,13 +92,68 @@ class ChatScreen(Screen):
         self.run_worker(_run())
 
     def _handle_chat(self, text: str) -> None:
-        self.append_message(ChatMessage(role="user", content=text))
+        self.append_message(ChatEntry(role="user", content=text))
 
-    def append_message(self, msg: ChatMessage) -> None:
+        async def _run_agent() -> None:
+            from curriculum_app.agent import stream_agent
+
+            area = self.query_one("#message-area", VerticalScroll)
+
+            # Show a "thinking..." indicator while waiting for the first token.
+            thinking = ThinkingIndicator()
+            await area.mount(thinking)
+            area.scroll_end(animate=False)
+
+            app = self.app
+            widget: ChatMessage | None = None
+            stream = None
+            body = ""
+
+            async for chunk in stream_agent(
+                app.agent,  # type: ignore[attr-defined]
+                app.session_factory,  # type: ignore[attr-defined]
+                self.messages,
+                mode=app.mode,  # type: ignore[attr-defined]
+                curriculum_name=(
+                    app.active_curriculum.name  # type: ignore[attr-defined]
+                    if getattr(app, "active_curriculum", None)
+                    else ""
+                ),
+                topic_name=(
+                    app.active_topic.name  # type: ignore[attr-defined]
+                    if getattr(app, "active_topic", None)
+                    else ""
+                ),
+            ):
+                if widget is None:
+                    # First token: remove spinner and mount the message widget.
+                    await thinking.remove()
+                    widget = ChatMessage(role="agent")
+                    await area.mount(widget)
+                    stream = Markdown.get_stream(widget)
+                body += chunk
+                await stream.write(chunk)
+                area.scroll_end(animate=False)
+
+            if stream is not None:
+                await stream.stop()
+
+            # If the agent produced no tokens, still clean up the spinner.
+            if widget is None:
+                await thinking.remove()
+                widget = ChatMessage(role="agent", content="(no response)")
+                await area.mount(widget)
+                body = "(no response)"
+
+            self.messages.append(ChatEntry(role="agent", content=body))
+
+        self.run_worker(_run_agent())
+
+    def append_message(self, msg: ChatEntry) -> None:
         """Append a message to the history and mount its widget."""
         self.messages.append(msg)
         area = self.query_one("#message-area", VerticalScroll)
-        area.mount(MessageWidget(role=msg.role, content=msg.content))
+        area.mount(ChatMessage(role=msg.role, content=msg.content))
         area.scroll_end(animate=False)
 
     def _restore_chat_input(self) -> None:
@@ -124,7 +180,7 @@ class ChatScreen(Screen):
     def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
         topic = event.topic
         self.app.update_context(None, topic)  # type: ignore[attr-defined]
-        self.append_message(ChatMessage(role="agent", content=f"Selected topic: {topic.name}"))
+        self.append_message(ChatEntry(role="agent", content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
         self._restore_chat_input()
