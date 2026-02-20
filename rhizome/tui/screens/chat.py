@@ -227,7 +227,7 @@ class ChatScreen(Screen):
     def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
         topic = event.topic
         self.app.update_context(None, topic)  # type: ignore[attr-defined]
-        self.append_message(ChatEntry(role="agent", content=f"Selected topic: {topic.name}"))
+        self.append_message(ChatEntry(role="system", content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
         self._restore_chat_input()

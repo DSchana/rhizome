@@ -38,6 +38,8 @@ def _build_lc_messages(
     for m in messages:
         if m.role == "user":
             lc_messages.append(HumanMessage(content=m.content))
+        elif m.role == "system":
+            lc_messages.append(SystemMessage(content=m.content))
         else:
             lc_messages.append(AIMessage(content=m.content))
     return lc_messages

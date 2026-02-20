@@ -56,19 +56,19 @@ def parse_input(text: str) -> ParsedCommand | None:
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.append_message(ChatEntry(role="agent", content="/learn — context selection coming soon"))
+    app.screen.append_message(ChatEntry(role="system", content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.append_message(ChatEntry(role="agent", content="/review — review mode coming soon"))
+    app.screen.append_message(ChatEntry(role="system", content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.append_message(ChatEntry(role="agent", content="/options — settings coming soon"))
+    app.screen.append_message(ChatEntry(role="system", content="/options — settings coming soon"))
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:

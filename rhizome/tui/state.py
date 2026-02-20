@@ -17,5 +17,5 @@ class Mode(Enum):
 class ChatEntry:
     """A single message in the conversation history."""
 
-    role: Literal["user", "agent"]
+    role: Literal["user", "agent", "system"]
     content: str
