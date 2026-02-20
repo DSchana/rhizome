@@ -13,6 +13,7 @@ from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.thinking import ThinkingIndicator
+from rhizome.tui.widgets.welcome import WelcomeHeader
 from rhizome.tui.widgets.topic_tree import TopicTree
 
 
@@ -31,13 +32,14 @@ class ChatScreen(Screen):
     }
     #status-bar {
         dock: bottom;
-        height: 1;
+        height: auto;
         background: $surface;
         padding: 0 1;
+        border-top: solid rgb(60, 60, 60);
     }
     #chat-input {
         dock: bottom;
-        margin: 0 0 1 0;
+        margin: 0 0 3 0;
         height: auto;
         min-height: 3;
         max-height: 10;
@@ -54,6 +56,8 @@ class ChatScreen(Screen):
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
+        area = self.query_one("#message-area", VerticalScroll)
+        area.mount(WelcomeHeader())
         self.query_one("#chat-input", ChatInput).focus()
         # Bind the status bar to the app's reactive properties.
         bar = self.query_one("#status-bar", StatusBar)
