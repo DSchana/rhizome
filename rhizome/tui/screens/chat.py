@@ -10,6 +10,7 @@ from textual.widgets import Markdown, Static
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.state import ChatEntry
 from rhizome.tui.widgets.chat_input import ChatInput
+from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.thinking import ThinkingIndicator
@@ -24,7 +25,7 @@ class ChatScreen(Screen):
     ChatScreen {
         layout: grid;
         grid-size: 1;
-        grid-rows: 1fr auto auto;
+        grid-rows: 1fr auto auto auto;
     }
     #message-area {
         background: $surface-darken-1;
@@ -38,11 +39,11 @@ class ChatScreen(Screen):
         border-top: solid rgb(60, 60, 60);
     }
     #chat-input {
-        dock: bottom;
-        margin: 0 0 3 0;
         height: auto;
         min-height: 3;
         max-height: 10;
+    }
+    #command-palette {
     }
     """
 
@@ -53,18 +54,52 @@ class ChatScreen(Screen):
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
+        yield CommandPalette(id="command-palette")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
         area = self.query_one("#message-area", VerticalScroll)
         area.mount(WelcomeHeader())
         self.query_one("#chat-input", ChatInput).focus()
+
         # Bind the status bar to the app's reactive properties.
         bar = self.query_one("#status-bar", StatusBar)
         self.watch(self.app, "mode", lambda val: setattr(bar, "mode", val))
         self.watch(self.app, "context", lambda val: setattr(bar, "context", val))
 
+    def on_text_area_changed(self, event: ChatInput.Changed) -> None:
+        text = event.text_area.text
+
+        palette = self.query_one("#command-palette", CommandPalette)
+        chat_input = self.query_one("#chat-input", ChatInput)
+        
+        if text.startswith("/") and "\n" not in text:
+            palette.filter_text = text
+            if palette.has_items:
+                palette.add_class("visible")
+                chat_input.palette_active = True
+            else:
+                palette.remove_class("visible")
+                chat_input.palette_active = False
+        else:
+            palette.remove_class("visible")
+            chat_input.palette_active = False
+
+    def on_chat_input_palette_navigate(self, event: ChatInput.PaletteNavigate) -> None:
+        self.query_one("#command-palette", CommandPalette).move_selection(event.delta)
+
+    def on_chat_input_palette_confirm(self, event: ChatInput.PaletteConfirm) -> None:
+        self.query_one("#command-palette", CommandPalette).confirm_selection()
+
+    def on_command_palette_command_selected(self, event: CommandPalette.CommandSelected) -> None:
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.clear()
+        chat_input.insert(f"/{event.name} ")
+        self._hide_palette()
+
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+        self._hide_palette()
+
         text = event.value.strip()
         if not text:
             return
@@ -74,6 +109,14 @@ class ChatScreen(Screen):
             self._handle_command(command.name, command.args)
         else:
             self._handle_chat(text)
+
+    def _hide_palette(self) -> None:
+        """Hide the command palette and restore input margin."""
+        palette = self.query_one("#command-palette", CommandPalette)
+        chat_input = self.query_one("#chat-input", ChatInput)
+        palette.remove_class("visible")
+        chat_input.remove_class("palette-open")
+        chat_input.palette_active = False
 
     def _handle_command(self, name: str, args: str) -> None:
         # /quit is TUI-only — not in the registry and not agent-callable.
