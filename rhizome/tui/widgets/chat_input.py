@@ -43,6 +43,15 @@ class ChatInput(TextArea):
         )
         self._placeholder = placeholder
         self.palette_active = False
+        self._history: list[str] = []
+        self._history_index: int = -1
+        self._draft: str = ""
+
+    def push_history(self, text: str) -> None:
+        """Record a submitted message in the history buffer."""
+        self._history.append(text)
+        self._history_index = -1
+        self._draft = ""
 
     def on_mount(self) -> None:
         if self._placeholder:
@@ -71,6 +80,39 @@ class ChatInput(TextArea):
         elif event.key in ("up", "down") and self.palette_active:
             delta = -1 if event.key == "up" else 1
             self.post_message(self.PaletteNavigate(delta=delta))
+            event.stop()
+            event.prevent_default()
+
+        elif event.key == "up" and not self.palette_active:
+            row, col = self.cursor_location
+            if row == 0 and col == 0 and self._history:
+                if self._history_index == -1:
+                    self._draft = self.text
+                    self._history_index = len(self._history) - 1
+                elif self._history_index > 0:
+                    self._history_index -= 1
+                else:
+                    event.stop()
+                    event.prevent_default()
+                    return
+                self.clear()
+                self.insert(self._history[self._history_index])
+                self.move_cursor((0, 0))
+                event.stop()
+                event.prevent_default()
+            else:
+                super()._on_key(event)
+
+        elif event.key == "down" and not self.palette_active and self._history_index >= 0:
+            if self._history_index < len(self._history) - 1:
+                self._history_index += 1
+                self.clear()
+                self.insert(self._history[self._history_index])
+            else:
+                self._history_index = -1
+                self.clear()
+                self.insert(self._draft)
+                self._draft = ""
             event.stop()
             event.prevent_default()
 

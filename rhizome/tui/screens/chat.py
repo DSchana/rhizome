@@ -72,7 +72,12 @@ class ChatScreen(Screen):
 
         palette = self.query_one("#command-palette", CommandPalette)
         chat_input = self.query_one("#chat-input", ChatInput)
-        
+
+        if chat_input._history_index >= 0:
+            palette.remove_class("visible")
+            chat_input.palette_active = False
+            return
+
         if text.startswith("/") and "\n" not in text:
             palette.filter_text = text
             if palette.has_items:
@@ -103,6 +108,8 @@ class ChatScreen(Screen):
         text = event.value.strip()
         if not text:
             return
+
+        self.query_one("#chat-input", ChatInput).push_history(text)
 
         command = parse_input(text)
         if command is not None:
