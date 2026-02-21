@@ -36,7 +36,7 @@ Textual `Screen` and `Widget` subclasses. Each Screen or Widget:
 
 | Feature | What it does | How we use it |
 |---------|-------------|---------------|
-| `reactive` properties | Declare state on a widget; Textual tracks changes | App-level state (`mode`), screen-level state (`is_thinking`) |
+| `reactive` properties | Declare state on a widget; Textual tracks changes | Per-session state in `ChatPane` (`session_mode`, `session_context`) |
 | `watch_*` methods | Automatic callback when a `reactive` property changes | Mounting/removing spinner when `is_thinking` changes |
 | `Message` classes | Typed events that bubble up the DOM tree | Child widgets (e.g. `ChatInput.Submitted`) notify parent screens |
 | `on_<message>` handlers | Convention-based message handling | Screens handle events from their children |
@@ -51,32 +51,27 @@ State lives at the level of the component that needs it:
 
 ```python
 class CurriculumApp(App):
-    mode = reactive(Mode.IDLE)
-    active_curriculum: reactive[Curriculum | None] = reactive(None)
-    active_topic: reactive[Topic | None] = reactive(None)
-
     def on_mount(self) -> None:
         self.push_screen(ChatScreen())
 ```
 
-The `App` holds state that spans screens: the current mode, the active curriculum/topic context.
+The `App` holds shared infrastructure (`session_factory`, `agent`) and provides an `active_chat_pane` property to access the currently visible `ChatPane`. It does **not** hold session state — all session state lives in `ChatPane`.
 
-### Screen-level state (`ChatScreen`)
+### ChatPane-level state (per-session)
 
 ```python
-class ChatScreen(Screen):
-    is_thinking = reactive(False)
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.messages: list[ChatMessage] = []
+class ChatPane(Widget):
+    session_mode = reactive(Mode.IDLE.value)
+    session_context = reactive("")
+    active_curriculum: Curriculum | None = None
+    active_topic: Topic | None = None
 ```
 
-Each Screen holds state specific to its function. `ChatScreen` owns the message history and the thinking indicator. Other screens (e.g. a future `ReviewScreen`) would own their own state.
+Each `ChatPane` instance is an independent chat session with its own mode, context, curriculum/topic selection, message history, and agent worker. Multiple panes live inside `TabbedContent` tabs in `ChatScreen`.
 
 ### Widget-level state
 
-Widgets hold purely presentational state (e.g. a `StatusBar` with reactive `mode` and `context` text properties). They receive data from their parent Screen, either at construction time or via Textual messages.
+Widgets hold purely presentational state (e.g. a `StatusBar` with reactive `mode` and `context` text properties). They receive data from their parent components, either at construction time or via Textual messages.
 
 ## Commands
 
@@ -147,7 +142,7 @@ For async operations (agent calls, DB queries):
 
 ### Step 0: Setup
 
-`CurriculumApp` holds app-level reactive state (`mode`, `active_curriculum`, `active_topic`). On mount, it pushes `ChatScreen`, which holds its own state (`messages` list, `is_thinking` flag).
+`CurriculumApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `ChatScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, curriculum/topic).
 
 ### Step 1: Textual posts `ChatInput.Submitted`
 

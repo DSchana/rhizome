@@ -74,9 +74,9 @@ class ChatScreen(Screen):
         await tabs.add_pane(pane)
         tabs.active = tab_id
 
-    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
-        """Sync the active tab's session state into app reactives."""
-        self.app.sync_active_session()  # type: ignore[attr-defined]
+    # Stubbed out for potential future use
+    # def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+    #     pass
 
     def action_cancel_agent(self) -> None:
         self.app.active_chat_pane.cancel_agent()  # type: ignore[attr-defined]

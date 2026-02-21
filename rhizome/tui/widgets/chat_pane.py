@@ -266,7 +266,7 @@ class ChatPane(Widget):
             self.session_context = topic.name
         else:
             self.session_context = ""
-        self.app.sync_active_session()  # type: ignore[attr-defined]
+
         self.append_message(ChatEntry(role="system", content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
