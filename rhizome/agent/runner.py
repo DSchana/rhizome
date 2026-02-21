@@ -39,7 +39,10 @@ def _build_lc_messages(
         if m.role == "user":
             lc_messages.append(HumanMessage(content=m.content))
         elif m.role == "system":
-            lc_messages.append(SystemMessage(content=m.content))
+            # Internal "system" messages are app-generated info (not LLM system
+            # prompts).  Wrap them as HumanMessages so we don't produce multiple
+            # SystemMessages — many LLMs only allow one at the start.
+            lc_messages.append(HumanMessage(content=f"[System] {m.content}"))
         else:
             lc_messages.append(AIMessage(content=m.content))
     return lc_messages
