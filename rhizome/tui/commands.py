@@ -118,6 +118,14 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
     app.active_chat_pane.append_message(ChatMessageData(role=Role.AGENT, content=text))
 
 
+async def _handle_clear(app: CurriculumApp, _args: str) -> None:
+    """Clear all visible chat messages from the message area."""
+    pane = app.active_chat_pane
+    area = pane.query_one("#message-area")
+    await area.remove_children()
+    pane.messages.clear()
+
+
 async def _handle_new(app: CurriculumApp, _args: str) -> None:
     """Create a new chat session tab."""
     from rhizome.tui.screens.chat import ChatScreen
@@ -143,6 +151,7 @@ async def _handle_close(app: CurriculumApp, _args: str) -> None:
 # ---------------------------------------------------------------------------
 
 COMMANDS: dict[str, Command] = {
+    "clear": Command("clear", "Clear chat messages", _handle_clear),
     "close": Command("close", "Close the current chat session tab", _handle_close),
     "explore": Command("explore", "Browse and select topics from the topic tree", _handle_explore),
     "help": Command("help", "Show available commands and usage", _handle_help),
