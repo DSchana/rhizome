@@ -2,6 +2,8 @@
 
 from textual.widgets import Markdown
 
+from rhizome.tui.types import Role
+
 
 class ChatMessage(Markdown):
     """Renders a single chat message with role-based styling and markdown support."""
@@ -24,17 +26,17 @@ class ChatMessage(Markdown):
     """
 
     ROLE_PREFIXES = {
-        "user": "**you:** ",
-        "agent": "**agent:** ",
-        "system": "*system:* ",
+        Role.USER: "**you:** ",
+        Role.AGENT: "**agent:** ",
+        Role.SYSTEM: "*system:* ",
     }
 
-    def __init__(self, role: str, content: str = "") -> None:
+    def __init__(self, role: Role, content: str = "") -> None:
         self._role = role
         self._prefix = self.ROLE_PREFIXES.get(role, "")
         self._body = content
         super().__init__(self._prefix + self._body)
-        self.add_class(f"{role}-message")
+        self.add_class(f"{role.value}-message")
 
     @property
     def content_text(self) -> str:

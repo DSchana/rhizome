@@ -6,7 +6,7 @@ from langchain.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMe
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from rhizome.agent.context import AgentContext
-from rhizome.tui.types import ChatMessageData
+from rhizome.tui.types import ChatMessageData, Role
 
 SYSTEM_PROMPT = """\
 You are a general purpose knowledge agent that's attached to some tooling to manage \
@@ -67,9 +67,9 @@ def _build_lc_messages(
     system = SystemMessage(content=SYSTEM_PROMPT.format(mode=mode, context_line=context_line))
     lc_messages: list = [system]
     for m in messages:
-        if m.role == "user":
+        if m.role == Role.USER:
             lc_messages.append(HumanMessage(content=m.content))
-        elif m.role == "system":
+        elif m.role == Role.SYSTEM:
             # Internal "system" messages are app-generated info (not LLM system
             # prompts).  Wrap them as HumanMessages so we don't produce multiple
             # SystemMessages — many LLMs only allow one at the start.

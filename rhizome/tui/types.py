@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal
 
 
 class Mode(Enum):
@@ -13,9 +12,17 @@ class Mode(Enum):
     REVIEW = "review"
 
 
+class Role(Enum):
+    """Chat message role."""
+
+    USER = "user"
+    AGENT = "agent"
+    SYSTEM = "system"
+
+
 @dataclass
 class ChatMessageData:
     """A single message in the conversation history."""
 
-    role: Literal["user", "agent", "system"]
+    role: Role
     content: str

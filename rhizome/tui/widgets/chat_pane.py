@@ -12,7 +12,7 @@ from textual.worker import Worker
 
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
-from rhizome.tui.types import ChatMessageData, Mode
+from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.message import ChatMessage
@@ -152,7 +152,7 @@ class ChatPane(Widget):
         self.run_worker(_run())
 
     def _handle_chat(self, text: str) -> None:
-        self.append_message(ChatMessageData(role="user", content=text))
+        self.append_message(ChatMessageData(role=Role.USER, content=text))
 
         self._agent_busy = True
 
@@ -189,7 +189,7 @@ class ChatPane(Widget):
                 ):
                     if widget is None:
                         await thinking.remove()
-                        widget = ChatMessage(role="agent")
+                        widget = ChatMessage(role=Role.AGENT)
                         await area.mount(widget)
                         stream = Markdown.get_stream(widget)
                     body += chunk
@@ -201,11 +201,11 @@ class ChatPane(Widget):
 
                 if widget is None:
                     await thinking.remove()
-                    widget = ChatMessage(role="agent", content="(no response)")
+                    widget = ChatMessage(role=Role.AGENT, content="(no response)")
                     await area.mount(widget)
                     body = "(no response)"
 
-                self.messages.append(ChatMessageData(role="agent", content=body))
+                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
             except asyncio.CancelledError:
                 if widget is None:
@@ -214,9 +214,9 @@ class ChatPane(Widget):
                 if body:
                     if stream is not None:
                         await stream.stop()
-                    self.messages.append(ChatMessageData(role="agent", content=body))
+                    self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
                 else:
-                    cancelled_msg = ChatMessage(role="agent", content="*(cancelled)*")
+                    cancelled_msg = ChatMessage(role=Role.AGENT, content="*(cancelled)*")
                     await area.mount(cancelled_msg)
 
                 area.scroll_end(animate=False)
@@ -267,7 +267,7 @@ class ChatPane(Widget):
         else:
             self.session_context = ""
 
-        self.append_message(ChatMessageData(role="system", content=f"Selected topic: {topic.name}"))
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
         self._restore_chat_input()
