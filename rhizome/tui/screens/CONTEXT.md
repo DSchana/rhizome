@@ -4,6 +4,6 @@ Textual `Screen` subclasses — each file corresponds to a major UI state.
 
 ## Files
 
-- **chat.py** — `ChatScreen`: the primary screen with a scrollable message area, text input, and status bar. Routes slash commands (checking for `/quit` directly, then looking up the `COMMANDS` registry) and appends regular chat messages to `AppState.chat_history`. Command handlers are called via `run_worker` since they are async.
+- **chat.py** — `ChatScreen`: thin wrapper that composes a `ChatPane` (from `rhizome.tui.widgets.chat_pane`) and a `StatusBar`. Delegates `Ctrl+C` cancellation to the pane and wires app-level reactive properties (`mode`, `context`) to the status bar.
 
 Future screens (not yet implemented): context selection, commit workflow, review, options.

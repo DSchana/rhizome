@@ -56,28 +56,28 @@ def parse_input(text: str) -> ParsedCommand | None:
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.append_message(ChatEntry(role="system", content="/learn — context selection coming soon"))
+    app.screen.query_one("ChatPane").append_message(ChatEntry(role="system", content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.append_message(ChatEntry(role="system", content="/review — review mode coming soon"))
+    app.screen.query_one("ChatPane").append_message(ChatEntry(role="system", content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.append_message(ChatEntry(role="system", content="/options — settings coming soon"))
+    app.screen.query_one("ChatPane").append_message(ChatEntry(role="system", content="/options — settings coming soon"))
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.widgets.chat_input import ChatInput
     from rhizome.tui.widgets.topic_tree import TopicTree
 
-    screen = app.screen
+    pane = app.screen.query_one("ChatPane")
     # If a topic tree already exists, just focus it instead of creating a new one.
-    existing = list(screen.query(TopicTree))
+    existing = list(pane.query(TopicTree))
     if existing:
         tree = existing[-1]
         tree.query_one("#topic-tree-help").update(
@@ -85,12 +85,12 @@ async def _handle_explore(app: CurriculumApp, _args: str) -> None:
         )
         tree.focus()
     else:
-        area = screen.query_one("#message-area")
+        area = pane.query_one("#message-area")
         tree = TopicTree(id="topic-tree")
         await area.mount(tree)
         area.scroll_end(animate=False)
         tree.focus()
-    screen.query_one("#chat-input", ChatInput).placeholder = (
+    pane.query_one("#chat-input", ChatInput).placeholder = (
         "Use Ctrl+Enter to exit the topic viewer"
     )
 
@@ -115,8 +115,7 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
         lines.append("Type /help <command> for details.")
         text = "\n".join(lines)
 
-    chat = app.screen
-    chat.append_message(ChatEntry(role="agent", content=text))
+    app.screen.query_one("ChatPane").append_message(ChatEntry(role="agent", content=text))
 
 
 # ---------------------------------------------------------------------------
