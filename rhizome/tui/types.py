@@ -14,7 +14,7 @@ class Mode(Enum):
 
 
 @dataclass
-class ChatEntry:
+class ChatMessageData:
     """A single message in the conversation history."""
 
     role: Literal["user", "agent", "system"]

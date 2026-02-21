@@ -6,7 +6,7 @@ from langchain.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMe
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from rhizome.agent.context import AgentContext
-from rhizome.tui.state import ChatEntry
+from rhizome.tui.types import ChatMessageData
 
 SYSTEM_PROMPT = """\
 You are a curriculum learning assistant. You help users explore, create, and \
@@ -21,7 +21,7 @@ Be concise and helpful.\
 
 
 def _build_lc_messages(
-    messages: list[ChatEntry],
+    messages: list[ChatMessageData],
     *,
     mode: str,
     curriculum_name: str,
@@ -51,7 +51,7 @@ def _build_lc_messages(
 async def stream_agent(
     agent,
     session_factory: async_sessionmaker,
-    messages: list[ChatEntry],
+    messages: list[ChatMessageData],
     *,
     mode: str = "idle",
     curriculum_name: str = "",

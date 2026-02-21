@@ -7,7 +7,7 @@ See `docs/architecture.md` for the overall TUI architecture.
 ## Files
 
 - **app.py** — `CurriculumApp(App)`: the main Textual application. Holds a `session_factory` for DB access and an `agent`, and pushes the `ChatScreen` on mount. Provides an `active_chat_pane` property to access the currently visible `ChatPane`. All session state (mode, context, curriculum, topic) lives in `ChatPane`, not at the app level.
-- **state.py** — Shared types: `Mode` enum (IDLE, LEARN, REVIEW) and `ChatEntry` dataclass.
+- **types.py** — Shared types: `Mode` enum (IDLE, LEARN, REVIEW) and `ChatMessageData` dataclass.
 - **commands.py** — `parse_input()` detects slash commands and returns a `ParsedCommand(name, args)` or `None` for regular chat text. `COMMANDS` is a `dict[str, Command]` registry mapping command names to `Command(name, description, handler)` dataclasses. Handlers are standalone `async (CurriculumApp, str) -> None` functions so they can be invoked by both the TUI and the agent layer. `/quit` is intentionally excluded from the registry — it is TUI-only and handled directly by the chat screen.
 - **`__main__.py`** — Entry point: `uv run python -m rhizome.tui`.
 

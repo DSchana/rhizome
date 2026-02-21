@@ -12,7 +12,7 @@ from textual.worker import Worker
 
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
-from rhizome.tui.state import ChatEntry, Mode
+from rhizome.tui.types import ChatMessageData, Mode
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.message import ChatMessage
@@ -45,7 +45,7 @@ class ChatPane(Widget):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.messages: list[ChatEntry] = []
+        self.messages: list[ChatMessageData] = []
         self._agent_busy: bool = False
         self._agent_worker: Worker[None] | None = None
         self.session_mode: str = Mode.IDLE.value
@@ -152,7 +152,7 @@ class ChatPane(Widget):
         self.run_worker(_run())
 
     def _handle_chat(self, text: str) -> None:
-        self.append_message(ChatEntry(role="user", content=text))
+        self.append_message(ChatMessageData(role="user", content=text))
 
         self._agent_busy = True
 
@@ -205,7 +205,7 @@ class ChatPane(Widget):
                     await area.mount(widget)
                     body = "(no response)"
 
-                self.messages.append(ChatEntry(role="agent", content=body))
+                self.messages.append(ChatMessageData(role="agent", content=body))
 
             except asyncio.CancelledError:
                 if widget is None:
@@ -214,7 +214,7 @@ class ChatPane(Widget):
                 if body:
                     if stream is not None:
                         await stream.stop()
-                    self.messages.append(ChatEntry(role="agent", content=body))
+                    self.messages.append(ChatMessageData(role="agent", content=body))
                 else:
                     cancelled_msg = ChatMessage(role="agent", content="*(cancelled)*")
                     await area.mount(cancelled_msg)
@@ -227,7 +227,7 @@ class ChatPane(Widget):
 
         self._agent_worker = self.run_worker(_run_agent())
 
-    def append_message(self, msg: ChatEntry) -> None:
+    def append_message(self, msg: ChatMessageData) -> None:
         """Append a message to the history and mount its widget."""
         self.messages.append(msg)
         area = self.query_one("#message-area", VerticalScroll)
@@ -267,7 +267,7 @@ class ChatPane(Widget):
         else:
             self.session_context = ""
 
-        self.append_message(ChatEntry(role="system", content=f"Selected topic: {topic.name}"))
+        self.append_message(ChatMessageData(role="system", content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
         self._restore_chat_input()

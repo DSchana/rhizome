@@ -87,13 +87,13 @@ class ChatScreen(Screen):
 
     async def _close_active_tab(self) -> None:
         """Close the active chat session tab (refuses to close the last one)."""
-        from rhizome.tui.state import ChatEntry
+        from rhizome.tui.types import ChatMessageData
 
         tabs = self.query_one("#tabs", TabbedContent)
         pane_count = len(list(tabs.query(TabPane)))
         if pane_count <= 1:
             self.app.active_chat_pane.append_message(  # type: ignore[attr-defined]
-                ChatEntry(role="system", content="Cannot close the last session tab.")
+                ChatMessageData(role="system", content="Cannot close the last session tab.")
             )
             return
         active_id = tabs.active

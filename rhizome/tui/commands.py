@@ -54,21 +54,21 @@ def parse_input(text: str) -> ParsedCommand | None:
 
 
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.state import ChatEntry
+    from rhizome.tui.types import ChatMessageData
 
-    app.active_chat_pane.append_message(ChatEntry(role="system", content="/learn — context selection coming soon"))
+    app.active_chat_pane.append_message(ChatMessageData(role="system", content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.state import ChatEntry
+    from rhizome.tui.types import ChatMessageData
 
-    app.active_chat_pane.append_message(ChatEntry(role="system", content="/review — review mode coming soon"))
+    app.active_chat_pane.append_message(ChatMessageData(role="system", content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.state import ChatEntry
+    from rhizome.tui.types import ChatMessageData
 
-    app.active_chat_pane.append_message(ChatEntry(role="system", content="/options — settings coming soon"))
+    app.active_chat_pane.append_message(ChatMessageData(role="system", content="/options — settings coming soon"))
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:
@@ -97,7 +97,7 @@ async def _handle_explore(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_help(app: CurriculumApp, args: str) -> None:
     """Show available commands, or details for a specific command."""
-    from rhizome.tui.state import ChatEntry
+    from rhizome.tui.types import ChatMessageData
 
     if args:
         name = args.strip().lstrip("/")
@@ -115,7 +115,7 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
         lines.append("Type /help <command> for details.")
         text = "\n".join(lines)
 
-    app.active_chat_pane.append_message(ChatEntry(role="agent", content=text))
+    app.active_chat_pane.append_message(ChatMessageData(role="agent", content=text))
 
 
 async def _handle_new(app: CurriculumApp, _args: str) -> None:
