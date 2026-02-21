@@ -137,6 +137,9 @@ async def _handle_rename(app: CurriculumApp, args: str) -> None:
         )
         return
 
+    if len(new_name) > 20:
+        new_name = new_name[:20] + "…"
+
     from textual.widgets import TabbedContent
 
     tabs = app.screen.query_one("#tabs", TabbedContent)
