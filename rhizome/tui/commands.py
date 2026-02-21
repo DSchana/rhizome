@@ -126,6 +126,26 @@ async def _handle_clear(app: CurriculumApp, _args: str) -> None:
     pane.messages.clear()
 
 
+async def _handle_rename(app: CurriculumApp, args: str) -> None:
+    """Rename the active chat session tab."""
+    from rhizome.tui.types import ChatMessageData, Role
+
+    new_name = args.strip()
+    if not new_name:
+        app.active_chat_pane.append_message(
+            ChatMessageData(role=Role.SYSTEM, content="Usage: /rename <name>")
+        )
+        return
+
+    from textual.widgets import TabbedContent
+
+    tabs = app.screen.query_one("#tabs", TabbedContent)
+    active_pane = tabs.active_pane
+    if active_pane is not None:
+        tab_widget = tabs.get_tab(active_pane.id)
+        tab_widget.label = new_name
+
+
 async def _handle_new(app: CurriculumApp, _args: str) -> None:
     """Create a new chat session tab."""
     from rhizome.tui.screens.chat import ChatScreen
@@ -157,6 +177,7 @@ COMMANDS: dict[str, Command] = {
     "help": Command("help", "Show available commands and usage", _handle_help),
     "learn": Command("learn", "Enter learning mode: set curriculum and topic context", _handle_learn),
     "new": Command("new", "Open a new chat session tab", _handle_new),
+    "rename": Command("rename", "Rename the current tab", _handle_rename),
     "review": Command("review", "Enter review mode: quizzes and practice", _handle_review),
     "options": Command("options", "Open settings and configuration", _handle_options),
     "quit": Command("quit", "Quit", None),
