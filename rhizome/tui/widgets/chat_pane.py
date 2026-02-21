@@ -10,8 +10,9 @@ from textual.widget import Widget
 from textual.widgets import Markdown, Static
 from textual.worker import Worker
 
+from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
-from rhizome.tui.state import ChatEntry
+from rhizome.tui.state import ChatEntry, Mode
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.message import ChatMessage
@@ -47,6 +48,10 @@ class ChatPane(Widget):
         self.messages: list[ChatEntry] = []
         self._agent_busy: bool = False
         self._agent_worker: Worker[None] | None = None
+        self.session_mode: str = Mode.IDLE.value
+        self.session_context: str = ""
+        self.active_curriculum: Curriculum | None = None
+        self.active_topic: Topic | None = None
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -170,15 +175,15 @@ class ChatPane(Widget):
                     app.agent,  # type: ignore[attr-defined]
                     app.session_factory,  # type: ignore[attr-defined]
                     self.messages,
-                    mode=app.mode,  # type: ignore[attr-defined]
+                    mode=self.session_mode,
                     curriculum_name=(
-                        app.active_curriculum.name  # type: ignore[attr-defined]
-                        if getattr(app, "active_curriculum", None)
+                        self.active_curriculum.name
+                        if self.active_curriculum
                         else ""
                     ),
                     topic_name=(
-                        app.active_topic.name  # type: ignore[attr-defined]
-                        if getattr(app, "active_topic", None)
+                        self.active_topic.name
+                        if self.active_topic
                         else ""
                     ),
                 ):
@@ -252,7 +257,16 @@ class ChatPane(Widget):
 
     def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
         topic = event.topic
-        self.app.update_context(None, topic)  # type: ignore[attr-defined]
+        self.active_topic = topic
+        if self.active_curriculum and topic:
+            self.session_context = f"{self.active_curriculum.name} > {topic.name}"
+        elif self.active_curriculum:
+            self.session_context = self.active_curriculum.name
+        elif topic:
+            self.session_context = topic.name
+        else:
+            self.session_context = ""
+        self.app.sync_active_session()  # type: ignore[attr-defined]
         self.append_message(ChatEntry(role="system", content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()

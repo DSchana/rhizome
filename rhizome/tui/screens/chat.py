@@ -1,24 +1,45 @@
-"""Main chat screen — thin wrapper around ChatPane + StatusBar."""
+"""Main chat screen — tabbed chat sessions + StatusBar."""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.screen import Screen
+from textual.widgets import TabbedContent, TabPane
 
 from rhizome.tui.widgets.chat_pane import ChatPane
 from rhizome.tui.widgets.status_bar import StatusBar
 
 
-class ChatScreen(Screen):
-    """Primary screen: composes a ChatPane and a StatusBar."""
+class ChatTabPane(TabPane):
+    """A TabPane that composes a ChatPane as its content."""
 
-    BINDINGS = [("ctrl+c", "cancel_agent", "Cancel agent")]
+    def compose(self) -> ComposeResult:
+        yield ChatPane()
+
+
+class ChatScreen(Screen):
+    """Primary screen: composes tabbed ChatPanes and a StatusBar."""
+
+    BINDINGS = [
+        ("ctrl+c", "cancel_agent", "Cancel agent"),
+        ("ctrl+n", "new_tab", "New tab"),
+    ]
 
     DEFAULT_CSS = """
     ChatScreen {
         layout: grid;
         grid-size: 1;
         grid-rows: 1fr auto;
+    }
+    TabbedContent {
+        height: 1fr;
+    }
+    TabPane {
+        height: 1fr;
+        padding: 0;
+    }
+    ChatPane {
+        height: 1fr;
     }
     #status-bar {
         dock: bottom;
@@ -29,8 +50,13 @@ class ChatScreen(Screen):
     }
     """
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._tab_counter: int = 1
+
     def compose(self) -> ComposeResult:
-        yield ChatPane(id="chat-pane")
+        with TabbedContent(id="tabs"):
+            yield ChatTabPane("Session 1", id="session-1")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -38,5 +64,22 @@ class ChatScreen(Screen):
         self.watch(self.app, "mode", lambda val: setattr(bar, "mode", val))
         self.watch(self.app, "context", lambda val: setattr(bar, "context", val))
 
+    async def _add_tab(self, label: str | None = None) -> None:
+        """Create a new chat session tab."""
+        self._tab_counter += 1
+        tab_id = f"session-{self._tab_counter}"
+        tab_label = label or f"Session {self._tab_counter}"
+        tabs = self.query_one("#tabs", TabbedContent)
+        pane = ChatTabPane(tab_label, id=tab_id)
+        await tabs.add_pane(pane)
+        tabs.active = tab_id
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        """Sync the active tab's session state into app reactives."""
+        self.app.sync_active_session()  # type: ignore[attr-defined]
+
     def action_cancel_agent(self) -> None:
-        self.query_one("#chat-pane", ChatPane).cancel_agent()
+        self.app.active_chat_pane.cancel_agent()  # type: ignore[attr-defined]
+
+    def action_new_tab(self) -> None:
+        self.run_worker(self._add_tab())

@@ -56,26 +56,26 @@ def parse_input(text: str) -> ParsedCommand | None:
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.query_one("ChatPane").append_message(ChatEntry(role="system", content="/learn — context selection coming soon"))
+    app.active_chat_pane.append_message(ChatEntry(role="system", content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.query_one("ChatPane").append_message(ChatEntry(role="system", content="/review — review mode coming soon"))
+    app.active_chat_pane.append_message(ChatEntry(role="system", content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.state import ChatEntry
 
-    app.screen.query_one("ChatPane").append_message(ChatEntry(role="system", content="/options — settings coming soon"))
+    app.active_chat_pane.append_message(ChatEntry(role="system", content="/options — settings coming soon"))
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:
     from rhizome.tui.widgets.chat_input import ChatInput
     from rhizome.tui.widgets.topic_tree import TopicTree
 
-    pane = app.screen.query_one("ChatPane")
+    pane = app.active_chat_pane
     # If a topic tree already exists, just focus it instead of creating a new one.
     existing = list(pane.query(TopicTree))
     if existing:
@@ -115,7 +115,34 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
         lines.append("Type /help <command> for details.")
         text = "\n".join(lines)
 
-    app.screen.query_one("ChatPane").append_message(ChatEntry(role="agent", content=text))
+    app.active_chat_pane.append_message(ChatEntry(role="agent", content=text))
+
+
+async def _handle_new(app: CurriculumApp, _args: str) -> None:
+    """Create a new chat session tab."""
+    from rhizome.tui.screens.chat import ChatScreen
+
+    screen = app.screen
+    if isinstance(screen, ChatScreen):
+        await screen._add_tab()
+
+
+async def _handle_close(app: CurriculumApp, _args: str) -> None:
+    """Close the current chat session tab."""
+    from textual.widgets import TabbedContent, TabPane
+
+    from rhizome.tui.state import ChatEntry
+
+    tabs = app.screen.query_one("#tabs", TabbedContent)
+    pane_count = len(list(tabs.query(TabPane)))
+    if pane_count <= 1:
+        app.active_chat_pane.append_message(
+            ChatEntry(role="system", content="Cannot close the last session tab.")
+        )
+        return
+    active_id = tabs.active
+    if active_id:
+        tabs.remove_pane(active_id)
 
 
 # ---------------------------------------------------------------------------
@@ -125,9 +152,11 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
 # ---------------------------------------------------------------------------
 
 COMMANDS: dict[str, Command] = {
+    "close": Command("close", "Close the current chat session tab", _handle_close),
     "explore": Command("explore", "Browse and select topics from the topic tree", _handle_explore),
     "help": Command("help", "Show available commands and usage", _handle_help),
     "learn": Command("learn", "Enter learning mode: set curriculum and topic context", _handle_learn),
+    "new": Command("new", "Open a new chat session tab", _handle_new),
     "review": Command("review", "Enter review mode: quizzes and practice", _handle_review),
     "options": Command("options", "Open settings and configuration", _handle_options),
     "quit": Command("quit", "Quit", None),

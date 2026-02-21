@@ -5,12 +5,14 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from textual.app import App
 from textual.reactive import reactive
+from textual.widgets import TabbedContent
 
 from rhizome.agent import build_agent
 from rhizome.config import get_default_db_path
 from rhizome.db import Curriculum, Topic, get_engine, get_session_factory
 from rhizome.tui.screens.chat import ChatScreen
 from rhizome.tui.state import Mode
+from rhizome.tui.widgets.chat_pane import ChatPane
 
 
 class CurriculumApp(App):
@@ -36,24 +38,47 @@ class CurriculumApp(App):
         self.session_factory: async_sessionmaker = get_session_factory(engine)
         self.agent = build_agent()
 
+    @property
+    def active_chat_pane(self) -> ChatPane:
+        """Return the ChatPane in the currently active tab."""
+        tabs = self.screen.query_one("#tabs", TabbedContent)
+        active = tabs.active_pane
+        assert active is not None
+        return active.query_one(ChatPane)
+
+    def sync_active_session(self) -> None:
+        """Mirror the active pane's session state into app-level reactives."""
+        try:
+            pane = self.active_chat_pane
+        except Exception:
+            return
+        self.active_curriculum = pane.active_curriculum
+        self.active_topic = pane.active_topic
+        self.mode = pane.session_mode
+        self.context = pane.session_context
+
     def set_mode(self, new_mode: Mode) -> None:
-        """Update the current mode and sync the reactive property."""
-        self.mode = new_mode.value
+        """Update the current mode on the active pane and sync."""
+        pane = self.active_chat_pane
+        pane.session_mode = new_mode.value
+        self.sync_active_session()
 
     def update_context(
         self,
         curriculum: Curriculum | None,
         topic: Topic | None,
     ) -> None:
-        """Update the active curriculum/topic and sync the context label."""
-        self.active_curriculum = curriculum
-        self.active_topic = topic
+        """Update the active curriculum/topic on the active pane and sync."""
+        pane = self.active_chat_pane
+        pane.active_curriculum = curriculum
+        pane.active_topic = topic
         if curriculum and topic:
-            self.context = f"{curriculum.name} > {topic.name}"
+            pane.session_context = f"{curriculum.name} > {topic.name}"
         elif curriculum:
-            self.context = curriculum.name
+            pane.session_context = curriculum.name
         else:
-            self.context = ""
+            pane.session_context = ""
+        self.sync_active_session()
 
     def on_mount(self) -> None:
         self.push_screen(ChatScreen())

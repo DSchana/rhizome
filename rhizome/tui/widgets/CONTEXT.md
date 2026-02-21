@@ -4,7 +4,7 @@ Reusable Textual widgets shared across screens.
 
 ## Files
 
-- **chat_pane.py** — `ChatPane(Widget)`: core chat UI containing the message area, chat input, and command palette. Holds chat state (`messages`, `_agent_busy`, `_agent_worker`) and all message/command/topic-tree handlers. Composed by `ChatScreen`.
+- **chat_pane.py** — `ChatPane(Widget)`: core chat UI containing the message area, chat input, and command palette. Holds per-session state (`messages`, `_agent_busy`, `_agent_worker`, `session_mode`, `session_context`, `active_curriculum`, `active_topic`) and all message/command/topic-tree handlers. Each `ChatPane` instance represents an independent chat session; multiple instances live inside `TabbedContent` tabs in `ChatScreen`.
 - **status_bar.py** — `StatusBar(Static)`: persistent bar at the bottom of the chat screen with reactive `mode` and `context` properties.
 - **message.py** — `ChatMessage(Markdown)`: renders a single chat message with markdown support, a role prefix (`you` / `agent`), and role-based CSS class for styling.
 - **thinking.py** — `ThinkingIndicator(Static)`: animated braille-spinner shown while awaiting the agent's first token.
