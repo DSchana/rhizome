@@ -129,20 +129,11 @@ async def _handle_new(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_close(app: CurriculumApp, _args: str) -> None:
     """Close the current chat session tab."""
-    from textual.widgets import TabbedContent, TabPane
+    from rhizome.tui.screens.chat import ChatScreen
 
-    from rhizome.tui.state import ChatEntry
-
-    tabs = app.screen.query_one("#tabs", TabbedContent)
-    pane_count = len(list(tabs.query(TabPane)))
-    if pane_count <= 1:
-        app.active_chat_pane.append_message(
-            ChatEntry(role="system", content="Cannot close the last session tab.")
-        )
-        return
-    active_id = tabs.active
-    if active_id:
-        tabs.remove_pane(active_id)
+    screen = app.screen
+    if isinstance(screen, ChatScreen):
+        await screen._close_active_tab()
 
 
 # ---------------------------------------------------------------------------

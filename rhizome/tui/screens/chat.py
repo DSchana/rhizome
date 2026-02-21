@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import TabbedContent, TabPane
 
@@ -23,6 +24,9 @@ class ChatScreen(Screen):
     BINDINGS = [
         ("ctrl+c", "cancel_agent", "Cancel agent"),
         ("ctrl+n", "new_tab", "New tab"),
+        # priority=True so the screen captures Ctrl+W before focused child
+        # widgets (e.g. ChatInput) consume it.
+        Binding("ctrl+w", "close_tab", "Close tab", priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -80,6 +84,24 @@ class ChatScreen(Screen):
 
     def action_cancel_agent(self) -> None:
         self.app.active_chat_pane.cancel_agent()  # type: ignore[attr-defined]
+
+    async def _close_active_tab(self) -> None:
+        """Close the active chat session tab (refuses to close the last one)."""
+        from rhizome.tui.state import ChatEntry
+
+        tabs = self.query_one("#tabs", TabbedContent)
+        pane_count = len(list(tabs.query(TabPane)))
+        if pane_count <= 1:
+            self.app.active_chat_pane.append_message(  # type: ignore[attr-defined]
+                ChatEntry(role="system", content="Cannot close the last session tab.")
+            )
+            return
+        active_id = tabs.active
+        if active_id:
+            tabs.remove_pane(active_id)
+
+    def action_close_tab(self) -> None:
+        self.run_worker(self._close_active_tab())
 
     def action_new_tab(self) -> None:
         self.run_worker(self._add_tab())
