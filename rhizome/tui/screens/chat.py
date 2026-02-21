@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Markdown, Static
+from textual.worker import Worker
 
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.state import ChatEntry
@@ -20,6 +23,8 @@ from rhizome.tui.widgets.topic_tree import TopicTree
 
 class ChatScreen(Screen):
     """Primary screen: scrollable message area + input at the bottom."""
+
+    BINDINGS = [("ctrl+c", "cancel_agent", "Cancel agent")]
 
     DEFAULT_CSS = """
     ChatScreen {
@@ -50,6 +55,8 @@ class ChatScreen(Screen):
     def __init__(self) -> None:
         super().__init__()
         self.messages: list[ChatEntry] = []
+        self._agent_busy: bool = False
+        self._agent_worker: Worker[None] | None = None
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -102,14 +109,24 @@ class ChatScreen(Screen):
         chat_input.insert(f"/{event.name} ")
         self._hide_palette()
 
+    def action_cancel_agent(self) -> None:
+        if self._agent_busy and self._agent_worker is not None:
+            self._agent_worker.cancel()
+
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         self._hide_palette()
+
+        if self._agent_busy:
+            self.notify("Agent is thinking, you can submit after it completes or interrupt with Ctrl+C")
+            return
 
         text = event.value.strip()
         if not text:
             return
 
-        self.query_one("#chat-input", ChatInput).push_history(text)
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.clear()
+        chat_input.push_history(text)
 
         command = parse_input(text)
         if command is not None:
@@ -148,12 +165,13 @@ class ChatScreen(Screen):
     def _handle_chat(self, text: str) -> None:
         self.append_message(ChatEntry(role="user", content=text))
 
+        self._agent_busy = True
+
         async def _run_agent() -> None:
             from rhizome.agent import stream_agent
 
             area = self.query_one("#message-area", VerticalScroll)
 
-            # Show a "thinking..." indicator while waiting for the first token.
             thinking = ThinkingIndicator()
             await area.mount(thinking)
             area.scroll_end(animate=False)
@@ -163,45 +181,65 @@ class ChatScreen(Screen):
             stream = None
             body = ""
 
-            async for chunk in stream_agent(
-                app.agent,  # type: ignore[attr-defined]
-                app.session_factory,  # type: ignore[attr-defined]
-                self.messages,
-                mode=app.mode,  # type: ignore[attr-defined]
-                curriculum_name=(
-                    app.active_curriculum.name  # type: ignore[attr-defined]
-                    if getattr(app, "active_curriculum", None)
-                    else ""
-                ),
-                topic_name=(
-                    app.active_topic.name  # type: ignore[attr-defined]
-                    if getattr(app, "active_topic", None)
-                    else ""
-                ),
-            ):
+            try:
+                async for chunk in stream_agent(
+                    app.agent,  # type: ignore[attr-defined]
+                    app.session_factory,  # type: ignore[attr-defined]
+                    self.messages,
+                    mode=app.mode,  # type: ignore[attr-defined]
+                    curriculum_name=(
+                        app.active_curriculum.name  # type: ignore[attr-defined]
+                        if getattr(app, "active_curriculum", None)
+                        else ""
+                    ),
+                    topic_name=(
+                        app.active_topic.name  # type: ignore[attr-defined]
+                        if getattr(app, "active_topic", None)
+                        else ""
+                    ),
+                ):
+                    if widget is None:
+                        await thinking.remove()
+                        widget = ChatMessage(role="agent")
+                        await area.mount(widget)
+                        stream = Markdown.get_stream(widget)
+                    body += chunk
+                    await stream.write(chunk)
+                    area.scroll_end(animate=False)
+
+                if stream is not None:
+                    await stream.stop()
+
                 if widget is None:
-                    # First token: remove spinner and mount the message widget.
                     await thinking.remove()
-                    widget = ChatMessage(role="agent")
+                    widget = ChatMessage(role="agent", content="(no response)")
                     await area.mount(widget)
-                    stream = Markdown.get_stream(widget)
-                body += chunk
-                await stream.write(chunk)
+                    body = "(no response)"
+
+                self.messages.append(ChatEntry(role="agent", content=body))
+
+            except asyncio.CancelledError:
+                # Clean up thinking indicator if still present.
+                if widget is None:
+                    await thinking.remove()
+
+                if body:
+                    # Finalize partial stream and keep partial content.
+                    if stream is not None:
+                        await stream.stop()
+                    self.messages.append(ChatEntry(role="agent", content=body))
+                else:
+                    # No tokens received — mount a cancelled message.
+                    cancelled_msg = ChatMessage(role="agent", content="*(cancelled)*")
+                    await area.mount(cancelled_msg)
+
                 area.scroll_end(animate=False)
 
-            if stream is not None:
-                await stream.stop()
+            finally:
+                self._agent_busy = False
+                self._agent_worker = None
 
-            # If the agent produced no tokens, still clean up the spinner.
-            if widget is None:
-                await thinking.remove()
-                widget = ChatMessage(role="agent", content="(no response)")
-                await area.mount(widget)
-                body = "(no response)"
-
-            self.messages.append(ChatEntry(role="agent", content=body))
-
-        self.run_worker(_run_agent())
+        self._agent_worker = self.run_worker(_run_agent())
 
     def append_message(self, msg: ChatEntry) -> None:
         """Append a message to the history and mount its widget."""

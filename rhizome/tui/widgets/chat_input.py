@@ -68,7 +68,6 @@ class ChatInput(TextArea):
 
             if text:
                 self.post_message(self.Submitted(input=self, value=text))
-                self.clear()
             event.stop()
             event.prevent_default()
 
