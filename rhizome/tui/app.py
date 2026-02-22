@@ -4,11 +4,11 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from textual.app import App
-from textual.reactive import reactive
 from textual.widgets import TabbedContent
 
 from rhizome.agent import build_agent
 from rhizome.config import get_default_db_path
+from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
 from rhizome.tui.screens.chat import ChatScreen
 from rhizome.tui.widgets.chat_pane import ChatPane
@@ -30,6 +30,15 @@ class CurriculumApp(App):
         engine = get_engine(db_path or get_default_db_path())
         self.session_factory: async_sessionmaker = get_session_factory(engine)
         self.agent = build_agent()
+        self.options: Options = Options.load()
+        self.options.subscribe(Options.Theme, self._on_theme_changed)
+        self.theme = self.options.get(Options.Theme)
+
+    async def _on_theme_changed(self, old: str, new: str) -> None:
+        self.theme = new
+
+    def on_mount(self) -> None:
+        self.push_screen(ChatScreen())
 
     @property
     def active_chat_pane(self) -> ChatPane | None:
@@ -39,6 +48,3 @@ class CurriculumApp(App):
         if active is None:
             return active
         return active.query_one(ChatPane)
-
-    def on_mount(self) -> None:
-        self.push_screen(ChatScreen())

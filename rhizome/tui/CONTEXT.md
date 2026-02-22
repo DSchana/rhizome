@@ -6,9 +6,10 @@ See `docs/architecture.md` for the overall TUI architecture.
 
 ## Files
 
-- **app.py** — `CurriculumApp(App)`: the main Textual application. Holds a `session_factory` for DB access and an `agent`, and pushes the `ChatScreen` on mount. Provides an `active_chat_pane` property to access the currently visible `ChatPane`. All session state (mode, context, curriculum, topic) lives in `ChatPane`, not at the app level.
+- **app.py** — `CurriculumApp(App)`: the main Textual application. Holds a `session_factory` for DB access, an `agent`, and a root-scope `Options` instance. Subscribes to `Options.Theme` for automatic theme switching. Pushes the `ChatScreen` on mount. Provides an `active_chat_pane` property to access the currently visible `ChatPane`. All session state (mode, context, curriculum, topic) lives in `ChatPane`, not at the app level.
 - **types.py** — Shared types: `Mode` enum (IDLE, LEARN, REVIEW), `Role` enum (USER, AGENT, SYSTEM), and `ChatMessageData` dataclass.
 - **commands.py** — `parse_input()` detects slash commands and returns a `ParsedCommand(name, args)` or `None` for regular chat text. `COMMANDS` is a `dict[str, Command]` registry mapping command names to `Command(name, description, handler)` dataclasses. Handlers are standalone `async (CurriculumApp, str) -> None` functions so they can be invoked by both the TUI and the agent layer. `/quit` is intentionally excluded from the registry — it is TUI-only and handled directly by the chat screen.
+- **options.py** — Hierarchical options system with scoped inheritance and pub/sub. Core types: `OptionScope` (Root, Session), `OptionSpec` base class with `ChoicesOptionSpec` and `IntRangeOptionSpec` subclasses, `OptionNamespace` for dotted grouping, and `OptionsMeta` metaclass that wires `resolved_name` paths. The `Options` class serves double duty: class-level `OptionSpec`/`OptionNamespace` members define the schema, while instances hold scoped `_values` dicts with parent/child links for inheritance, async subscriber notifications on change, and JSONC persistence (root scope only). Options file lives at `~/.config/rhizome/options.jsonc`.
 - **`__main__.py`** — Entry point: `uv run python -m rhizome.tui`.
 
 ## Subpackages
@@ -20,3 +21,4 @@ See `docs/architecture.md` for the overall TUI architecture.
   - `thinking.py` — `ThinkingIndicator(Static)` animated spinner shown while awaiting agent response.
   - `chat_input.py` — `ChatInput(TextArea)` that submits on Enter and inserts newlines on Ctrl+Enter.
   - `topic_tree.py` — `TopicTree(Tree[Topic])` for browsing the topic hierarchy. Mounted by the `/explore` command.
+  - `options_editor.py` — `OptionsEditor(Widget)` inline widget for editing options. Receives an `Options` instance and uses `WIDGET_BUILDERS` dispatch to create appropriate widgets per spec type. On change, calls `options.set()` directly — pub/sub handles all side effects. Posts `Done` message when dismissed.

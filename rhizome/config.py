@@ -8,6 +8,13 @@ import platformdirs
 APP_NAME = "rhizome"
 
 
+def get_config_dir() -> Path:
+    """Return the OS-appropriate config directory, creating it if needed."""
+    path = Path(platformdirs.user_config_dir(APP_NAME))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def get_data_dir() -> Path:
     """Return the OS-appropriate data directory, creating it if needed."""
     path = Path(platformdirs.user_data_dir(APP_NAME))
@@ -24,3 +31,8 @@ def get_default_db_path() -> Path:
     if env := os.environ.get("RHIZOME_DB"):
         return Path(env)
     return get_data_dir() / "curriculum.db"
+
+
+def get_options_path() -> Path:
+    """Return the path to the global options JSONC file."""
+    return get_config_dir() / "options.jsonc"

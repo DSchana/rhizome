@@ -12,11 +12,13 @@ from textual.worker import Worker
 
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
+from rhizome.tui.options import Options, OptionScope
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
+from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
 from rhizome.tui.widgets.topic_tree import TopicTree
 
@@ -52,6 +54,7 @@ class ChatPane(Widget):
         self.session_context: str = ""
         self.active_curriculum: Curriculum | None = None
         self.active_topic: Topic | None = None
+        self.options: Options | None = None  # set on mount when app is available
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -59,9 +62,14 @@ class ChatPane(Widget):
         yield CommandPalette(id="command-palette")
 
     def on_mount(self) -> None:
+        self.options = Options(scope=OptionScope.Session, parent=self.app.options)  # type: ignore[attr-defined]
         area = self.query_one("#message-area", VerticalScroll)
         area.mount(WelcomeHeader())
         self.query_one("#chat-input", ChatInput).focus()
+
+    def on_unmount(self) -> None:
+        if self.options is not None:
+            self.options.detach()
 
     def on_text_area_changed(self, event: ChatInput.Changed) -> None:
         text = event.text_area.text
@@ -282,3 +290,9 @@ class ChatPane(Widget):
 
     def on_chat_input_focus_tree_requested(self, event: ChatInput.FocusTreeRequested) -> None:
         self._focus_latest_topic_tree()
+
+    def on_options_editor_done(self, event: OptionsEditor.Done) -> None:
+        editors = list(self.query(OptionsEditor))
+        for ed in editors:
+            ed.remove()
+        self._restore_chat_input()

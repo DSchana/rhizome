@@ -65,10 +65,86 @@ async def _handle_review(app: CurriculumApp, _args: str) -> None:
     app.active_chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content="/review — review mode coming soon"))
 
 
-async def _handle_options(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.types import ChatMessageData, Role
+async def _handle_options(app: CurriculumApp, args: str) -> None:
+    import os
+    import subprocess
+    import tempfile
 
-    app.active_chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content="/options — settings coming soon"))
+    from rhizome.tui.options import Options, OptionScope, parse_jsonc
+    from rhizome.tui.types import ChatMessageData, Role
+    from rhizome.tui.widgets.options_editor import OptionsEditor
+
+    pane = app.active_chat_pane
+    parts = args.strip().split()
+    use_editor = "-e" in parts
+    is_global = "global" in parts
+
+    target = app.options if is_global else pane.options
+
+    if use_editor:
+        # Editor mode: suspend TUI and open $EDITOR
+        # Build a JSONC snapshot of current values
+        import json
+
+        specs = Options.spec()
+        lines = ["{"]
+        for i, s in enumerate(specs):
+            for comment_line in s.jsonc_comment().splitlines():
+                if comment_line.startswith("//"):
+                    lines.append(f"    {comment_line}")
+                else:
+                    lines.append(f"    // {comment_line}")
+            value = target.get(s)
+            json_val = json.dumps(value)
+            comma = "," if i < len(specs) - 1 else ""
+            lines.append(f"    {json.dumps(s.resolved_name)}: {json_val}{comma}")
+            if i < len(specs) - 1:
+                lines.append("")
+        lines.append("}")
+        jsonc_text = "\n".join(lines) + "\n"
+
+        editor = os.environ.get("EDITOR", "vi")
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jsonc", prefix="rhizome-options-", delete=False
+        ) as tmp:
+            tmp.write(jsonc_text)
+            tmp_path = tmp.name
+
+        try:
+            with app.suspend():
+                subprocess.run([editor, tmp_path])
+
+            from pathlib import Path
+
+            new_text = Path(tmp_path).read_text(encoding="utf-8")
+            new_opts = parse_jsonc(new_text)
+
+            spec_map = {s.resolved_name: s for s in Options.spec()}
+            for key, val in new_opts.items():
+                s = spec_map.get(key)
+                if s is not None:
+                    await target.set(s, val)
+
+            pane.append_message(
+                ChatMessageData(role=Role.SYSTEM, content="Options updated.")
+            )
+        except Exception as exc:
+            pane.append_message(
+                ChatMessageData(role=Role.SYSTEM, content=f"Error applying options: {exc}")
+            )
+        finally:
+            import os as _os
+
+            _os.unlink(tmp_path)
+        return
+
+    # Inline widget mode
+    area = pane.query_one("#message-area")
+    editor_widget = OptionsEditor(target, id="options-editor")
+    await area.mount(editor_widget)
+    area.scroll_end(animate=False)
+    editor_widget.focus()
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:
@@ -137,8 +213,12 @@ async def _handle_rename(app: CurriculumApp, args: str) -> None:
         )
         return
 
-    if len(new_name) > 20:
-        new_name = new_name[:20] + "…"
+    from rhizome.tui.options import Options
+
+    pane = app.active_chat_pane
+    max_len = pane.options.get(Options.TabMaxLength)
+    if len(new_name) > max_len:
+        new_name = new_name[:max_len] + "…"
 
     from textual.widgets import TabbedContent
 
