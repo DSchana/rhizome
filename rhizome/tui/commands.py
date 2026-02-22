@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from textual.widgets import TabbedContent
+
+from rhizome.tui.options import Options, OptionScope, parse_jsonc
+from rhizome.tui.screens.chat import ChatScreen, ChatTabPane
+from rhizome.tui.types import ChatMessageData, Role
+from rhizome.tui.widgets.options_editor import OptionsEditor
+from rhizome.tui.widgets.topic_tree import TopicTree
 
 if TYPE_CHECKING:
     from rhizome.tui.app import CurriculumApp
+    from rhizome.tui.widgets.chat_input import ChatInput
 
 
 @dataclass
@@ -54,26 +68,14 @@ def parse_input(text: str) -> ParsedCommand | None:
 
 
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.types import ChatMessageData, Role
-
     app.active_chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content="/learn — context selection coming soon"))
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.types import ChatMessageData, Role
-
     app.active_chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content="/review — review mode coming soon"))
 
 
 async def _handle_options(app: CurriculumApp, args: str) -> None:
-    import os
-    import subprocess
-    import tempfile
-
-    from rhizome.tui.options import Options, OptionScope, parse_jsonc
-    from rhizome.tui.types import ChatMessageData, Role
-    from rhizome.tui.widgets.options_editor import OptionsEditor
-
     pane = app.active_chat_pane
     parts = args.strip().split()
     use_editor = "-e" in parts
@@ -84,8 +86,6 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
     if use_editor:
         # Editor mode: suspend TUI and open $EDITOR
         # Build a JSONC snapshot of current values
-        import json
-
         specs = Options.spec()
         lines = ["{"]
         for i, s in enumerate(specs):
@@ -115,8 +115,6 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
             with app.suspend():
                 subprocess.run([editor, tmp_path])
 
-            from pathlib import Path
-
             new_text = Path(tmp_path).read_text(encoding="utf-8")
             new_opts = parse_jsonc(new_text)
 
@@ -134,9 +132,7 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
                 ChatMessageData(role=Role.SYSTEM, content=f"Error applying options: {exc}")
             )
         finally:
-            import os as _os
-
-            _os.unlink(tmp_path)
+            os.unlink(tmp_path)
         return
 
     # Inline widget mode
@@ -148,9 +144,6 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
 
 
 async def _handle_explore(app: CurriculumApp, _args: str) -> None:
-    from rhizome.tui.widgets.chat_input import ChatInput
-    from rhizome.tui.widgets.topic_tree import TopicTree
-
     pane = app.active_chat_pane
     # If a topic tree already exists, just focus it instead of creating a new one.
     existing = list(pane.query(TopicTree))
@@ -166,15 +159,13 @@ async def _handle_explore(app: CurriculumApp, _args: str) -> None:
         await area.mount(tree)
         area.scroll_end(animate=False)
         tree.focus()
-    pane.query_one("#chat-input", ChatInput).placeholder = (
+    pane.query_one("#chat-input").placeholder = (
         "Use Ctrl+Enter to exit the topic viewer"
     )
 
 
 async def _handle_help(app: CurriculumApp, args: str) -> None:
     """Show available commands, or details for a specific command."""
-    from rhizome.tui.types import ChatMessageData, Role
-
     if args:
         name = args.strip().lstrip("/")
         cmd = COMMANDS.get(name)
@@ -204,18 +195,12 @@ async def _handle_clear(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_rename(app: CurriculumApp, args: str) -> None:
     """Rename the active chat session tab."""
-    from rhizome.tui.types import ChatMessageData, Role
-
     new_name = args.strip()
     if not new_name:
         app.active_chat_pane.append_message(
             ChatMessageData(role=Role.SYSTEM, content="Usage: /rename <name>")
         )
         return
-
-    from textual.widgets import TabbedContent
-
-    from rhizome.tui.screens.chat import ChatTabPane
 
     tabs = app.screen.query_one("#tabs", TabbedContent)
     active_pane = tabs.active_pane
@@ -226,8 +211,6 @@ async def _handle_rename(app: CurriculumApp, args: str) -> None:
 
 async def _handle_new(app: CurriculumApp, _args: str) -> None:
     """Create a new chat session tab."""
-    from rhizome.tui.screens.chat import ChatScreen
-
     screen = app.screen
     if isinstance(screen, ChatScreen):
         await screen._add_tab()
@@ -235,8 +218,6 @@ async def _handle_new(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_close(app: CurriculumApp, _args: str) -> None:
     """Close the current chat session tab."""
-    from rhizome.tui.screens.chat import ChatScreen
-
     screen = app.screen
     if isinstance(screen, ChatScreen):
         await screen._close_active_tab()

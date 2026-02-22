@@ -7,6 +7,8 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import TabbedContent, TabPane
 
+from rhizome.tui.options import Options
+from rhizome.tui.types import ChatMessageData, Role
 from rhizome.tui.widgets.chat_pane import ChatPane
 from rhizome.tui.widgets.status_bar import StatusBar
 
@@ -85,7 +87,6 @@ class ChatScreen(Screen):
         self._tab_counter: int = 1
 
     def compose(self) -> ComposeResult:
-        from rhizome.tui.options import Options
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
         with TabbedContent(id="tabs"):
             yield ChatTabPane("Session 1", tab_max_length=max_len, id="session-1")
@@ -102,7 +103,6 @@ class ChatScreen(Screen):
         tab_id = f"session-{self._tab_counter}"
         tab_label = label or f"Session {self._tab_counter}"
         tabs = self.query_one("#tabs", TabbedContent)
-        from rhizome.tui.options import Options
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
         pane = ChatTabPane(tab_label, tab_max_length=max_len, id=tab_id)
         await tabs.add_pane(pane)
@@ -117,8 +117,6 @@ class ChatScreen(Screen):
 
     async def _close_active_tab(self) -> None:
         """Close the active chat session tab (refuses to close the last one)."""
-        from rhizome.tui.types import ChatMessageData, Role
-
         tabs = self.query_one("#tabs", TabbedContent)
         pane_count = len(list(tabs.query(TabPane)))
         if pane_count <= 1:

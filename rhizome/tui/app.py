@@ -10,7 +10,7 @@ from rhizome.agent import build_agent
 from rhizome.config import get_default_db_path
 from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
-from rhizome.tui.screens.chat import ChatScreen
+from rhizome.tui.screens.chat import ChatScreen, ChatTabPane
 from rhizome.tui.widgets.chat_pane import ChatPane
 
 
@@ -39,8 +39,6 @@ class CurriculumApp(App):
         self.theme = new
 
     async def _on_tab_max_length_changed(self, old: int, new: int) -> None:
-        from rhizome.tui.screens.chat import ChatTabPane
-
         for pane in self.screen.query(ChatTabPane):
             pane.update_tab_max_length(new)
 

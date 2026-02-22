@@ -10,6 +10,7 @@ from textual.widget import Widget
 from textual.widgets import Markdown, Static
 from textual.worker import Worker
 
+from rhizome.agent import stream_agent
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.options import Options, OptionScope
@@ -165,8 +166,6 @@ class ChatPane(Widget):
         self._agent_busy = True
 
         async def _run_agent() -> None:
-            from rhizome.agent import stream_agent
-
             area = self.query_one("#message-area", VerticalScroll)
 
             thinking = ThinkingIndicator()
