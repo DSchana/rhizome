@@ -68,3 +68,7 @@ Both `__init__.py` files re-export all public symbols.
 - `docs/schema-proposal.md` — Detailed schema design with rationale and example SQL
 - `docs/work-report-schema-implementation.md` — SQLAlchemy ORM patterns and async implementation guide
 - `docs/braindump.md` — Product vision (learning phases, Anki/Obsidian integration plans)
+
+## Misc Notes
+
+- While there _is_ a `TODO.md` at the root level of the repo, you are _not_ to read it or modify it unless explicitly informed.
