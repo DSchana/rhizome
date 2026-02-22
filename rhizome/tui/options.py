@@ -90,6 +90,62 @@ class ChoicesOptionSpec(OptionSpec):
         return f"{self.help}\n// Choices: {', '.join(str(c) for c in self.choices)}"
 
 
+class ConditionalChoicesOptionSpec(OptionSpec):
+    """Option whose available choices depend on the current value of another option."""
+
+    def __init__(
+        self,
+        name: str,
+        scope: OptionScope,
+        help: str,
+        condition: OptionSpec,
+        choices: dict[Any, list[Any]],
+        defaults: dict[Any, Any],
+    ) -> None:
+        self.condition = condition
+        self._choices = choices
+        self.defaults = defaults
+        default = defaults[condition.default]
+        super().__init__(name, scope, default, help)
+
+    def validate(self, value: Any, *, condition_value: Any = None) -> Any:
+        """Validate *value* against the choices for *condition_value*.
+
+        When *condition_value* is ``None`` (e.g. during JSONC load), accept any
+        value present in *any* branch.
+        """
+        if condition_value is None:
+            all_values = [v for branch in self._choices.values() for v in branch]
+            if value not in all_values:
+                raise ValueError(
+                    f"Must be one of: {', '.join(str(c) for c in all_values)}"
+                )
+        else:
+            valid = self._choices.get(condition_value, [])
+            if value not in valid:
+                raise ValueError(
+                    f"Must be one of: {', '.join(str(c) for c in valid)}"
+                )
+        return value
+
+    def choices_for(self, condition_value: Any) -> list[Any]:
+        """Return the choices list for a given condition value."""
+        return self._choices.get(condition_value, [])
+
+    def default_for(self, condition_value: Any) -> Any:
+        """Return the default for a given condition value."""
+        return self.defaults[condition_value]
+
+    def from_string(self, raw: str) -> Any:
+        return raw.strip()
+
+    def jsonc_comment(self) -> str:
+        lines = [self.help]
+        for cond, choices in self._choices.items():
+            lines.append(f"// {cond}: {', '.join(str(c) for c in choices)}")
+        return "\n".join(lines)
+
+
 class IntRangeOptionSpec(OptionSpec):
     """Option constrained to an integer range."""
 
@@ -227,15 +283,34 @@ class Options(metaclass=OptionsMeta):
     class Agent(OptionNamespace):
         name = "agent"
 
-        Model = ChoicesOptionSpec(
+        Provider = ChoicesOptionSpec(
+            name="provider",
+            scope=OptionScope.Root,
+            default="anthropic",
+            help="LLM provider",
+            choices=["anthropic", "openai"],
+        )
+
+        Model = ConditionalChoicesOptionSpec(
             name="model",
             scope=OptionScope.Session,
-            default="claude-sonnet-4-20250514",
             help="LLM model for the agent",
-            choices=[
-                "claude-sonnet-4-20250514",
-                "claude-haiku-4-5-20251001",
-            ],
+            condition=Provider,
+            choices={
+                "anthropic": [
+                    "claude-sonnet-4-20250514",
+                    "claude-haiku-4-5-20251001",
+                ],
+                "openai": [
+                    "gpt-5.2",
+                    "gpt-5-mini",
+                    "gpt-5-nano",
+                ],
+            },
+            defaults={
+                "anthropic": "claude-sonnet-4-20250514",
+                "openai": "gpt-5.2",
+            },
         )
 
     # ---- Instance ----
@@ -251,6 +326,20 @@ class Options(metaclass=OptionsMeta):
         if scope == OptionScope.Root:
             for s in self.spec():
                 self._values[s.resolved_name] = s.default
+
+        # Auto-subscribe: when a condition option changes, reset dependents
+        for s in self.spec():
+            if isinstance(s, ConditionalChoicesOptionSpec):
+
+                async def _on_condition_changed(
+                    old: Any, new: Any, dep: ConditionalChoicesOptionSpec = s
+                ) -> None:
+                    current = self.get(dep)
+                    valid = dep.choices_for(new)
+                    if current not in valid:
+                        await self.set(dep, dep.defaults[new], flush=True)
+
+                self.subscribe(s.condition, _on_condition_changed)
 
     # -- Read --
 
@@ -272,7 +361,11 @@ class Options(metaclass=OptionsMeta):
                 f"(minimum scope: {spec.scope.name})"
             )
         old = self.get(spec)
-        value = spec.validate(value)
+        if isinstance(spec, ConditionalChoicesOptionSpec):
+            condition_value = self.get(spec.condition)
+            value = spec.validate(value, condition_value=condition_value)
+        else:
+            value = spec.validate(value)
         self._values[spec.resolved_name] = value
         if old != value:
             for listener in self._subscribers.get(spec, []):

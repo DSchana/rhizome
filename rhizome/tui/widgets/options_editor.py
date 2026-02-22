@@ -13,6 +13,7 @@ from textual.widgets import Button, Input, Label, Select, Static
 
 from rhizome.tui.options import (
     ChoicesOptionSpec,
+    ConditionalChoicesOptionSpec,
     IntRangeOptionSpec,
     OptionScope,
     OptionSpec,
@@ -24,10 +25,15 @@ from rhizome.tui.options import (
 # ---------------------------------------------------------------------------
 
 WIDGET_BUILDERS: dict[type[OptionSpec], Any] = {
-    ChoicesOptionSpec: lambda spec, val, wid: Select(
+    ChoicesOptionSpec: lambda spec, val, wid, **kw: Select(
         [(str(c), c) for c in spec.choices], value=val, id=wid
     ),
-    IntRangeOptionSpec: lambda spec, val, wid: Input(
+    ConditionalChoicesOptionSpec: lambda spec, val, wid, **kw: Select(
+        [(str(c), c) for c in spec.choices_for(kw["condition_value"])],
+        value=val,
+        id=wid,
+    ),
+    IntRangeOptionSpec: lambda spec, val, wid, **kw: Input(
         str(val), placeholder=f"{spec.min}-{spec.max}", id=wid, type="integer"
     ),
 }
@@ -45,10 +51,15 @@ def _sanitize_id(resolved_name: str) -> str:
     return f"opt-{sanitized}"
 
 
-def _build_widget(spec: OptionSpec, value: Any, widget_id: str) -> Widget:
+def _build_widget(
+    spec: OptionSpec, value: Any, widget_id: str, options: Options | None = None
+) -> Widget:
     builder = WIDGET_BUILDERS.get(type(spec))
     if builder is not None:
-        return builder(spec, value, widget_id)
+        kwargs: dict[str, Any] = {}
+        if isinstance(spec, ConditionalChoicesOptionSpec) and options is not None:
+            kwargs["condition_value"] = options.get(spec.condition)
+        return builder(spec, value, widget_id, **kwargs)
     return Input(str(value), id=widget_id)
 
 
@@ -107,9 +118,33 @@ class OptionsEditor(Widget):
                 current = self._options.get(spec)
 
                 yield Label(f"{spec.help}  [{spec.resolved_name}]", classes="option-label")
-                yield _build_widget(spec, current, wid)
+                yield _build_widget(spec, current, wid, self._options)
 
             yield Button("Done", id="options-done", variant="primary")
+
+    def on_mount(self) -> None:
+        """Subscribe to condition specs so dependent widgets update in-place."""
+        for spec in Options.spec():
+            if not isinstance(spec, ConditionalChoicesOptionSpec):
+                continue
+
+            async def _update_dependent(
+                old: Any, new: Any, dep: ConditionalChoicesOptionSpec = spec
+            ) -> None:
+                wid = _sanitize_id(dep.resolved_name)
+                try:
+                    select = self.query_one(f"#{wid}", Select)
+                except Exception:
+                    return
+                choices = dep.choices_for(new)
+                select.set_options([(str(c), c) for c in choices])
+                new_val = self._options.get(dep)
+                if new_val in choices:
+                    select.value = new_val
+                else:
+                    select.value = choices[0] if choices else Select.BLANK
+
+            self._options.subscribe(spec.condition, _update_dependent)
 
     def _spec_for_widget(self, widget_id: str | None) -> OptionSpec | None:
         """Look up the OptionSpec associated with a widget, if any."""
