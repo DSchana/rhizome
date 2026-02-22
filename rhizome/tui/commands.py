@@ -103,7 +103,7 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
         lines.append("}")
         jsonc_text = "\n".join(lines) + "\n"
 
-        editor = os.environ.get("EDITOR", "vi")
+        editor = os.environ.get("EDITOR", "nano")
 
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".jsonc", prefix="rhizome-options-", delete=False
@@ -213,20 +213,15 @@ async def _handle_rename(app: CurriculumApp, args: str) -> None:
         )
         return
 
-    from rhizome.tui.options import Options
-
-    pane = app.active_chat_pane
-    max_len = pane.options.get(Options.TabMaxLength)
-    if len(new_name) > max_len:
-        new_name = new_name[:max_len] + "…"
-
     from textual.widgets import TabbedContent
+
+    from rhizome.tui.screens.chat import ChatTabPane
 
     tabs = app.screen.query_one("#tabs", TabbedContent)
     active_pane = tabs.active_pane
-    if active_pane is not None:
-        tab_widget = tabs.get_tab(active_pane.id)
-        tab_widget.label = new_name
+    if active_pane is not None and isinstance(active_pane, ChatTabPane):
+        active_pane.full_name = new_name
+        active_pane._update_tab_label()
 
 
 async def _handle_new(app: CurriculumApp, _args: str) -> None:

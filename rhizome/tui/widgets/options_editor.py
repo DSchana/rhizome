@@ -187,4 +187,22 @@ class OptionsEditor(Widget):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "options-done":
+            self._flush_inputs()
             self.post_message(self.Done())
+
+    def _flush_inputs(self) -> None:
+        """Apply any pending Input values that haven't been submitted via Enter."""
+        for widget_id, spec in self._widget_specs.items():
+            if not isinstance(spec, IntRangeOptionSpec):
+                continue
+            try:
+                inp = self.query_one(f"#{widget_id}", Input)
+            except Exception:
+                continue
+            try:
+                val = spec.validate(inp.value)
+            except ValueError:
+                continue
+            current = self._options.get(spec)
+            if val != current:
+                self._set_option(spec, val)

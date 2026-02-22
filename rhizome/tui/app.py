@@ -32,10 +32,17 @@ class CurriculumApp(App):
         self.agent = build_agent()
         self.options: Options = Options.load()
         self.options.subscribe(Options.Theme, self._on_theme_changed)
+        self.options.subscribe(Options.TabMaxLength, self._on_tab_max_length_changed)
         self.theme = self.options.get(Options.Theme)
 
     async def _on_theme_changed(self, old: str, new: str) -> None:
         self.theme = new
+
+    async def _on_tab_max_length_changed(self, old: int, new: int) -> None:
+        from rhizome.tui.screens.chat import ChatTabPane
+
+        for pane in self.screen.query(ChatTabPane):
+            pane.update_tab_max_length(new)
 
     def on_mount(self) -> None:
         self.push_screen(ChatScreen())

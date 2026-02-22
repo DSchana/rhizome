@@ -12,7 +12,33 @@ from rhizome.tui.widgets.status_bar import StatusBar
 
 
 class ChatTabPane(TabPane):
-    """A TabPane that composes a ChatPane as its content."""
+    """A TabPane that composes a ChatPane as its content.
+
+    Stores the full (untruncated) tab name and reactively re-truncates
+    the displayed label when ``tab_name_len`` changes.
+    """
+
+    def __init__(self, title: str, *, tab_max_length: int = 20, **kwargs) -> None:
+        self.full_name: str = title
+        self._tab_max_length: int = tab_max_length
+        super().__init__(self._truncated_label(), **kwargs)
+
+    def _truncated_label(self) -> str:
+        """Return ``full_name`` truncated to ``_tab_max_length`` characters."""
+        if len(self.full_name) > self._tab_max_length:
+            return self.full_name[: self._tab_max_length] + "\u2026"
+        return self.full_name
+
+    def update_tab_max_length(self, new_length: int) -> None:
+        """Update the max length and re-truncate the displayed tab label."""
+        self._tab_max_length = new_length
+        self._update_tab_label()
+
+    def _update_tab_label(self) -> None:
+        """Re-truncate ``full_name`` and apply to the Tab widget."""
+        tabbed_content = self.screen.query_one("#tabs", TabbedContent)
+        tab_widget = tabbed_content.get_tab(self.id)
+        tab_widget.label = self._truncated_label()
 
     def compose(self) -> ComposeResult:
         yield ChatPane()
@@ -59,8 +85,10 @@ class ChatScreen(Screen):
         self._tab_counter: int = 1
 
     def compose(self) -> ComposeResult:
+        from rhizome.tui.options import Options
+        max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
         with TabbedContent(id="tabs"):
-            yield ChatTabPane("Session 1", id="session-1")
+            yield ChatTabPane("Session 1", tab_max_length=max_len, id="session-1")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -74,7 +102,9 @@ class ChatScreen(Screen):
         tab_id = f"session-{self._tab_counter}"
         tab_label = label or f"Session {self._tab_counter}"
         tabs = self.query_one("#tabs", TabbedContent)
-        pane = ChatTabPane(tab_label, id=tab_id)
+        from rhizome.tui.options import Options
+        max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
+        pane = ChatTabPane(tab_label, tab_max_length=max_len, id=tab_id)
         await tabs.add_pane(pane)
         tabs.active = tab_id
 
