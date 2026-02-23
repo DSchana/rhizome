@@ -198,13 +198,16 @@ class ChatPane(Widget):
                         await thinking.remove()
                         widget = ChatMessage(role=Role.AGENT)
                         await area.mount(widget)
-                        stream = Markdown.get_stream(widget)
+                        stream = Markdown.get_stream(widget.inner_markdown)
                     body += chunk
-                    await stream.write(chunk)
+                    widget._body = body
+                    if not widget._collapsed:
+                        await stream.write(chunk)
                     area.scroll_end(animate=False)
 
                 if stream is not None:
                     await stream.stop()
+                    widget.update_body(body)
 
                 if widget is None:
                     await thinking.remove()
