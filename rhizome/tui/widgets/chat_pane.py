@@ -290,6 +290,16 @@ class ChatPane(Widget):
     def on_chat_input_focus_tree_requested(self, event: ChatInput.FocusTreeRequested) -> None:
         self._focus_latest_topic_tree()
 
+    def on_topic_tree_dismissed(self, event: TopicTree.Dismissed) -> None:
+        for tree in self.query(TopicTree):
+            tree.remove()
+        self._restore_chat_input()
+
+    def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:
+        for ed in self.query(OptionsEditor):
+            ed.remove()
+        self._restore_chat_input()
+
     def on_options_editor_done(self, event: OptionsEditor.Done) -> None:
         editors = list(self.query(OptionsEditor))
         for ed in editors:

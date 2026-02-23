@@ -13,15 +13,13 @@ from typing import TYPE_CHECKING
 
 from textual.widgets import TabbedContent
 
-from rhizome.tui.options import Options, OptionScope, parse_jsonc
-from rhizome.tui.screens.chat import ChatScreen, ChatTabPane
+from rhizome.tui.options import Options, parse_jsonc
 from rhizome.tui.types import ChatMessageData, Role
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.topic_tree import TopicTree
 
 if TYPE_CHECKING:
     from rhizome.tui.app import CurriculumApp
-    from rhizome.tui.widgets.chat_input import ChatInput
 
 
 @dataclass
@@ -195,6 +193,8 @@ async def _handle_clear(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_rename(app: CurriculumApp, args: str) -> None:
     """Rename the active chat session tab."""
+    from rhizome.tui.screens.chat import ChatTabPane # Avoid circular import
+
     new_name = args.strip()
     if not new_name:
         app.active_chat_pane.append_message(
@@ -211,6 +211,8 @@ async def _handle_rename(app: CurriculumApp, args: str) -> None:
 
 async def _handle_new(app: CurriculumApp, _args: str) -> None:
     """Create a new chat session tab."""
+    from rhizome.tui.screens.chat import ChatScreen # Avoid circular import
+
     screen = app.screen
     if isinstance(screen, ChatScreen):
         await screen._add_tab()
@@ -218,6 +220,8 @@ async def _handle_new(app: CurriculumApp, _args: str) -> None:
 
 async def _handle_close(app: CurriculumApp, _args: str) -> None:
     """Close the current chat session tab."""
+    from rhizome.tui.screens.chat import ChatScreen # Avoid circular import
+
     screen = app.screen
     if isinstance(screen, ChatScreen):
         await screen._close_active_tab()

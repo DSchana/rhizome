@@ -69,12 +69,13 @@ class OptionsEditor(Widget):
     DEFAULT_CSS = """
     OptionsEditor {
         height: auto;
-        padding: 1 2;
+        padding: 0 2 1 2;
         background: $surface;
         border: tall $accent;
     }
     OptionsEditor #options-title {
         text-style: bold;
+        margin-top: 1;
         margin-bottom: 1;
     }
     OptionsEditor .option-label {
@@ -91,7 +92,24 @@ class OptionsEditor(Widget):
         margin-top: 1;
         width: auto;
     }
+    OptionsEditor #options-dismiss {
+        dock: right;
+        width: 3;
+        min-width: 3;
+        height: 1;
+        background: transparent;
+        border: none;
+        color: $text-muted;
+        margin: 0;
+        padding: 0;
+    }
+    OptionsEditor #options-dismiss:hover {
+        color: $error;
+    }
     """
+
+    class Dismissed(Message):
+        """Posted when the user clicks the dismiss button (no changes applied)."""
 
     class Done(Message):
         """Posted when the user clicks Done."""
@@ -105,6 +123,7 @@ class OptionsEditor(Widget):
     def compose(self) -> ComposeResult:
         scope_label = "root" if self._options._scope == OptionScope.Root else "session"
 
+        yield Button("x", id="options-dismiss")
         with Vertical():
             yield Static(f"Options ({scope_label})", id="options-title")
 
@@ -186,7 +205,9 @@ class OptionsEditor(Widget):
         self.run_worker(_do_set())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "options-done":
+        if event.button.id == "options-dismiss":
+            self.post_message(self.Dismissed())
+        elif event.button.id == "options-done":
             self._flush_inputs()
             self.post_message(self.Done())
 

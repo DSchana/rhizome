@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.containers import Vertical
 from textual.message import Message
-from textual.widgets import Static, Tree
+from textual.widgets import Button, Static, Tree
 from textual.widgets._tree import TreeNode
 
 from rhizome.db import Topic
@@ -97,15 +97,29 @@ class TopicTree(Vertical):
         height: auto;
         margin-top: 1;
         border: round $accent;
-        padding: 1 0 0 1;
+        padding: 0 0 0 1;
     }
     TopicTree #topic-tree-help {
         color: $text-muted;
-        margin: 0 0 0 1;
+        margin: 1 0 0 1;
     }
     TopicTree _InnerTree {
         height: auto;
         scrollbar-size: 0 0;
+    }
+    TopicTree #topic-tree-dismiss {
+        dock: right;
+        width: 3;
+        min-width: 3;
+        height: 1;
+        background: transparent;
+        border: none;
+        color: $text-muted;
+        margin: 0;
+        padding: 0;
+    }
+    TopicTree #topic-tree-dismiss:hover {
+        color: $error;
     }
     """
 
@@ -116,6 +130,9 @@ class TopicTree(Vertical):
             super().__init__()
             self.topic = topic
 
+    class Dismissed(Message):
+        """Posted when the user clicks the dismiss button."""
+
     class FocusReleased(Message):
         """Posted when the user releases focus from the tree with Ctrl+Enter."""
 
@@ -123,6 +140,7 @@ class TopicTree(Vertical):
         super().__init__(**kwargs)
 
     def compose(self):
+        yield Button("x", id="topic-tree-dismiss")
         yield Static("Use arrow keys to navigate, enter to select a topic.", id="topic-tree-help")
         yield _InnerTree()
 
@@ -133,6 +151,10 @@ class TopicTree(Vertical):
         if event.node.data is not None:
             event.stop()
             self.post_message(self.TopicSelected(event.node.data))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "topic-tree-dismiss":
+            self.post_message(self.Dismissed())
 
     def focus(self, scroll_visible: bool = True) -> None:
         """Delegate focus to the inner tree."""
