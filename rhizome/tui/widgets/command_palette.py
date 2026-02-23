@@ -38,10 +38,11 @@ class CommandPalette(Widget):
     CommandPalette .cmd-row {
         height: 1;
         padding: 0 1;
+        color: $text-muted 70%;
     }
     CommandPalette .cmd-row.highlighted {
-        background: $accent;
-        color: $text;
+        background: rgb(86, 126, 160);
+        color: #ffffff;
     }
     """
 

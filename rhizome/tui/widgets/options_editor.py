@@ -71,7 +71,7 @@ class OptionsEditor(Widget):
         height: auto;
         padding: 0 2 1 2;
         background: $surface;
-        border: tall $accent;
+        border: tall rgb(86, 126, 160);
     }
     OptionsEditor #options-title {
         text-style: bold;

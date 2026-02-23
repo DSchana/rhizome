@@ -96,7 +96,7 @@ class TopicTree(Vertical):
     TopicTree {
         height: auto;
         margin-top: 1;
-        border: round $accent;
+        border: round rgb(86, 126, 160);
         padding: 0 0 0 1;
     }
     TopicTree #topic-tree-help {
