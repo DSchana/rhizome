@@ -7,7 +7,7 @@ import asyncio
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widget import Widget
-from textual.widgets import Markdown, Static
+from textual.widgets import Markdown
 from textual.worker import Worker
 
 from rhizome.agent import stream_agent
@@ -252,21 +252,6 @@ class ChatPane(Widget):
         chat_input.placeholder = "Type a message or /command ..."
         chat_input.focus()
 
-    def _focus_latest_topic_tree(self) -> bool:
-        """Focus the last TopicTree in the message area. Returns True if found."""
-        trees = list(self.query(TopicTree))
-        if not trees:
-            return False
-        tree = trees[-1]
-        tree.query_one("#topic-tree-help", Static).update(
-            "Use arrow keys to navigate, enter to select a topic."
-        )
-        tree.focus()
-        self.query_one("#chat-input", ChatInput).placeholder = (
-            "Use Ctrl+Enter to exit the topic viewer"
-        )
-        return True
-
     def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
         topic = event.topic
         self.active_topic = topic
@@ -283,17 +268,6 @@ class ChatPane(Widget):
         for tree in self.query(TopicTree):
             tree.remove()
         self._restore_chat_input()
-
-    def on_topic_tree_focus_released(self, event: TopicTree.FocusReleased) -> None:
-        trees = list(self.query(TopicTree))
-        if trees:
-            trees[-1].query_one("#topic-tree-help", Static).update(
-                "Use Ctrl+Enter to navigate back to the topic explorer (in empty message box)"
-            )
-        self._restore_chat_input()
-
-    def on_chat_input_focus_tree_requested(self, event: ChatInput.FocusTreeRequested) -> None:
-        self._focus_latest_topic_tree()
 
     def on_topic_tree_dismissed(self, event: TopicTree.Dismissed) -> None:
         for tree in self.query(TopicTree):

@@ -63,11 +63,7 @@ class _InnerTree(Tree[Topic]):
         self._refresh_height()
 
     def _on_key(self, event) -> None:
-        if event.key == "ctrl+j":
-            self.post_message(TopicTree.FocusReleased())
-            event.stop()
-            event.prevent_default()
-        elif event.key == "right":
+        if event.key == "right":
             node = self.cursor_node
             if node is not None and node.allow_expand:
                 if not node.is_expanded:
@@ -132,9 +128,6 @@ class TopicTree(Vertical):
 
     class Dismissed(Message):
         """Posted when the user clicks the dismiss button."""
-
-    class FocusReleased(Message):
-        """Posted when the user releases focus from the tree with Ctrl+Enter."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)

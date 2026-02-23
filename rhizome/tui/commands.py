@@ -158,7 +158,7 @@ async def _handle_explore(app: CurriculumApp, _args: str) -> None:
         area.scroll_end(animate=False)
         tree.focus()
     pane.query_one("#chat-input").placeholder = (
-        "Use Ctrl+Enter to exit the topic viewer"
+        "Use Tab/Shift+Tab to navigate between widgets"
     )
 
 

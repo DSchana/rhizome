@@ -17,9 +17,6 @@ class ChatInput(TextArea):
             self.input = input
             self.value = value
 
-    class FocusTreeRequested(Message):
-        """Posted when the user presses Ctrl+Enter with an empty input."""
-
     class PaletteNavigate(Message):
         """Posted to move the palette selection."""
 
@@ -56,6 +53,9 @@ class ChatInput(TextArea):
     def on_mount(self) -> None:
         if self._placeholder:
             self.placeholder = self._placeholder
+
+    def on_focus(self) -> None:
+        self.placeholder = self._placeholder
 
     def _on_key(self, event) -> None:
         if event.key == "enter":
@@ -116,15 +116,9 @@ class ChatInput(TextArea):
             event.prevent_default()
 
         # Ctrl+Enter sends \n (0x0A) in most terminals, which Textual maps
-        # to ctrl+j.  Terminals implementing the Kitty keyboard protocol
-        # would report "shift+enter" / "ctrl+enter" distinctly, but most
-        # terminals (WSL2, default macOS Terminal, etc.) do not.  If Kitty
-        # protocol support becomes relevant, add those as additional matches.
+        # to ctrl+j.  Insert a literal newline.
         elif event.key == "ctrl+j":
-            if not self.text.strip():
-                self.post_message(self.FocusTreeRequested())
-            else:
-                self.insert("\n")
+            self.insert("\n")
             event.stop()
             event.prevent_default()
         else:
