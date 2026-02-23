@@ -74,8 +74,10 @@ class CommandPalette(Widget):
             child.remove()
         if not filtered:
             return
+        max_name_len = max(len(n) for n, _ in filtered)
         for i, (name, desc) in enumerate(filtered):
-            row = Static(f"/{name}  — {desc}", classes="cmd-row")
+            padded = name.ljust(max_name_len)
+            row = Static(f"/{padded}  — {desc}", classes="cmd-row")
             row.set_class(i == self.selected_index, "highlighted")
             self.mount(row)
 
