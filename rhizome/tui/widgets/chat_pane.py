@@ -46,8 +46,9 @@ class ChatPane(Widget):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, *, show_welcome: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._show_welcome = show_welcome
         self.messages: list[ChatMessageData] = []
         self._agent_busy: bool = False
         self._agent_worker: Worker[None] | None = None
@@ -65,7 +66,8 @@ class ChatPane(Widget):
     def on_mount(self) -> None:
         self.options = Options(scope=OptionScope.Session, parent=self.app.options)  # type: ignore[attr-defined]
         area = self.query_one("#message-area", VerticalScroll)
-        area.mount(WelcomeHeader())
+        if self._show_welcome:
+            area.mount(WelcomeHeader())
         self.query_one("#chat-input", ChatInput).focus()
 
     def on_unmount(self) -> None:

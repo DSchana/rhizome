@@ -20,9 +20,10 @@ class ChatTabPane(TabPane):
     the displayed label when ``tab_name_len`` changes.
     """
 
-    def __init__(self, title: str, *, tab_max_length: int = 20, **kwargs) -> None:
+    def __init__(self, title: str, *, tab_max_length: int = 20, show_welcome: bool = False, **kwargs) -> None:
         self.full_name: str = title
         self._tab_max_length: int = tab_max_length
+        self._show_welcome = show_welcome
         super().__init__(self._truncated_label(), **kwargs)
 
     def _truncated_label(self) -> str:
@@ -43,7 +44,7 @@ class ChatTabPane(TabPane):
         tab_widget.label = self._truncated_label()
 
     def compose(self) -> ComposeResult:
-        yield ChatPane()
+        yield ChatPane(show_welcome=self._show_welcome)
 
 
 class ChatScreen(Screen):
@@ -89,7 +90,7 @@ class ChatScreen(Screen):
     def compose(self) -> ComposeResult:
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
         with TabbedContent(id="tabs"):
-            yield ChatTabPane("Session 1", tab_max_length=max_len, id="session-1")
+            yield ChatTabPane("Session 1", tab_max_length=max_len, show_welcome=True, id="session-1")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
