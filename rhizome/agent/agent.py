@@ -9,18 +9,20 @@ from rhizome.agent.tools import get_all_tools
 
 
 def build_agent():
-    """Build and return a compiled agent graph.
+    """Build and return ``(model, agent)`` tuple.
 
     The agent is stateless — per-call context (DB session, system prompt)
-    is supplied at invocation time via ``invoke_agent``.
+    is supplied at invocation time via ``invoke_agent``. The model is
+    returned so callers can inspect its ``profile`` for context window limits.
     """
     model = init_chat_model(
         get_model_name(),
         api_key=get_api_key(),
         temperature=0.3,
     )
-    return create_agent(
+    agent = create_agent(
         model=model,
         tools=get_all_tools(),
         context_schema=AgentContext,
     )
+    return model, agent

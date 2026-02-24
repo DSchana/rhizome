@@ -29,7 +29,7 @@ class CurriculumApp(App):
         super().__init__()
         engine = get_engine(db_path or get_default_db_path())
         self.session_factory: async_sessionmaker = get_session_factory(engine)
-        self.agent = build_agent()
+        self.chat_model, self.agent = build_agent()
         self.options: Options = Options.load()
         self.options.subscribe(Options.Theme, self._on_theme_changed)
         self.options.subscribe(Options.TabMaxLength, self._on_tab_max_length_changed)

@@ -9,6 +9,8 @@ from rhizome.tui.types import Mode, Role
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
 
+from langchain.messages import AIMessageChunk
+
 
 class AgentMessageHarness(Widget):
     """Manages ThinkingIndicator → ChatMessage + Markdown stream for one agent turn."""
@@ -58,7 +60,7 @@ class AgentMessageHarness(Widget):
             await self._thinking.remove()
             self._thinking = None
 
-    async def append(self, token: str) -> None:
+    async def append(self, token: AIMessageChunk) -> None:
         """Append a text token to the streaming message.
 
         On the first call, replaces the ThinkingIndicator with a ChatMessage
@@ -71,10 +73,10 @@ class AgentMessageHarness(Widget):
             assert self._chat_message is not None
             assert self._stream is not None
 
-        self._chat_message._body += token
+        self._chat_message._body += token.text
         if not self._chat_message._collapsed:
             if self._stream:
-                await self._stream.write(token)
+                await self._stream.write(token.text)
 
     async def _init_chat_message(self) -> None:
         """Initialize the ChatMessage widget and exposes the stream.

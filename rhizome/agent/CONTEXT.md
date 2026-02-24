@@ -11,7 +11,8 @@ The agent graph is built **once** at app startup (`build_agent`) and reused for 
 - **config.py** — Reads `ANTHROPIC_API_KEY` (required) and `CURRICULUM_AGENT_MODEL` (optional, defaults to `claude-sonnet-4-20250514`) from environment variables.
 - **context.py** — `AgentContext` dataclass holding the `AsyncSession` for the current invocation.
 - **tools.py** — `@tool`-decorated async functions wrapping `rhizome.tools`. Each tool receives a `ToolRuntime[AgentContext]` parameter to access the session. `get_all_tools()` returns the full list.
-- **agent.py** — `build_agent()` constructs the compiled agent graph with `create_agent`.
+- **agent.py** — `build_agent()` returns a `(model, agent)` tuple: the chat model instance (for inspecting its `profile` dict with context window limits) and the compiled agent graph.
+- **utils.py** — `compute_chat_model_max_tokens(chat_model)` attempts to derive the total context window size (`max_input_tokens + max_output_tokens`) from a chat model's `profile` dict. Returns `None` if the profile is unavailable or incomplete (profiles are a beta LangChain feature).
 - **runner.py** — `stream_agent()` opens a session, prepends a system prompt with mode/context info, and streams agent output using dual `stream_mode=["updates", "messages"]`. Yields `("message", text_str)` for filtered model text tokens and `("update", chunk_dict)` for raw graph state updates. Commits on completion.
 
 ## Tool List

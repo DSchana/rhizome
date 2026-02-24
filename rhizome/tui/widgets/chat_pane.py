@@ -9,11 +9,11 @@ from textual.containers import VerticalScroll
 from textual.widget import Widget
 from textual.worker import Worker
 
-from rhizome.agent import stream_agent
+from rhizome.agent import compute_chat_model_max_tokens, stream_agent
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.options import Options, OptionScope
-from rhizome.tui.types import ChatMessageData, Mode, Role
+from rhizome.tui.types import ChatMessageData, Mode, Role, TokenUsageData
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
@@ -63,6 +63,7 @@ class ChatPane(Widget):
         self.active_curriculum: Curriculum | None = None
         self.active_topic: Topic | None = None
         self.options: Options | None = None  # set on mount when app is available
+        self._token_usage = TokenUsageData()
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -71,7 +72,12 @@ class ChatPane(Widget):
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
+        # Construct the per-session options object
         self.options = Options(scope=OptionScope.Session, parent=self.app.options)  # type: ignore[attr-defined]
+
+        # Compute max context window tokens from the model profile.
+        self._token_usage.max_tokens = compute_chat_model_max_tokens(self.app.chat_model)
+
         area = self.query_one("#message-area", VerticalScroll)
         if self._show_welcome:
             area.mount(WelcomeHeader())
@@ -201,7 +207,15 @@ class ChatPane(Widget):
                     ),
                 ):
                     if mode == "messages":
-                        await harness.append(payload)
+                        chunk, metadata = payload
+                        await harness.append(chunk)
+
+                        # If we have usage metadata, update the status bar to display the total
+                        # number of tokens.
+                        if chunk.usage_metadata and chunk.usage_metadata.get("total_tokens"):
+                            self._token_usage.total_tokens += chunk.usage_metadata["total_tokens"]
+                            self.update_status_bar()
+
                     elif mode == "updates":
                         await harness.post_update(payload)
                     message_area.scroll_end(animate=False)
@@ -232,6 +246,7 @@ class ChatPane(Widget):
         bar = self.query_one("#status-bar", StatusBar)
         bar.mode = self.session_mode.value
         bar.context = self.session_context
+        bar.token_usage = self._token_usage
 
     def append_message(self, msg: ChatMessageData) -> None:
         """Append a message to the history and mount its widget."""

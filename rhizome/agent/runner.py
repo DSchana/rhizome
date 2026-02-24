@@ -104,19 +104,10 @@ async def stream_agent(
 
     async with session_factory() as session:
         context = AgentContext(session=session)
-        async for mode_str, chunk in agent.astream(
+        async for update in agent.astream(
             {"messages": lc_messages},
             context=context,
             stream_mode=["updates", "messages"],
         ):
-            if mode_str == "messages":
-                token, metadata = chunk
-                if (
-                    metadata.get("langgraph_node") == "model"
-                    and isinstance(token, AIMessageChunk)
-                    and token.text
-                ):
-                    yield ("messages", token.text)
-            elif mode_str == "updates":
-                yield ("updates", chunk)
+            yield update
         await session.commit()

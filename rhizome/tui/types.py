@@ -21,6 +21,20 @@ class Role(Enum):
 
 
 @dataclass
+class TokenUsageData:
+    """Tracks token consumption and context window limits."""
+
+    total_tokens: int = 0
+    max_tokens: int | None = None  # None means we couldn't determine the limit
+
+    @property
+    def usage_percent(self) -> float | None:
+        if self.max_tokens is None or self.max_tokens == 0:
+            return None
+        return (self.total_tokens / self.max_tokens) * 100
+
+
+@dataclass
 class ChatMessageData:
     """A single message in the conversation history."""
 
