@@ -12,7 +12,7 @@ The agent graph is built **once** at app startup (`build_agent`) and reused for 
 - **context.py** — `AgentContext` dataclass holding the `AsyncSession` for the current invocation.
 - **tools.py** — `@tool`-decorated async functions wrapping `rhizome.tools`. Each tool receives a `ToolRuntime[AgentContext]` parameter to access the session. `get_all_tools()` returns the full list.
 - **agent.py** — `build_agent()` constructs the compiled agent graph with `create_agent`.
-- **runner.py** — `invoke_agent()` opens a session, prepends a system prompt with mode/context info, runs the agent, commits, and returns the assistant's reply text.
+- **runner.py** — `stream_agent()` opens a session, prepends a system prompt with mode/context info, and streams agent output using dual `stream_mode=["updates", "messages"]`. Yields `("message", text_str)` for filtered model text tokens and `("update", chunk_dict)` for raw graph state updates. Commits on completion.
 
 ## Tool List
 

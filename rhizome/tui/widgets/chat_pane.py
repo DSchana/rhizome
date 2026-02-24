@@ -7,7 +7,6 @@ import asyncio
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widget import Widget
-from textual.widgets import Markdown
 from textual.worker import Worker
 
 from rhizome.agent import stream_agent
@@ -17,8 +16,8 @@ from rhizome.tui.options import Options, OptionScope
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
+from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
 from rhizome.tui.widgets.message import ChatMessage
-from rhizome.tui.widgets.thinking import ThinkingIndicator
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
 from rhizome.tui.widgets.status_bar import StatusBar
@@ -171,26 +170,23 @@ class ChatPane(Widget):
         self.run_worker(_run())
 
     def _handle_chat(self, text: str) -> None:
+        # Post the user's message to the message history
         self.append_message(ChatMessageData(role=Role.USER, content=text))
 
-        self._agent_busy = True
+        # Construct an AgentMessageHarness for capturing the View aspects of the agent stream.
+        message_area = self.query_one("#message-area", VerticalScroll)
+        harness = AgentMessageHarness()
+        message_area.mount(harness)
 
         async def _run_agent() -> None:
-            area = self.query_one("#message-area", VerticalScroll)
-
-            thinking = ThinkingIndicator()
-            await area.mount(thinking)
-            area.scroll_end(animate=False)
-
-            app = self.app
-            widget: ChatMessage | None = None
-            stream = None
-            body = ""
+            # Before we receive anything from the stream, add a thinking indicator.
+            await harness.start_thinking()
+            message_area.scroll_end(animate=False)
 
             try:
-                async for chunk in stream_agent(
-                    app.agent,  # type: ignore[attr-defined]
-                    app.session_factory,  # type: ignore[attr-defined]
+                async for mode, payload in stream_agent(
+                    self.app.agent,  # type: ignore[attr-defined]
+                    self.app.session_factory,  # type: ignore[attr-defined]
                     self.messages,
                     mode=self.session_mode.value,
                     curriculum_name=(
@@ -204,47 +200,31 @@ class ChatPane(Widget):
                         else ""
                     ),
                 ):
-                    if widget is None:
-                        await thinking.remove()
-                        widget = ChatMessage(role=Role.AGENT, mode=self.session_mode)
-                        await area.mount(widget)
-                        stream = Markdown.get_stream(widget.inner_markdown)
-                    body += chunk
-                    widget._body = body
-                    if not widget._collapsed:
-                        await stream.write(chunk)
-                    area.scroll_end(animate=False)
+                    if mode == "messages":
+                        await harness.append(payload)
+                    elif mode == "updates":
+                        await harness.post_update(payload)
+                    message_area.scroll_end(animate=False)
 
-                if stream is not None:
-                    await stream.stop()
-                    widget.update_body(body)
-
-                if widget is None:
-                    await thinking.remove()
-                    widget = ChatMessage(role=Role.AGENT, content="(no response)")
-                    await area.mount(widget)
-                    body = "(no response)"
-
-                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+                # Finalize the message, retrieve the final agent message body, and
+                # add it to our own list of message data.
+                body = await harness.finalize()
+                if body:
+                    self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
             except asyncio.CancelledError:
-                if widget is None:
-                    await thinking.remove()
-
+                # Post a "cancelled" message, retrieve this final message body,
+                # and add it to our own list of message data.
+                body = await harness.cancel()
                 if body:
-                    if stream is not None:
-                        await stream.stop()
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
-                else:
-                    cancelled_msg = ChatMessage(role=Role.AGENT, content="*(cancelled)*")
-                    await area.mount(cancelled_msg)
-
-                area.scroll_end(animate=False)
 
             finally:
                 self._agent_busy = False
                 self._agent_worker = None
 
+        # Start the agent, setting _agent_busy to True until the worker completes.
+        self._agent_busy = True
         self._agent_worker = self.run_worker(_run_agent())
 
     def update_status_bar(self) -> None:
