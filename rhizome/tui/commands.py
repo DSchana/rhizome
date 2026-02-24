@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from textual.widgets import TabbedContent
 
 from rhizome.tui.options import Options, parse_jsonc
-from rhizome.tui.types import ChatMessageData, Role
+from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.topic_tree import TopicTree
 
@@ -65,12 +65,36 @@ def parse_input(text: str) -> ParsedCommand | None:
 # ---------------------------------------------------------------------------
 
 
+async def _handle_idle(app: CurriculumApp, _args: str) -> None:
+    pane = app.active_chat_pane
+    if pane.session_mode == Mode.IDLE:
+        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Already in idle mode."))
+        return
+    pane.session_mode = Mode.IDLE
+    pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Returned to idle mode."))
+    pane.update_status_bar()
+
+
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    app.active_chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content="/learn — context selection coming soon"))
+    pane = app.active_chat_pane
+    if pane.session_mode == Mode.LEARN:
+        pane.session_mode = Mode.IDLE
+        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Exited learn mode."))
+    else:
+        pane.session_mode = Mode.LEARN
+        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Entered learn mode."))
+    pane.update_status_bar()
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    app.active_chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content="/review — review mode coming soon"))
+    pane = app.active_chat_pane
+    if pane.session_mode == Mode.REVIEW:
+        pane.session_mode = Mode.IDLE
+        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Exited review mode."))
+    else:
+        pane.session_mode = Mode.REVIEW
+        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Entered review mode."))
+    pane.update_status_bar()
 
 
 async def _handle_options(app: CurriculumApp, args: str) -> None:
@@ -238,6 +262,7 @@ COMMANDS: dict[str, Command] = {
     "close": Command("close", "Close the current chat session tab", _handle_close),
     "explore": Command("explore", "Browse and select topics from the topic tree", _handle_explore),
     "help": Command("help", "Show available commands and usage", _handle_help),
+    "idle": Command("idle", "Return to idle mode", _handle_idle),
     "learn": Command("learn", "Enter learning mode: set curriculum and topic context", _handle_learn),
     "new": Command("new", "Open a new chat session tab", _handle_new),
     "rename": Command("rename", "Rename the current tab", _handle_rename),

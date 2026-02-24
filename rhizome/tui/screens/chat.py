@@ -10,7 +10,6 @@ from textual.widgets import TabbedContent, TabPane
 from rhizome.tui.options import Options
 from rhizome.tui.types import ChatMessageData, Role
 from rhizome.tui.widgets.chat_pane import ChatPane
-from rhizome.tui.widgets.status_bar import StatusBar
 
 
 class ChatTabPane(TabPane):
@@ -62,7 +61,7 @@ class ChatScreen(Screen):
     ChatScreen {
         layout: grid;
         grid-size: 1;
-        grid-rows: 1fr auto;
+        grid-rows: 1fr;
     }
     TabbedContent {
         height: 1fr;
@@ -74,13 +73,6 @@ class ChatScreen(Screen):
     ChatPane {
         height: 1fr;
     }
-    #status-bar {
-        dock: bottom;
-        height: auto;
-        background: $surface;
-        padding: 0 1;
-        border-top: solid rgb(60, 60, 60);
-    }
     """
 
     def __init__(self, **kwargs) -> None:
@@ -91,12 +83,6 @@ class ChatScreen(Screen):
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
         with TabbedContent(id="tabs"):
             yield ChatTabPane("Session 1", tab_max_length=max_len, show_welcome=True, id="session-1")
-        yield StatusBar(id="status-bar")
-
-    def on_mount(self) -> None:
-        bar = self.query_one("#status-bar", StatusBar)
-        self.watch(self.app, "mode", lambda val: setattr(bar, "mode", val))
-        self.watch(self.app, "context", lambda val: setattr(bar, "context", val))
 
     async def _add_tab(self, label: str | None = None) -> None:
         """Create a new chat session tab."""

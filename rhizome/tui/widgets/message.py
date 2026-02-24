@@ -4,7 +4,7 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Button, Markdown, Static
 
-from rhizome.tui.types import Role
+from rhizome.tui.types import Mode, Role
 
 
 class ChatMessage(Widget):
@@ -25,6 +25,18 @@ class ChatMessage(Widget):
         background: rgb(35, 35, 45);
         color: $text-muted;
         padding: 0 1;
+    }
+    ChatMessage.learn-mode.user-message {
+        background: rgb(25, 30, 50);
+    }
+    ChatMessage.learn-mode.agent-message {
+        background: rgb(30, 35, 55);
+    }
+    ChatMessage.review-mode.user-message {
+        background: rgb(35, 25, 50);
+    }
+    ChatMessage.review-mode.agent-message {
+        background: rgb(40, 30, 55);
     }
     ChatMessage #msg-collapse {
         dock: right;
@@ -57,13 +69,17 @@ class ChatMessage(Widget):
         Role.SYSTEM: "*system:* ",
     }
 
-    def __init__(self, role: Role, content: str = "") -> None:
+    def __init__(self, role: Role, content: str = "", mode: Mode = Mode.IDLE) -> None:
         super().__init__()
         self._role = role
         self._prefix = self.ROLE_PREFIXES.get(role, "")
         self._body = content
         self._collapsed = False
         self.add_class(f"{role.value}-message")
+        if mode == Mode.LEARN:
+            self.add_class("learn-mode")
+        elif mode == Mode.REVIEW:
+            self.add_class("review-mode")
 
     def compose(self) -> ComposeResult:
         if self._role == Role.AGENT:

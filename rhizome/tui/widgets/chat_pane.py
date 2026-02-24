@@ -21,6 +21,7 @@ from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
+from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.topic_tree import TopicTree
 
 
@@ -31,7 +32,13 @@ class ChatPane(Widget):
     ChatPane {
         layout: grid;
         grid-size: 1;
-        grid-rows: 1fr auto auto;
+        grid-rows: 1fr auto auto auto;
+    }
+    #status-bar {
+        height: auto;
+        background: $surface;
+        padding: 0 1;
+        border-top: solid rgb(60, 60, 60);
     }
     #message-area {
         background: $surface-darken-1;
@@ -52,7 +59,7 @@ class ChatPane(Widget):
         self.messages: list[ChatMessageData] = []
         self._agent_busy: bool = False
         self._agent_worker: Worker[None] | None = None
-        self.session_mode: str = Mode.IDLE.value
+        self.session_mode: Mode = Mode.IDLE
         self.session_context: str = ""
         self.active_curriculum: Curriculum | None = None
         self.active_topic: Topic | None = None
@@ -62,6 +69,7 @@ class ChatPane(Widget):
         yield VerticalScroll(id="message-area")
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield CommandPalette(id="command-palette")
+        yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
         self.options = Options(scope=OptionScope.Session, parent=self.app.options)  # type: ignore[attr-defined]
@@ -184,7 +192,7 @@ class ChatPane(Widget):
                     app.agent,  # type: ignore[attr-defined]
                     app.session_factory,  # type: ignore[attr-defined]
                     self.messages,
-                    mode=self.session_mode,
+                    mode=self.session_mode.value,
                     curriculum_name=(
                         self.active_curriculum.name
                         if self.active_curriculum
@@ -198,7 +206,7 @@ class ChatPane(Widget):
                 ):
                     if widget is None:
                         await thinking.remove()
-                        widget = ChatMessage(role=Role.AGENT)
+                        widget = ChatMessage(role=Role.AGENT, mode=self.session_mode)
                         await area.mount(widget)
                         stream = Markdown.get_stream(widget.inner_markdown)
                     body += chunk
@@ -239,11 +247,18 @@ class ChatPane(Widget):
 
         self._agent_worker = self.run_worker(_run_agent())
 
+    def update_status_bar(self) -> None:
+        """Sync the status bar with the current mode and context."""
+        bar = self.query_one("#status-bar", StatusBar)
+        bar.mode = self.session_mode.value
+        bar.context = self.session_context
+
     def append_message(self, msg: ChatMessageData) -> None:
         """Append a message to the history and mount its widget."""
+        msg.mode = self.session_mode
         self.messages.append(msg)
         area = self.query_one("#message-area", VerticalScroll)
-        area.mount(ChatMessage(role=msg.role, content=msg.content))
+        area.mount(ChatMessage(role=msg.role, content=msg.content, mode=msg.mode))
         area.scroll_end(animate=False)
 
     def _restore_chat_input(self) -> None:
@@ -264,6 +279,7 @@ class ChatPane(Widget):
         else:
             self.session_context = ""
 
+        self.update_status_bar()
         self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
