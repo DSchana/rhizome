@@ -1,5 +1,6 @@
 """Persistent status bar showing the active mode and context."""
 
+from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Static
 
@@ -20,11 +21,22 @@ class StatusBar(Static):
         left = "  ".join(left_parts)
 
         right = ""
+        right_plain = ""
         if self.token_usage.total_tokens:
-            right = f"tokens: {self.token_usage.total_tokens:,}"
+            total = self.token_usage.total_tokens
+            overhead = self.token_usage.overhead_tokens
+            if overhead is not None:
+                conversation = total - overhead
+                right = f"tokens: {conversation:,} [rgb(120,120,120)](+{overhead:,})[/]"
+                right_plain = f"tokens: {conversation:,} (+{overhead:,})"
+            else:
+                right = f"tokens: {total:,}"
+                right_plain = right
             pct = self.token_usage.usage_percent
             if pct is not None:
-                right += f" ({pct:.1f}%)"
+                suffix = f"  context usage: {pct:.1f}%"
+                right += suffix
+                right_plain += suffix
 
-        gap = max(self.size.width - len(left) - len(right), 2)
+        gap = max(self.size.width - len(left) - len(right_plain), 2)
         return left + " " * gap + right

@@ -26,6 +26,7 @@ class TokenUsageData:
 
     total_tokens: int = 0
     max_tokens: int | None = None  # None means we couldn't determine the limit
+    overhead_tokens: int | None = None  # None = unknown, skip (+N) display
 
     @property
     def usage_percent(self) -> float | None:

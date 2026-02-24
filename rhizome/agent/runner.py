@@ -52,7 +52,7 @@ For the time being you are just expected to respond to questions and not commit 
 through these tools.
 """
 
-def _build_lc_messages(
+def build_lc_messages(
     messages: list[ChatMessageData],
     *,
     mode: str,
@@ -98,7 +98,7 @@ async def stream_agent(
         ``("messages", text_str)`` — filtered AIMessageChunk text from the model node.
         ``("updates", chunk_dict)`` — raw graph update dicts, passed through unfiltered.
     """
-    lc_messages = _build_lc_messages(
+    lc_messages = build_lc_messages(
         messages, mode=mode, curriculum_name=curriculum_name, topic_name=topic_name,
     )
 

@@ -9,7 +9,9 @@ from textual.containers import VerticalScroll
 from textual.widget import Widget
 from textual.worker import Worker
 
-from rhizome.agent import compute_chat_model_max_tokens, stream_agent
+from langchain_core.messages.utils import count_tokens_approximately
+
+from rhizome.agent import build_lc_messages, compute_chat_model_max_tokens, stream_agent
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.options import Options, OptionScope
@@ -212,7 +214,11 @@ class ChatPane(Widget):
 
                         # If we have usage metadata, update the status bar to display the total
                         # number of tokens.
-                        if chunk.usage_metadata and chunk.usage_metadata.get("total_tokens"):
+                        if (
+                            hasattr(chunk, "usage_metadata") and
+                            chunk.usage_metadata and
+                            chunk.usage_metadata.get("total_tokens")
+                        ):
                             self._token_usage.total_tokens += chunk.usage_metadata["total_tokens"]
                             self.update_status_bar()
 
@@ -225,6 +231,23 @@ class ChatPane(Widget):
                 body = await harness.finalize()
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+
+                # Compute overhead tokens (system prompt + app-generated system messages)
+                non_conversation = [m for m in self.messages if m.role == Role.SYSTEM]
+                lc_messages = build_lc_messages(
+                    non_conversation,
+                    mode=self.session_mode.value,
+                    curriculum_name=(
+                        self.active_curriculum.name if self.active_curriculum else ""
+                    ),
+                    topic_name=(
+                        self.active_topic.name if self.active_topic else ""
+                    ),
+                )
+                overhead = count_tokens_approximately(lc_messages)
+                if overhead <= self._token_usage.total_tokens:
+                    self._token_usage.overhead_tokens = overhead
+                self.update_status_bar()
 
             except asyncio.CancelledError:
                 # Post a "cancelled" message, retrieve this final message body,
@@ -247,6 +270,7 @@ class ChatPane(Widget):
         bar.mode = self.session_mode.value
         bar.context = self.session_context
         bar.token_usage = self._token_usage
+        bar.mutate_reactive(StatusBar.token_usage)
 
     def append_message(self, msg: ChatMessageData) -> None:
         """Append a message to the history and mount its widget."""
