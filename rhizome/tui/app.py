@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from textual import messages
 from textual.app import App
 from textual.widgets import TabbedContent
 
@@ -25,8 +26,9 @@ class CurriculumApp(App):
     }
     """
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
+    def __init__(self, db_path: str | Path | None = None, debug: bool = False) -> None:
         super().__init__()
+        self.debug_logging = debug
         engine = get_engine(db_path or get_default_db_path())
         self.session_factory: async_sessionmaker = get_session_factory(engine)
         self.chat_model, self.agent = build_agent()
@@ -44,6 +46,10 @@ class CurriculumApp(App):
 
     def on_mount(self) -> None:
         self.push_screen(ChatScreen())
+
+    def on_exit_app(self, event: messages.ExitApp) -> None:
+        for pane in self.query(ChatPane):
+            pane._close_agent_log()
 
     @property
     def active_chat_pane(self) -> ChatPane | None:

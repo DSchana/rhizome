@@ -1,8 +1,10 @@
+import enum
 from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Enum,
     ForeignKey,
     Integer,
     String,
@@ -16,6 +18,12 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
 )
+
+
+class EntryType(enum.Enum):
+    fact = "fact"
+    exposition = "exposition"
+    overview = "overview"
 
 
 class Base(DeclarativeBase):
@@ -97,7 +105,7 @@ class KnowledgeEntry(Base):
     title: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     additional_notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
-    entry_type: Mapped[str] = mapped_column(String, nullable=False, server_default="fact")
+    entry_type: Mapped[EntryType | None] = mapped_column(Enum(EntryType), nullable=True)
     difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     speed_testable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())

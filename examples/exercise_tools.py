@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rhizome.db import get_session_factory, init_db
+from rhizome.db.models import EntryType
 from rhizome.tools import (
     CycleError,
     add_relation,
@@ -172,11 +173,11 @@ async def main() -> None:
     print("\n=== Entries ===")
     async with factory() as s:
         e1 = await create_entry(s, topic_id=motions_id, title="Word motion", content="w moves forward one word")
-        e2 = await create_entry(s, topic_id=motions_id, title="Motion definition", content="A motion moves the cursor", entry_type="definition")
+        e2 = await create_entry(s, topic_id=motions_id, title="Motion definition", content="A motion moves the cursor", entry_type=EntryType.exposition)
         e3 = await create_entry(s, topic_id=operators_id, title="Delete operator", content="d is the delete operator")
-        e4 = await create_entry(s, topic_id=operators_id, title="Operator-motion composition", content="dw deletes a word", entry_type="concept")
+        e4 = await create_entry(s, topic_id=operators_id, title="Operator-motion composition", content="dw deletes a word", entry_type=EntryType.overview)
         check(e1.id is not None, "create_entry returns id")
-        check(e2.entry_type == "definition", "create_entry respects entry_type")
+        check(e2.entry_type == EntryType.exposition, "create_entry respects entry_type")
 
         fetched = await get_entry(s, e1.id)
         check(fetched is not None, "get_entry")

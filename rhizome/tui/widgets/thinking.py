@@ -11,6 +11,8 @@ class ThinkingIndicator(Static):
     DEFAULT_CSS = """
     ThinkingIndicator {
         height: 1;
+        margin-top: 1;
+        margin-bottom: 1;
         padding: 0 1;
         color: $text-muted;
     }

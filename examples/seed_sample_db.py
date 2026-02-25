@@ -26,6 +26,7 @@ from rhizome.db import (
     get_session_factory,
     init_db,
 )
+from rhizome.db.models import EntryType
 
 DB_PATH = Path(__file__).resolve().parent.parent / "explore.db"
 
@@ -87,31 +88,31 @@ async def main() -> None:
             topic_id=w_motion.id,
             title="Word motion",
             content="w moves forward one word",
-            entry_type="fact",
+            entry_type=EntryType.fact,
         )
         e_motion_def = KnowledgeEntry(
             topic_id=motions.id,
             title="Motion definition",
             content="A motion is a command that moves the cursor",
-            entry_type="definition",
+            entry_type=EntryType.exposition,
         )
         e_delete = KnowledgeEntry(
             topic_id=delete_op.id,
             title="Delete operator",
             content="d is the delete operator",
-            entry_type="fact",
+            entry_type=EntryType.fact,
         )
         e_compose = KnowledgeEntry(
             topic_id=operators.id,
             title="Operator-motion composition",
             content="Operators compose with motions: dw deletes a word",
-            entry_type="concept",
+            entry_type=EntryType.overview,
         )
         e_iam = KnowledgeEntry(
             topic_id=policy_structure.id,
             title="IAM Policy",
             content="A JSON document that defines permissions",
-            entry_type="definition",
+            entry_type=EntryType.exposition,
         )
         entries = [e_word, e_motion_def, e_delete, e_compose, e_iam]
         session.add_all(entries)

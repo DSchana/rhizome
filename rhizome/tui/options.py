@@ -298,8 +298,9 @@ class Options(metaclass=OptionsMeta):
             condition=Provider,
             choices={
                 "anthropic": [
-                    "claude-sonnet-4-20250514",
-                    "claude-haiku-4-5-20251001",
+                    "claude-opus-4-6",
+                    "claude-sonnet-4-6",
+                    "claude-haiku-4-5",
                 ],
                 "openai": [
                     "gpt-5.2",
@@ -308,8 +309,8 @@ class Options(metaclass=OptionsMeta):
                 ],
             },
             defaults={
-                "anthropic": "claude-sonnet-4-20250514",
-                "openai": "gpt-5.2",
+                "anthropic": "claude-opus-4-6",
+                "openai": "gpt-5-mini",
             },
         )
 

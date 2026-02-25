@@ -1,6 +1,7 @@
 """Application-wide configuration and path resolution."""
 
 import os
+import tempfile
 from pathlib import Path
 
 import platformdirs
@@ -31,6 +32,13 @@ def get_default_db_path() -> Path:
     if env := os.environ.get("RHIZOME_DB"):
         return Path(env)
     return get_data_dir() / "curriculum.db"
+
+
+def get_log_dir() -> Path:
+    """Return the temp log directory, creating it if needed."""
+    path = Path(tempfile.gettempdir()) / "rhizome"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def get_options_path() -> Path:

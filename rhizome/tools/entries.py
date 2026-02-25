@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rhizome.db import CurriculumTopic, KnowledgeEntry, Topic
+from rhizome.db.models import EntryType
 
 
 async def create_entry(
@@ -12,7 +13,7 @@ async def create_entry(
     topic_id: int,
     title: str,
     content: str,
-    entry_type: str = "fact",
+    entry_type: EntryType | None = None,
     additional_notes: str = "",
     difficulty: int | None = None,
     speed_testable: bool = False,
@@ -59,7 +60,7 @@ async def update_entry(
     *,
     title: str | None = None,
     content: str | None = None,
-    entry_type: str | None = None,
+    entry_type: EntryType | None = None,
     additional_notes: str | None = None,
     difficulty: int | None = None,
     speed_testable: bool | None = None,

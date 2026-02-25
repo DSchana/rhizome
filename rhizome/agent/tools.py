@@ -146,11 +146,13 @@ async def create_knowledge_entry(
     title: str,
     content: str,
     runtime: ToolRuntime[AgentContext],
-    entry_type: str = "fact",
+    entry_type: str | None = None,
 ) -> str:
+    from rhizome.db.models import EntryType
+    parsed_type = EntryType(entry_type) if entry_type is not None else None
     session = runtime.context.session
     entry = await create_entry(
-        session, topic_id=topic_id, title=title, content=content, entry_type=entry_type,
+        session, topic_id=topic_id, title=title, content=content, entry_type=parsed_type,
     )
     return f"Created entry [{entry.id}] {entry.title}"
 
@@ -185,14 +187,58 @@ async def tag_knowledge_entry(entry_id: int, tag_name: str, runtime: ToolRuntime
 
 
 # ---------------------------------------------------------------------------
+# App commands (mode switching, tab renaming)
+# ---------------------------------------------------------------------------
+
+@tool("switch_to_learn_mode", description="Toggle learn mode on the active session. If already in learn mode, exits to idle.")
+async def switch_to_learn_mode(runtime: ToolRuntime[AgentContext]) -> str:
+    from rhizome.tui.commands import _handle_learn
+    app = runtime.context.app
+    if app is None:
+        return "Error: app context not available."
+    await _handle_learn(app, "")
+    return f"Mode is now: {app.active_chat_pane.session_mode.value}"
+
+
+@tool("switch_to_review_mode", description="Toggle review mode on the active session. If already in review mode, exits to idle.")
+async def switch_to_review_mode(runtime: ToolRuntime[AgentContext]) -> str:
+    from rhizome.tui.commands import _handle_review
+    app = runtime.context.app
+    if app is None:
+        return "Error: app context not available."
+    await _handle_review(app, "")
+    return f"Mode is now: {app.active_chat_pane.session_mode.value}"
+
+
+@tool("switch_to_idle_mode", description="Switch the active session back to idle mode.")
+async def switch_to_idle_mode(runtime: ToolRuntime[AgentContext]) -> str:
+    from rhizome.tui.commands import _handle_idle
+    app = runtime.context.app
+    if app is None:
+        return "Error: app context not available."
+    await _handle_idle(app, "")
+    return f"Mode is now: {app.active_chat_pane.session_mode.value}"
+
+
+@tool("rename_tab", description="Rename the active chat session tab.")
+async def rename_tab(name: str, runtime: ToolRuntime[AgentContext]) -> str:
+    from rhizome.tui.commands import _handle_rename
+    app = runtime.context.app
+    if app is None:
+        return "Error: app context not available."
+    await _handle_rename(app, name)
+    return f"Tab renamed to: {name}"
+
+
+# ---------------------------------------------------------------------------
 # Collect all tools for the agent
 # ---------------------------------------------------------------------------
 
 def get_all_tools() -> list:
     """Return the list of all tool functions."""
     return [
-        list_all_curricula,
-        list_curriculum_topics_tool,
+        # list_all_curricula,
+        # list_curriculum_topics_tool,
         list_root_topics_tool,
         list_topic_children,
         get_topic_subtree,
@@ -201,7 +247,11 @@ def get_all_tools() -> list:
         list_topic_entries,
         get_entry_details,
         create_knowledge_entry,
-        list_all_tags,
-        get_entries_by_tag_name,
-        tag_knowledge_entry,
+        # list_all_tags,
+        # get_entries_by_tag_name,
+        # tag_knowledge_entry,
+        switch_to_learn_mode,
+        switch_to_review_mode,
+        switch_to_idle_mode,
+        rename_tab,
     ]

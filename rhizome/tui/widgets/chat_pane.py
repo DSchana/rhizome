@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from datetime import datetime, timezone
 
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
@@ -10,8 +12,10 @@ from textual.widget import Widget
 from textual.worker import Worker
 
 from langchain_core.messages.utils import count_tokens_approximately
+from langchain.messages import ToolMessage
 
 from rhizome.agent import build_lc_messages, compute_chat_model_max_tokens, stream_agent
+from rhizome.config import get_log_dir
 from rhizome.db import Curriculum, Topic
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.options import Options, OptionScope
@@ -22,6 +26,7 @@ from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
+from rhizome.tui.utils import serialize_stream_payload
 from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.topic_tree import TopicTree
 
@@ -66,6 +71,8 @@ class ChatPane(Widget):
         self.active_topic: Topic | None = None
         self.options: Options | None = None  # set on mount when app is available
         self._token_usage = TokenUsageData()
+        self._agent_log: logging.Logger | None = None
+        self._agent_log_handler: logging.FileHandler | None = None
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -85,7 +92,28 @@ class ChatPane(Widget):
             area.mount(WelcomeHeader())
         self.query_one("#chat-input", ChatInput).focus()
 
+        if self.app.debug_logging:  # type: ignore[attr-defined]
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%f")
+            logger_name = f"rhizome.agent_stream.{ts}"
+            self._agent_log = logging.getLogger(logger_name)
+            self._agent_log.setLevel(logging.DEBUG)
+            self._agent_log.propagate = False
+            log_path = get_log_dir() / f"agent_stream_{ts}.log"
+            self._agent_log_handler = logging.FileHandler(str(log_path), mode="w")
+            self._agent_log_handler.setFormatter(logging.Formatter("%(message)s"))
+            self._agent_log.addHandler(self._agent_log_handler)
+
+    def _close_agent_log(self) -> None:
+        """Close and detach the agent stream file handler."""
+        if self._agent_log_handler is not None:
+            self._agent_log_handler.close()
+            if self._agent_log is not None:
+                self._agent_log.removeHandler(self._agent_log_handler)
+            self._agent_log_handler = None
+            self._agent_log = None
+
     def on_unmount(self) -> None:
+        self._close_agent_log()
         if self.options is not None:
             self.options.detach()
 
@@ -196,6 +224,7 @@ class ChatPane(Widget):
                     self.app.agent,  # type: ignore[attr-defined]
                     self.app.session_factory,  # type: ignore[attr-defined]
                     self.messages,
+                    app=self.app,
                     mode=self.session_mode.value,
                     curriculum_name=(
                         self.active_curriculum.name
@@ -208,8 +237,17 @@ class ChatPane(Widget):
                         else ""
                     ),
                 ):
+                    if self._agent_log is not None:
+                        self._agent_log.debug(
+                            "[%s] [%s] %s",
+                            datetime.now(timezone.utc).isoformat(),
+                            mode,
+                            serialize_stream_payload(payload),
+                        )
                     if mode == "messages":
                         chunk, metadata = payload
+                        if isinstance(chunk, ToolMessage):
+                            continue
                         await harness.append(chunk)
 
                         # If we have usage metadata, update the status bar to display the total
@@ -219,7 +257,7 @@ class ChatPane(Widget):
                             chunk.usage_metadata and
                             chunk.usage_metadata.get("total_tokens")
                         ):
-                            self._token_usage.total_tokens += chunk.usage_metadata["total_tokens"]
+                            self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
                             self.update_status_bar()
 
                     elif mode == "updates":
