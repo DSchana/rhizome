@@ -4,41 +4,42 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Button, Markdown, Static
 
+from rhizome.tui.colors import Colors
 from rhizome.tui.types import Mode, Role
 
 
 class ChatMessage(Widget):
     """Renders a single chat message with role-based styling and markdown support."""
 
-    DEFAULT_CSS = """
-    ChatMessage {
+    DEFAULT_CSS = f"""
+    ChatMessage {{
         padding: 1 1;
         height: auto;
-    }
-    ChatMessage.user-message {
-        background: rgb(31, 31, 31);
-    }
-    ChatMessage.agent-message {
-        background: rgb(40, 40, 40);
-    }
-    ChatMessage.system-message {
-        background: rgb(35, 35, 45);
+    }}
+    ChatMessage.user-message {{
+        background: {Colors.IDLE_USER_BG};
+    }}
+    ChatMessage.agent-message {{
+        background: {Colors.IDLE_AGENT_BG};
+    }}
+    ChatMessage.system-message {{
+        background: {Colors.IDLE_SYSTEM_BG};
         color: $text-muted;
         padding: 0 1;
-    }
-    ChatMessage.learn-mode.user-message {
-        background: rgb(25, 30, 50);
-    }
-    ChatMessage.learn-mode.agent-message {
-        background: rgb(30, 35, 55);
-    }
-    ChatMessage.review-mode.user-message {
-        background: rgb(35, 25, 50);
-    }
-    ChatMessage.review-mode.agent-message {
-        background: rgb(40, 30, 55);
-    }
-    ChatMessage #msg-collapse {
+    }}
+    ChatMessage.learn-mode.user-message {{
+        background: {Colors.LEARN_USER_BG};
+    }}
+    ChatMessage.learn-mode.agent-message {{
+        background: {Colors.LEARN_AGENT_BG};
+    }}
+    ChatMessage.review-mode.user-message {{
+        background: {Colors.REVIEW_USER_BG};
+    }}
+    ChatMessage.review-mode.agent-message {{
+        background: {Colors.REVIEW_AGENT_BG};
+    }}
+    ChatMessage #msg-collapse {{
         dock: right;
         width: 3;
         min-width: 3;
@@ -46,21 +47,21 @@ class ChatMessage(Widget):
         background: transparent;
         border: none;
         color: $text-muted;
-    }
-    ChatMessage #msg-collapse:hover {
+    }}
+    ChatMessage #msg-collapse:hover {{
         color: $text;
-    }
-    ChatMessage .msg-content {
+    }}
+    ChatMessage .msg-content {{
         width: 1fr;
-    }
-    ChatMessage #msg-line-count {
+    }}
+    ChatMessage #msg-line-count {{
         display: none;
         color: $text-muted 50%;
         padding: 0 0 0 1;
-    }
-    ChatMessage.--collapsed #msg-line-count {
+    }}
+    ChatMessage.--collapsed #msg-line-count {{
         display: block;
-    }
+    }}
     """
 
     ROLE_PREFIXES = {
