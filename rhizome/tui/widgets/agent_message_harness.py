@@ -15,7 +15,7 @@ from langchain.messages import AIMessageChunk
 
 
 class AgentMessageHarness(Widget):
-    """Manages ThinkingIndicator → ChatMessage + Markdown stream for one agent turn."""
+    """Manages ThinkingIndicator → interleaved ChatMessage/ToolCallList segments for one agent turn."""
 
     DEFAULT_CSS = f"""
     AgentMessageHarness {{
@@ -31,15 +31,15 @@ class AgentMessageHarness(Widget):
     AgentMessageHarness.review-mode {{
         background: {Colors.REVIEW_AGENT_BG};
     }}
-    AgentMessageHarness.idle-mode ToolCallList {{
+    ToolCallList.idle-mode {{
         background: {Colors.IDLE_TOOLCALL_BG};
         border: solid {Colors.IDLE_TOOLCALL_BORDER};
     }}
-    AgentMessageHarness.learn-mode ToolCallList {{
+    ToolCallList.learn-mode {{
         background: {Colors.LEARN_TOOLCALL_BG};
         border: solid {Colors.LEARN_TOOLCALL_BORDER};
     }}
-    AgentMessageHarness.review-mode ToolCallList {{
+    ToolCallList.review-mode {{
         background: {Colors.REVIEW_TOOLCALL_BG};
         border: solid {Colors.REVIEW_TOOLCALL_BORDER};
     }}
@@ -48,32 +48,25 @@ class AgentMessageHarness(Widget):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._thinking: ThinkingIndicator | None = None
-        self._tool_list: ToolCallList | None = None
-        self._chat_message: ChatMessage | None = None
-        self._stream: MarkdownStream | None = None
+        self._segments: list[ChatMessage | ToolCallList] = []
+        self._active_stream: MarkdownStream | None = None
         self._finalized: bool = False
 
     @property
     def _session_mode(self) -> Mode:
         pane = self.app.active_chat_pane  # type: ignore[attr-defined]
         return pane.session_mode
-    
-    @property
-    def chat_message(self) -> ChatMessage | None:
-        return self._chat_message
-    
+
     @property
     def chat_message_body(self) -> str | None:
-        return None if self._chat_message is None else self._chat_message._body
-    
-    @property
-    def agent_message_started(self) -> bool:
-        return self._chat_message is not None and self._stream is not None
-    
+        """Concatenated body text from all ChatMessage segments."""
+        bodies = [seg._body for seg in self._segments if isinstance(seg, ChatMessage)]
+        return "".join(bodies) if bodies else None
+
     @property
     def is_thinking(self) -> bool:
         return self._thinking is not None
-    
+
     def on_mount(self) -> None:
         self.set_interval(0.2, self._sync_session_mode)
 
@@ -82,9 +75,26 @@ class AgentMessageHarness(Widget):
         # the message. This way, changes to the mode won't change the background
         # colour of past messages.
         if not self._finalized:
-            self.set_class(self._session_mode == Mode.LEARN, "learn-mode")
-            self.set_class(self._session_mode == Mode.REVIEW, "review-mode")
-            self.set_class(self._session_mode == Mode.IDLE, "idle-mode")
+            mode = self._session_mode
+            self.set_class(mode == Mode.LEARN, "learn-mode")
+            self.set_class(mode == Mode.REVIEW, "review-mode")
+            self.set_class(mode == Mode.IDLE, "idle-mode")
+
+            # Apply mode classes to the current (last) ToolCallList only;
+            # prior ToolCallList segments keep the mode they were created with.
+            last_tl = self._last_tool_list
+            if last_tl is not None:
+                last_tl.set_class(mode == Mode.LEARN, "learn-mode")
+                last_tl.set_class(mode == Mode.REVIEW, "review-mode")
+                last_tl.set_class(mode == Mode.IDLE, "idle-mode")
+
+    @property
+    def _last_tool_list(self) -> ToolCallList | None:
+        """Return the last ToolCallList segment, or None."""
+        for seg in reversed(self._segments):
+            if isinstance(seg, ToolCallList):
+                return seg
+        return None
 
     async def start_thinking(self) -> None:
         """Mount a ThinkingIndicator inside this harness."""
@@ -100,45 +110,36 @@ class AgentMessageHarness(Widget):
     async def append(self, token: AIMessageChunk) -> None:
         """Append a text token to the streaming message.
 
-        On the first call, replaces the ThinkingIndicator with a ChatMessage
-        and starts a Markdown stream.
+        Creates a new ChatMessage segment if the last segment is not a ChatMessage
+        (or if no segments exist yet).
         """
         if self._finalized:
-            raise Exception # TODO: raise a proper exception
-        
+            raise Exception  # TODO: raise a proper exception
+
         # Agents will produce AIMessageChunks of type "input_json_delta" when constructing
         # args for tool calls, which have empty text. We want to ignore these until the
         # agent produces an actual text token as part of it's message, so we don't initialize
         # the chat message too early.
         if not token.text:
             return
-        
-        # First, initialize the chat message if we haven't already.
-        if self._chat_message is None:
-            await self._init_chat_message()
 
-            assert self._chat_message is not None
-            assert self._stream is not None
+        # If the last segment isn't a ChatMessage, start a new one.
+        if not self._segments or not isinstance(self._segments[-1], ChatMessage):
+            await self._start_chat_segment()
 
-        self._chat_message._body += token.text
-        if not self._chat_message._collapsed:
-            if self._stream:
-                await self._stream.write(token.text)
+        chat = self._segments[-1]
+        assert isinstance(chat, ChatMessage)
 
-    async def _init_chat_message(self) -> None:
-        """Initialize the ChatMessage widget and exposes the stream.
+        chat._body += token.text
+        if not chat._collapsed and self._active_stream:
+            await self._active_stream.write(token.text)
 
-        self._chat_message and self._stream are guaranteed to be set after
-        calling this coroutine.
-        """
-        if self._chat_message is not None and self._stream is not None:
-            return
-
-        self._chat_message = ChatMessage(role=Role.AGENT, mode=self._session_mode)
-        await self.mount(self._chat_message)
-        
-        # Grab a handle to the stream, for writing tokens
-        self._stream = Markdown.get_stream(self._chat_message.inner_markdown)
+    async def _start_chat_segment(self) -> None:
+        """Create and mount a new ChatMessage segment, opening a fresh stream."""
+        chat = ChatMessage(role=Role.AGENT, mode=self._session_mode)
+        self._segments.append(chat)
+        await self.mount(chat)
+        self._active_stream = Markdown.get_stream(chat.inner_markdown)
 
     async def post_update(self, chunk: dict) -> None:
         """Handle a graph state update. Extracts tool call names from AIMessage content."""
@@ -151,15 +152,27 @@ class AgentMessageHarness(Widget):
                     if isinstance(block, dict) and block.get("type") == "tool_use":
                         name = block.get("name")
                         if name:
-                            if self._tool_list is None:
-                                self._tool_list = ToolCallList()
-                                await self.mount(self._tool_list)
-                            self._tool_list.add_tool(name)
+                            # If the last segment isn't a ToolCallList, close the
+                            # active stream and start a new tool list segment.
+                            if not self._segments or not isinstance(self._segments[-1], ToolCallList):
+                                await self._close_active_stream()
+                                tool_list = ToolCallList(classes=f"{self._session_mode.value}-mode")
+                                self._segments.append(tool_list)
+                                await self.mount(tool_list)
+                            last = self._segments[-1]
+                            assert isinstance(last, ToolCallList)
+                            last.add_tool(name)
+
+    async def _close_active_stream(self) -> None:
+        """Stop the active MarkdownStream if one is open."""
+        if self._active_stream is not None:
+            await self._active_stream.stop()
+            self._active_stream = None
 
     async def finalize(self) -> str:
         """Stop the stream and finalize the message. Returns accumulated message body."""
-        # Remark: The (no response) message is posted if the chat message widget was never
-        # initialized, meaning the agent never said anything.
+        # Remark: The (no response) message is posted if no ChatMessage segments exist,
+        # meaning the agent never said anything.
         return await self._finalize(empty_chat_message="(no response)")
 
     async def cancel(self) -> str:
@@ -171,16 +184,21 @@ class AgentMessageHarness(Widget):
         await self.stop_thinking()
 
         # Close the stream if opened
-        if self._stream is not None:
-            await self._stream.stop()
+        await self._close_active_stream()
 
-        if self._chat_message is None:
+        has_chat = any(isinstance(seg, ChatMessage) for seg in self._segments)
+
+        if not has_chat:
             if empty_chat_message:
-                self._chat_message = ChatMessage(role=Role.AGENT, content=empty_chat_message)
-                await self.mount(self._chat_message)
+                chat = ChatMessage(role=Role.AGENT, content=empty_chat_message)
+                self._segments.append(chat)
+                await self.mount(chat)
             else:
+                self._finalized = True
                 return ""
 
-        # Flag that we're finished, so that we
         self._finalized = True
-        return self._chat_message._body
+        # Join bodies from all ChatMessage segments
+        return "".join(
+            seg._body for seg in self._segments if isinstance(seg, ChatMessage)
+        )
