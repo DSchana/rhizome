@@ -40,17 +40,17 @@ class ChatMessage(Widget):
         border: round {Colors.REVIEW_AGENT_BORDER};
         margin: 0 2;
     }}
-    ChatMessage.--commit-selectable {{
-        border-left: thick $accent 50%;
+    ChatMessage.agent-message.--commit-selectable {{
+        border: round {Colors.COMMIT_SELECTABLE};
     }}
-    ChatMessage.--commit-cursor {{
-        border-left: thick $accent;
+    ChatMessage.agent-message.--commit-cursor {{
+        border: round {Colors.COMMIT_CURSOR};
     }}
-    ChatMessage.--commit-selected {{
-        border-left: thick $success;
+    ChatMessage.agent-message.--commit-selected {{
+        border: round {Colors.COMMIT_SELECTED};
     }}
-    ChatMessage.--commit-selected.--commit-cursor {{
-        border-left: thick $success 70%;
+    ChatMessage.agent-message.--commit-selected.--commit-cursor {{
+        border: round {Colors.COMMIT_SELECTED_CURSOR};
     }}
     ChatMessage .commit-checkbox {{
         dock: left;
