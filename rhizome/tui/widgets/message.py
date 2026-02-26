@@ -39,6 +39,25 @@ class ChatMessage(Widget):
     ChatMessage.review-mode.agent-message {{
         background: {Colors.REVIEW_AGENT_BG};
     }}
+    ChatMessage.--commit-selectable {{
+        border-left: thick $accent 50%;
+    }}
+    ChatMessage.--commit-cursor {{
+        border-left: thick $accent;
+    }}
+    ChatMessage.--commit-selected {{
+        border-left: thick $success;
+    }}
+    ChatMessage.--commit-selected.--commit-cursor {{
+        border-left: thick $success 70%;
+    }}
+    ChatMessage .commit-checkbox {{
+        dock: left;
+        width: 3;
+        min-width: 3;
+        height: 1;
+        padding: 0;
+    }}
     ChatMessage #msg-collapse {{
         dock: right;
         width: 3;

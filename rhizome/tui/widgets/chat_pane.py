@@ -23,6 +23,7 @@ from rhizome.tui.types import ChatMessageData, Mode, Role, TokenUsageData
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
+from rhizome.tui.widgets.commit_selector import CommitSelector
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
@@ -357,3 +358,19 @@ class ChatPane(Widget):
         for ed in editors:
             ed.remove()
         self._restore_chat_input()
+
+    def on_commit_selector_dismissed(self, event: CommitSelector.Dismissed) -> None:
+        for sel in self.query(CommitSelector):
+            sel.remove()
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = False
+        self._restore_chat_input()
+
+    def on_commit_selector_done(self, event: CommitSelector.Done) -> None:
+        for sel in self.query(CommitSelector):
+            sel.remove()
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = False
+        self._restore_chat_input()
+        count = len(event.selected_messages)
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected {count} message(s) for commit."))

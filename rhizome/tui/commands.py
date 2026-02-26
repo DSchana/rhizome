@@ -16,6 +16,7 @@ from textual.widgets import TabbedContent
 from rhizome.tui.options import Options, parse_jsonc
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.options_editor import OptionsEditor
+from rhizome.tui.widgets.commit_selector import CommitSelector
 from rhizome.tui.widgets.topic_tree import TopicTree
 
 if TYPE_CHECKING:
@@ -242,6 +243,17 @@ async def _handle_new(app: CurriculumApp, _args: str) -> None:
         await screen._add_tab()
 
 
+async def _handle_commit(app: CurriculumApp, _args: str) -> None:
+    """Select learn-mode messages to commit as knowledge."""
+    pane = app.active_chat_pane
+    area = pane.query_one("#message-area")
+    selector = CommitSelector(id="commit-selector")
+    await area.mount(selector)
+    chat_input = pane.query_one("#chat-input")
+    chat_input.disabled = True
+    chat_input.placeholder = "Select messages with Space, confirm with Ctrl+Enter, cancel with Escape"
+
+
 async def _handle_close(app: CurriculumApp, _args: str) -> None:
     """Close the current chat session tab."""
     from rhizome.tui.screens.chat import ChatScreen # Avoid circular import
@@ -260,6 +272,7 @@ async def _handle_close(app: CurriculumApp, _args: str) -> None:
 COMMANDS: dict[str, Command] = {
     "clear": Command("clear", "Clear chat messages", _handle_clear),
     "close": Command("close", "Close the current chat session tab", _handle_close),
+    "commit": Command("commit", "Select learn-mode messages to commit as knowledge", _handle_commit),
     "explore": Command("explore", "Browse and select topics from the topic tree", _handle_explore),
     "help": Command("help", "Show available commands and usage", _handle_help),
     "idle": Command("idle", "Return to idle mode", _handle_idle),
