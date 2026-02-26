@@ -16,7 +16,6 @@ from textual.widgets import TabbedContent
 from rhizome.tui.options import Options, parse_jsonc
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.options_editor import OptionsEditor
-from rhizome.tui.widgets.commit_selector import CommitSelector
 from rhizome.tui.widgets.topic_tree import TopicTree
 
 if TYPE_CHECKING:
@@ -246,12 +245,7 @@ async def _handle_new(app: CurriculumApp, _args: str) -> None:
 async def _handle_commit(app: CurriculumApp, _args: str) -> None:
     """Select learn-mode messages to commit as knowledge."""
     pane = app.active_chat_pane
-    area = pane.query_one("#message-area")
-    selector = CommitSelector(id="commit-selector")
-    await area.mount(selector)
-    chat_input = pane.query_one("#chat-input")
-    chat_input.disabled = True
-    chat_input.placeholder = "Select messages with Space, confirm with Ctrl+Enter, cancel with Escape"
+    pane.enter_commit_mode()
 
 
 async def _handle_close(app: CurriculumApp, _args: str) -> None:
