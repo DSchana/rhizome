@@ -190,33 +190,21 @@ async def tag_knowledge_entry(entry_id: int, tag_name: str, runtime: ToolRuntime
 # App commands (mode switching, tab renaming)
 # ---------------------------------------------------------------------------
 
-@tool("switch_to_learn_mode", description="Toggle learn mode on the active session. If already in learn mode, exits to idle.")
-async def switch_to_learn_mode(runtime: ToolRuntime[AgentContext]) -> str:
-    from rhizome.tui.commands import _handle_learn
+@tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
+async def set_mode_tool(
+    mode: str,
+    runtime: ToolRuntime[AgentContext]
+) -> str:
+    from rhizome.tui.commands import set_mode
+    from rhizome.tui.types import Mode
     app = runtime.context.app
     if app is None:
         return "Error: app context not available."
-    await _handle_learn(app, "")
-    return f"Mode is now: {app.active_chat_pane.session_mode.value}"
-
-
-@tool("switch_to_review_mode", description="Toggle review mode on the active session. If already in review mode, exits to idle.")
-async def switch_to_review_mode(runtime: ToolRuntime[AgentContext]) -> str:
-    from rhizome.tui.commands import _handle_review
-    app = runtime.context.app
-    if app is None:
-        return "Error: app context not available."
-    await _handle_review(app, "")
-    return f"Mode is now: {app.active_chat_pane.session_mode.value}"
-
-
-@tool("switch_to_idle_mode", description="Switch the active session back to idle mode.")
-async def switch_to_idle_mode(runtime: ToolRuntime[AgentContext]) -> str:
-    from rhizome.tui.commands import _handle_idle
-    app = runtime.context.app
-    if app is None:
-        return "Error: app context not available."
-    await _handle_idle(app, "")
+    try:
+        target = Mode(mode)
+    except ValueError:
+        return f"Invalid mode '{mode}'. Must be one of: idle, learn, review."
+    await set_mode(app, target, silent=True)
     return f"Mode is now: {app.active_chat_pane.session_mode.value}"
 
 
@@ -250,8 +238,6 @@ def get_all_tools() -> list:
         # list_all_tags,
         # get_entries_by_tag_name,
         # tag_knowledge_entry,
-        switch_to_learn_mode,
-        switch_to_review_mode,
-        switch_to_idle_mode,
+        set_mode_tool,
         rename_tab,
     ]

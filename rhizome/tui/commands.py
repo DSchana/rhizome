@@ -65,36 +65,37 @@ def parse_input(text: str) -> ParsedCommand | None:
 # ---------------------------------------------------------------------------
 
 
-async def _handle_idle(app: CurriculumApp, _args: str) -> None:
+async def set_mode(app: CurriculumApp, mode: Mode, *, silent: bool = False) -> None:
+    """Set the session mode. This is the shared implementation used by all
+    mode-switching commands and agent tools.
+
+    When *silent* is ``True`` the system message is suppressed (useful when
+    the agent switches modes programmatically).
+    """
     pane = app.active_chat_pane
-    if pane.session_mode == Mode.IDLE:
-        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Already in idle mode."))
+    if pane.session_mode == mode:
+        if not silent:
+            pane.append_message(
+                ChatMessageData(role=Role.SYSTEM, content=f"Already in {mode.value} mode.")
+            )
         return
-    pane.session_mode = Mode.IDLE
-    pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Returned to idle mode."))
+    pane.session_mode = mode
+    if not silent:
+        label = "Returned to idle mode." if mode == Mode.IDLE else f"Entered {mode.value} mode."
+        pane.append_message(ChatMessageData(role=Role.SYSTEM, content=label))
     pane.update_status_bar()
+
+
+async def _handle_idle(app: CurriculumApp, _args: str) -> None:
+    await set_mode(app, Mode.IDLE)
 
 
 async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    pane = app.active_chat_pane
-    if pane.session_mode == Mode.LEARN:
-        pane.session_mode = Mode.IDLE
-        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Exited learn mode."))
-    else:
-        pane.session_mode = Mode.LEARN
-        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Entered learn mode."))
-    pane.update_status_bar()
+    await set_mode(app, Mode.LEARN)
 
 
 async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    pane = app.active_chat_pane
-    if pane.session_mode == Mode.REVIEW:
-        pane.session_mode = Mode.IDLE
-        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Exited review mode."))
-    else:
-        pane.session_mode = Mode.REVIEW
-        pane.append_message(ChatMessageData(role=Role.SYSTEM, content="Entered review mode."))
-    pane.update_status_bar()
+    await set_mode(app, Mode.REVIEW)
 
 
 async def _handle_options(app: CurriculumApp, args: str) -> None:

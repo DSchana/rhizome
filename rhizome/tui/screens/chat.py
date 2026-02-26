@@ -173,11 +173,8 @@ class ChatScreen(Screen):
                 tool_list.action_toggle_collapse()
                 return
 
-    def action_cycle_mode(self) -> None:
+    async def action_cycle_mode(self) -> None:
+        from rhizome.tui.commands import set_mode
         pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
         cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
-        pane.session_mode = cycle[pane.session_mode]
-        pane.update_status_bar()
-        pane.append_message(
-            ChatMessageData(role=Role.SYSTEM, content=f"Mode changed to **{pane.session_mode.value}**.")
-        )
+        await set_mode(self.app, cycle[pane.session_mode])  # type: ignore[arg-type]
