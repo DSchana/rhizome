@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
@@ -70,27 +70,46 @@ class OptionsEditor(Widget):
     OptionsEditor {
         height: auto;
         padding: 0 2 1 2;
-        background: $surface;
-        border: tall rgb(86, 126, 160);
+        background: rgb(16, 16, 16);
+        border: round rgb(86, 126, 160);
     }
     OptionsEditor #options-title {
         text-style: bold;
         margin-top: 1;
         margin-bottom: 1;
     }
-    OptionsEditor .option-label {
+    OptionsEditor .option-row {
+        height: auto;
         margin-top: 1;
-        color: $text-muted;
     }
-    OptionsEditor Select {
+    OptionsEditor .option-row .option-info {
+        width: 1fr;
+        height: auto;
+    }
+    OptionsEditor .option-row .option-name {
+        height: auto;
+    }
+    OptionsEditor .option-row .option-desc {
+        color: $text-muted 60%;
+    }
+    OptionsEditor .option-row Select {
         width: 40;
     }
-    OptionsEditor Input {
+    OptionsEditor .option-row Input {
         width: 40;
     }
     OptionsEditor #options-done {
         margin-top: 1;
         width: auto;
+        background: transparent;
+        border: round rgb(80, 80, 80);
+        color: $text-muted;
+        min-width: 10;
+        text-align: center;
+    }
+    OptionsEditor #options-done:hover {
+        border: round rgb(120, 120, 120);
+        color: $text;
     }
     OptionsEditor #options-dismiss {
         dock: right;
@@ -136,10 +155,13 @@ class OptionsEditor(Widget):
                 self._widget_specs[wid] = spec
                 current = self._options.get(spec)
 
-                yield Label(f"{spec.help}  [{spec.resolved_name}]", classes="option-label")
-                yield _build_widget(spec, current, wid, self._options)
+                with Horizontal(classes="option-row"):
+                    with Vertical(classes="option-info"):
+                        yield Label(spec.resolved_name, classes="option-name")
+                        yield Label(spec.help, classes="option-desc")
+                    yield _build_widget(spec, current, wid, self._options)
 
-            yield Button("Done", id="options-done", variant="primary")
+            yield Button("done", id="options-done")
 
     def on_mount(self) -> None:
         """Subscribe to condition specs so dependent widgets update in-place."""

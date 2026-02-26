@@ -93,7 +93,7 @@ class TopicTree(Vertical):
         height: auto;
         margin-top: 1;
         border: round rgb(86, 126, 160);
-        padding: 0 0 0 1;
+        padding: 0 0 1 1;
     }
     TopicTree #topic-tree-help {
         color: $text-muted;
