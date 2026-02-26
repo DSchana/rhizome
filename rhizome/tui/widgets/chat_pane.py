@@ -16,7 +16,7 @@ from langchain.messages import ToolMessage
 
 from rhizome.agent import build_lc_messages, compute_chat_model_max_tokens, stream_agent
 from rhizome.config import get_log_dir
-from rhizome.db import Curriculum, Topic
+from rhizome.db import Topic
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.options import Options, OptionScope
 from rhizome.tui.types import ChatMessageData, Mode, Role, TokenUsageData
@@ -72,9 +72,8 @@ class ChatPane(Widget):
         self._agent_busy: bool = False
         self._agent_worker: Worker[None] | None = None
         self.session_mode: Mode = Mode.IDLE
-        self.session_context: str = ""
-        self.active_curriculum: Curriculum | None = None
         self.active_topic: Topic | None = None
+        self._topic_path: list[str] = []
         self.options: Options | None = None  # set on mount when app is available
         self._token_usage = TokenUsageData()
         self._agent_log: logging.Logger | None = None
@@ -237,11 +236,6 @@ class ChatPane(Widget):
                     self.messages,
                     app=self.app,
                     mode=self.session_mode.value,
-                    curriculum_name=(
-                        self.active_curriculum.name
-                        if self.active_curriculum
-                        else ""
-                    ),
                     topic_name=(
                         self.active_topic.name
                         if self.active_topic
@@ -286,9 +280,6 @@ class ChatPane(Widget):
                 lc_messages = build_lc_messages(
                     non_conversation,
                     mode=self.session_mode.value,
-                    curriculum_name=(
-                        self.active_curriculum.name if self.active_curriculum else ""
-                    ),
                     topic_name=(
                         self.active_topic.name if self.active_topic else ""
                     ),
@@ -321,7 +312,7 @@ class ChatPane(Widget):
         """Sync the status bar with the current mode and context."""
         bar = self.query_one("#status-bar", StatusBar)
         bar.mode = self.session_mode.value
-        bar.context = self.session_context
+        bar.topic_path = list(self._topic_path)
         bar.token_usage = self._token_usage
         bar.mutate_reactive(StatusBar.token_usage)
 
@@ -345,19 +336,10 @@ class ChatPane(Widget):
         chat_input.focus()
 
     def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
-        topic = event.topic
-        self.active_topic = topic
-        if self.active_curriculum and topic:
-            self.session_context = f"{self.active_curriculum.name} > {topic.name}"
-        elif self.active_curriculum:
-            self.session_context = self.active_curriculum.name
-        elif topic:
-            self.session_context = topic.name
-        else:
-            self.session_context = ""
-
+        self.active_topic = event.topic
+        self._topic_path = event.path
         self.update_status_bar()
-        self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {topic.name}"))
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {self.active_topic.name}"))
         for tree in self.query(TopicTree):
             tree.remove()
         self._restore_chat_input()

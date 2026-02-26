@@ -122,9 +122,10 @@ class TopicTree(Vertical):
     class TopicSelected(Message):
         """Posted when the user selects a topic with Enter."""
 
-        def __init__(self, topic: Topic) -> None:
+        def __init__(self, topic: Topic, path: list[str]) -> None:
             super().__init__()
             self.topic = topic
+            self.path = path
 
     class Dismissed(Message):
         """Posted when the user clicks the dismiss button."""
@@ -143,7 +144,15 @@ class TopicTree(Vertical):
     def on_tree_node_selected(self, event: Tree.NodeSelected[Topic]) -> None:
         if event.node.data is not None:
             event.stop()
-            self.post_message(self.TopicSelected(event.node.data))
+            # Walk up the tree to build the full path.
+            path: list[str] = []
+            node = event.node
+            while node.parent is not None:
+                if node.data is not None:
+                    path.append(node.data.name)
+                node = node.parent
+            path.reverse()
+            self.post_message(self.TopicSelected(event.node.data, path))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "topic-tree-dismiss":

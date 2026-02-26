@@ -21,28 +21,41 @@ class StatusBar(Static):
     """Displays the current mode and active curriculum/topic context."""
 
     mode: reactive[str] = reactive("idle")
-    context: reactive[str] = reactive("")
+    topic_path: reactive[list[str]] = reactive(list)
     token_usage: reactive[TokenUsageData] = reactive(TokenUsageData)
 
+    # Max characters for the rendered topic path (excluding the "topic: " prefix).
+    TOPIC_PATH_MAX = 60
+
     def render(self) -> Text:
-        # -- left: mode (coloured) + context + hint --
-        result = Text("mode: ")
+        # -- line 1: topic path --
+        _label = "rgb(140,140,140)"
+        topic_line = Text()
+        topic_line.append("topic: ", style=_label)
+        if self.topic_path:
+            sep = " > "
+            full = sep.join(self.topic_path)
+            if len(full) <= self.TOPIC_PATH_MAX:
+                topic_line.append(full)
+            else:
+                # Truncate from the left, keeping as many trailing segments as fit.
+                parts = list(self.topic_path)
+                while len(parts) > 1 and len(sep.join(parts)) + len("... > ") > self.TOPIC_PATH_MAX:
+                    parts.pop(0)
+                topic_line.append("... > " + sep.join(parts))
+        else:
+            topic_line.append("none", style="rgb(100,100,100)")
+
+        # -- line 2: mode + token usage --
+        left = Text()
+        left.append("mode: ", style=_label)
         mode_color = _MODE_COLORS.get(self.mode)
         if mode_color:
-            result.append(self.mode, style=mode_color)
+            left.append(self.mode, style=mode_color)
         else:
-            result.append(self.mode)
+            left.append(self.mode)
+        left.append("  (shift+tab to cycle)", style="rgb(100,100,100)")
 
-        hint = Text("  (shift+tab to cycle)", style="rgb(100,100,100)")
-
-        if self.context:
-            result.append(f"  [{self.context}]")
-
-        result.append(hint)
-
-        left_len = len(result.plain)
-
-        # -- right: token usage --
         right = Text()
         if self.token_usage.total_tokens:
             total = self.token_usage.total_tokens
@@ -57,7 +70,8 @@ class StatusBar(Static):
             if pct is not None:
                 right.append(f"  context usage: {pct:.1f}%")
 
-        gap = max(self.size.width - left_len - len(right.plain), 2)
-        result.append(" " * gap)
-        result.append(right)
-        return result
+        gap = max(self.size.width - len(left.plain) - len(right.plain), 2)
+        left.append(" " * gap)
+        left.append(right)
+
+        return Text.assemble(topic_line, "\n", left)

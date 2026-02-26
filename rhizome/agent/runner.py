@@ -258,14 +258,11 @@ def build_lc_messages(
     messages: list[ChatMessageData],
     *,
     mode: str,
-    curriculum_name: str,
     topic_name: str,
 ) -> list:
     context_line = ""
-    if curriculum_name and topic_name:
-        context_line = f"Active curriculum: {curriculum_name}, topic: {topic_name}\n"
-    elif curriculum_name:
-        context_line = f"Active curriculum: {curriculum_name}\n"
+    if topic_name:
+        context_line = f"Active topic: {topic_name}\n"
 
     system = SystemMessage(content=SYSTEM_PROMPT_V2.format(mode=mode, context_line=context_line))
     lc_messages: list = [system]
@@ -289,7 +286,6 @@ async def stream_agent(
     *,
     app: Any = None,
     mode: str = "idle",
-    curriculum_name: str = "",
     topic_name: str = "",
 ) -> AsyncIterator[tuple[str, Any]]:
     """Stream agent output as ``(kind, payload)`` tuples.
@@ -302,7 +298,7 @@ async def stream_agent(
         ``("updates", chunk_dict)`` — raw graph update dicts, passed through unfiltered.
     """
     lc_messages = build_lc_messages(
-        messages, mode=mode, curriculum_name=curriculum_name, topic_name=topic_name,
+        messages, mode=mode, topic_name=topic_name,
     )
 
     async with session_factory() as session:
