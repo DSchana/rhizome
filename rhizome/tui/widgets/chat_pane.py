@@ -330,7 +330,12 @@ class ChatPane(Widget):
         msg.mode = self.session_mode
         self.messages.append(msg)
         area = self.query_one("#message-area", VerticalScroll)
-        area.mount(ChatMessage(role=msg.role, content=msg.content, mode=msg.mode))
+        widget = ChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
+        if msg.role in (Role.SYSTEM, Role.ERROR):
+            children = area.children
+            if children and isinstance(children[-1], ChatMessage) and children[-1]._role in (Role.SYSTEM, Role.ERROR):
+                widget.add_class("--after-system")
+        area.mount(widget)
         area.scroll_end(animate=False)
 
     def _restore_chat_input(self) -> None:

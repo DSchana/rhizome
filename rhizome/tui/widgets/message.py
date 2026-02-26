@@ -32,6 +32,9 @@ class ChatMessage(Widget):
         color: $text-muted;
         padding: 1 2 0 2;
     }}
+    ChatMessage.system-message.--after-system {{
+        padding: 0 2 0 2;
+    }}
     ChatMessage.error-message {{
         color: {Colors.SYSTEM_ERROR};
         padding: 1 2 0 2;
