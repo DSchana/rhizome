@@ -18,6 +18,7 @@ class Role(Enum):
     USER = "user"
     AGENT = "agent"
     SYSTEM = "system"
+    ERROR = "error"
 
 
 @dataclass

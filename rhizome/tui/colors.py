@@ -12,6 +12,7 @@ class Colors:
     AGENT_PREFIX = "rgb(200, 100, 200)"
     SYSTEM_PREFIX = "rgb(140, 140, 140)"
     TOOLCALL_TITLE = "rgb(220, 160, 80)"
+    SYSTEM_ERROR = "rgb(220, 80, 80)"
 
     # -- Agent message borders (per mode) --
     LEARN_AGENT_BORDER = "rgb(60, 80, 160)"

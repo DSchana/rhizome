@@ -32,6 +32,13 @@ class ChatMessage(Widget):
         color: $text-muted;
         padding: 1 2 0 2;
     }}
+    ChatMessage.error-message {{
+        color: {Colors.SYSTEM_ERROR};
+        padding: 1 2 0 2;
+    }}
+    ChatMessage.error-message Markdown {{
+        color: {Colors.SYSTEM_ERROR};
+    }}
     ChatMessage.learn-mode.agent-message {{
         border: round {Colors.LEARN_AGENT_BORDER};
         margin: 0 2;
@@ -95,6 +102,7 @@ class ChatMessage(Widget):
         Role.USER: f"[bold {Colors.USER_PREFIX}]you:[/bold {Colors.USER_PREFIX}] ",
         Role.AGENT: f"[bold {Colors.AGENT_PREFIX}]agent:[/bold {Colors.AGENT_PREFIX}] ",
         Role.SYSTEM: f"[{Colors.SYSTEM_PREFIX}]system:[/{Colors.SYSTEM_PREFIX}] ",
+        Role.ERROR: f"[bold {Colors.SYSTEM_ERROR}]error:[/bold {Colors.SYSTEM_ERROR}] ",
     }
 
     def __init__(self, role: Role, content: str = "", mode: Mode = Mode.IDLE) -> None:

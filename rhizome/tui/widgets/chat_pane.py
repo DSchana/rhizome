@@ -305,6 +305,10 @@ class ChatPane(Widget):
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
+            except Exception as exc:
+                await harness.cancel()
+                self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
+
             finally:
                 self._agent_busy = False
                 self._agent_worker = None
