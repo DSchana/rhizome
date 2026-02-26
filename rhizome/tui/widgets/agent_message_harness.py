@@ -76,6 +76,15 @@ class AgentMessageHarness(Widget):
 
     async def start_thinking(self) -> None:
         """Mount a ThinkingIndicator inside this harness."""
+        # Remove shortcut hints from all previous messages in the message area
+        parent = self.parent
+        if parent is not None:
+            for msg in parent.query("ChatMessage.--show-shortcut"):
+                msg.remove_class("--show-shortcut")
+                msg._update_collapse_label()
+            for tl in parent.query("ToolCallList.--show-hint"):
+                tl.remove_class("--show-hint")
+                tl._update_title()
         self._thinking = ThinkingIndicator()
         await self.mount(self._thinking)
 
@@ -180,6 +189,16 @@ class AgentMessageHarness(Widget):
         for seg in self._segments:
             if isinstance(seg, ChatMessage):
                 seg.update_body(seg._body)
+        # Show shortcut hint on the last ChatMessage segment (only if collapsible)
+        chat_segments = [seg for seg in self._segments if isinstance(seg, ChatMessage)]
+        if chat_segments and chat_segments[-1].has_class("--collapsible"):
+            chat_segments[-1].add_class("--show-shortcut")
+            chat_segments[-1]._update_collapse_label()
+        # Show hint on the last ToolCallList segment
+        tool_segments = [seg for seg in self._segments if isinstance(seg, ToolCallList)]
+        if tool_segments:
+            tool_segments[-1].add_class("--show-hint")
+            tool_segments[-1]._update_title()
         # Join bodies from all ChatMessage segments
         return "".join(
             seg._body for seg in self._segments if isinstance(seg, ChatMessage)

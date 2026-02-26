@@ -68,7 +68,7 @@ class ChatMessage(Widget):
     }}
     ChatMessage #msg-collapse {{
         dock: right;
-        width: 3;
+        width: auto;
         min-width: 3;
         height: 1;
         background: transparent;
@@ -162,8 +162,7 @@ class ChatMessage(Widget):
         if not self.has_class("--collapsible"):
             return
         self._collapsed = not self._collapsed
-        btn = self.query_one("#msg-collapse", Button)
-        btn.label = "▶" if self._collapsed else "▼"
+        self._update_collapse_label()
         if self._collapsed:
             self.add_class("--collapsed")
             self.inner_markdown.update(self._truncated_body())
@@ -180,6 +179,17 @@ class ChatMessage(Widget):
             self.add_class("--collapsible")
         else:
             self.remove_class("--collapsible")
+
+    def _update_collapse_label(self) -> None:
+        """Update the collapse button label, appending a shortcut hint if appropriate."""
+        if self._role != Role.AGENT:
+            return
+        btn = self.query_one("#msg-collapse", Button)
+        arrow = "▶" if self._collapsed else "▼"
+        if self.has_class("--show-shortcut"):
+            btn.label = f"(ctrl+t) {arrow}"
+        else:
+            btn.label = arrow
 
     def update_body(self, body: str) -> None:
         """Update the stored body text (used after streaming completes)."""

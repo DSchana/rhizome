@@ -57,6 +57,10 @@ class ChatInput(TextArea):
     def on_focus(self) -> None:
         self.placeholder = self._placeholder
 
+    def on_blur(self) -> None:
+        if not self.disabled:
+            self.placeholder = "ctrl+l to return to the chat area"
+
     def _on_key(self, event) -> None:
         if event.key == "enter":
             text = self.text.strip()

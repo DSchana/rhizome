@@ -49,11 +49,12 @@ class ToolCallList(Widget, can_focus=True):
 
     def _title_text(self) -> str:
         c = Colors.TOOLCALL_TITLE
+        hint = " [rgb(100,100,100)](ctrl+o)[/rgb(100,100,100)]" if self.has_class("--show-hint") else ""
         if self._collapsed:
             count = len(self._tools)
             s = "s" if count != 1 else ""
-            return f"[{c}]{count} tool call{s}[/{c}] (click to expand...) ▶"
-        return f"[{c}]tool calls[/{c}] ▼"
+            return f"[{c}]{count} tool call{s}[/{c}] (click to expand...) ▶{hint}"
+        return f"[{c}]tool calls[/{c}] ▼{hint}"
 
     def _update_title(self) -> None:
         self.query_one("#tool-title", Static).update(self._title_text())
