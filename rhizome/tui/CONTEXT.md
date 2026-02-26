@@ -17,7 +17,7 @@ See `docs/architecture.md` for the overall TUI architecture.
 - **screens/** — Textual `Screen` subclasses. Currently contains `chat.py` (the main chat screen with message area, input box, and status bar). Future screens: context selection, commit workflow, review, options.
 - **widgets/** — Reusable Textual widgets:
   - `status_bar.py` — `StatusBar(Static)` with reactive `mode` and `context` properties, bound to the app's reactive state.
-  - `message.py` — `ChatMessage(Markdown)` for rendering a single chat message with markdown support and role-based styling.
+  - `message.py` — `ChatMessage(Widget)` for rendering a single chat message with markdown support, role-based styling, and conditional collapse button (shown only for messages exceeding `COLLAPSE_LINE_THRESHOLD` lines).
   - `thinking.py` — `ThinkingIndicator(Static)` animated spinner shown while awaiting agent response.
   - `chat_input.py` — `ChatInput(TextArea)` that submits on Enter and inserts newlines on Ctrl+Enter.
   - `topic_tree.py` — `TopicTree(Tree[Topic])` for browsing the topic hierarchy. Mounted by the `/explore` command.

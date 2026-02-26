@@ -8,36 +8,37 @@ from rhizome.tui.colors import Colors
 from rhizome.tui.types import Mode, Role
 
 
+COLLAPSE_LINE_THRESHOLD = 4
+"""Messages with more than this many lines show a collapse button."""
+
+
 class ChatMessage(Widget):
     """Renders a single chat message with role-based styling and markdown support."""
 
     DEFAULT_CSS = f"""
     ChatMessage {{
-        padding: 1 1;
+        padding: 1 2;
         height: auto;
     }}
     ChatMessage.user-message {{
-        background: {Colors.IDLE_USER_BG};
+        background: {Colors.USER_BG};
+        margin: 0 2;
+        padding: 1 2 0 2;
     }}
     ChatMessage.agent-message {{
-        background: {Colors.IDLE_AGENT_BG};
+        padding: 1 2 0 2;
     }}
     ChatMessage.system-message {{
-        background: {Colors.IDLE_SYSTEM_BG};
         color: $text-muted;
-        padding: 0 1;
-    }}
-    ChatMessage.learn-mode.user-message {{
-        background: {Colors.LEARN_USER_BG};
+        padding: 1 2 0 2;
     }}
     ChatMessage.learn-mode.agent-message {{
-        background: {Colors.LEARN_AGENT_BG};
-    }}
-    ChatMessage.review-mode.user-message {{
-        background: {Colors.REVIEW_USER_BG};
+        border: round {Colors.LEARN_AGENT_BORDER};
+        margin: 0 2;
     }}
     ChatMessage.review-mode.agent-message {{
-        background: {Colors.REVIEW_AGENT_BG};
+        border: round {Colors.REVIEW_AGENT_BORDER};
+        margin: 0 2;
     }}
     ChatMessage.--commit-selectable {{
         border-left: thick $accent 50%;
@@ -66,9 +67,16 @@ class ChatMessage(Widget):
         background: transparent;
         border: none;
         color: $text-muted;
+        display: none;
+    }}
+    ChatMessage.--collapsible #msg-collapse {{
+        display: block;
     }}
     ChatMessage #msg-collapse:hover {{
         color: $text;
+    }}
+    ChatMessage .msg-prefix {{
+        height: auto;
     }}
     ChatMessage .msg-content {{
         width: 1fr;
@@ -84,9 +92,9 @@ class ChatMessage(Widget):
     """
 
     ROLE_PREFIXES = {
-        Role.USER: "**you:** ",
-        Role.AGENT: "**agent:** ",
-        Role.SYSTEM: "*system:* ",
+        Role.USER: f"[bold {Colors.USER_PREFIX}]you:[/bold {Colors.USER_PREFIX}] ",
+        Role.AGENT: f"[bold {Colors.AGENT_PREFIX}]agent:[/bold {Colors.AGENT_PREFIX}] ",
+        Role.SYSTEM: f"[{Colors.SYSTEM_PREFIX}]system:[/{Colors.SYSTEM_PREFIX}] ",
     }
 
     def __init__(self, role: Role, content: str = "", mode: Mode = Mode.IDLE) -> None:
@@ -104,9 +112,13 @@ class ChatMessage(Widget):
     def compose(self) -> ComposeResult:
         if self._role == Role.AGENT:
             yield Button("▼", id="msg-collapse")
-        yield Markdown(self._prefix + self._body, classes="msg-content")
+        yield Static(self._prefix, classes="msg-prefix")
+        yield Markdown(self._body, classes="msg-content")
         if self._role == Role.AGENT:
             yield Static("", id="msg-line-count")
+
+    def on_mount(self) -> None:
+        self._check_collapsible()
 
     @property
     def inner_markdown(self) -> Markdown:
@@ -139,14 +151,22 @@ class ChatMessage(Widget):
         event.button.label = "▶" if self._collapsed else "▼"
         if self._collapsed:
             self.add_class("--collapsed")
-            self.inner_markdown.update(self._prefix + self._truncated_body())
+            self.inner_markdown.update(self._truncated_body())
             extra = self._extra_line_count()
             if extra > 0:
                 self.query_one("#msg-line-count", Static).update(f"(+{extra} more lines)")
         else:
             self.remove_class("--collapsed")
-            self.inner_markdown.update(self._prefix + self._body)
+            self.inner_markdown.update(self._body)
+
+    def _check_collapsible(self) -> None:
+        """Show or hide the collapse button based on line count."""
+        if self._role == Role.AGENT and self._body.count("\n") >= COLLAPSE_LINE_THRESHOLD:
+            self.add_class("--collapsible")
+        else:
+            self.remove_class("--collapsible")
 
     def update_body(self, body: str) -> None:
         """Update the stored body text (used after streaming completes)."""
         self._body = body
+        self._check_collapsible()

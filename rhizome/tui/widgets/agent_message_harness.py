@@ -5,7 +5,6 @@ from __future__ import annotations
 from textual.widget import Widget
 from textual.widgets.markdown import Markdown, MarkdownStream
 
-from rhizome.tui.colors import Colors
 from rhizome.tui.types import Mode, Role
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
@@ -17,32 +16,11 @@ from langchain.messages import AIMessageChunk
 class AgentMessageHarness(Widget):
     """Manages ThinkingIndicator → interleaved ChatMessage/ToolCallList segments for one agent turn."""
 
-    DEFAULT_CSS = f"""
-    AgentMessageHarness {{
+    DEFAULT_CSS = """
+    AgentMessageHarness {
         height: auto;
         layout: vertical;
-    }}
-    AgentMessageHarness.idle-mode {{
-        background: {Colors.IDLE_AGENT_BG};
-    }}
-    AgentMessageHarness.learn-mode {{
-        background: {Colors.LEARN_AGENT_BG};
-    }}
-    AgentMessageHarness.review-mode {{
-        background: {Colors.REVIEW_AGENT_BG};
-    }}
-    ToolCallList.idle-mode {{
-        background: {Colors.IDLE_TOOLCALL_BG};
-        border: solid {Colors.IDLE_TOOLCALL_BORDER};
-    }}
-    ToolCallList.learn-mode {{
-        background: {Colors.LEARN_TOOLCALL_BG};
-        border: solid {Colors.LEARN_TOOLCALL_BORDER};
-    }}
-    ToolCallList.review-mode {{
-        background: {Colors.REVIEW_TOOLCALL_BG};
-        border: solid {Colors.REVIEW_TOOLCALL_BORDER};
-    }}
+    }
     """
 
     def __init__(self, **kwargs) -> None:
@@ -198,6 +176,10 @@ class AgentMessageHarness(Widget):
                 return ""
 
         self._finalized = True
+        # Notify each ChatMessage segment so it can update collapsibility.
+        for seg in self._segments:
+            if isinstance(seg, ChatMessage):
+                seg.update_body(seg._body)
         # Join bodies from all ChatMessage segments
         return "".join(
             seg._body for seg in self._segments if isinstance(seg, ChatMessage)

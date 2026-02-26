@@ -22,6 +22,7 @@ class WelcomeHeader(Vertical):
         width: 1fr;
         height: auto;
         align: center middle;
+        margin-bottom: 1;
         border: round rgb(80, 120, 90);
     }
     #welcome-art {

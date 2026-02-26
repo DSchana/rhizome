@@ -7,6 +7,8 @@ from textual.binding import Binding
 from textual.widget import Widget
 from textual.widgets import Static
 
+from rhizome.tui.colors import Colors
+
 
 class ToolCallList(Widget, can_focus=True):
     """Displays an ordered list of tool call names using Unicode box-drawing."""
@@ -18,20 +20,18 @@ class ToolCallList(Widget, can_focus=True):
     DEFAULT_CSS = """
     ToolCallList {
         color: $text-muted;
-        margin-top: 1;
-        margin-left: 2;
-        padding: 1 2;
+        padding: 0 0 0 4;
         height: auto;
         width: auto;
         min-width: 20;
         max-width: 60;
-        border-title-color: $text-muted;
+    }
+    ToolCallList #tool-title {
+        width: auto;
+        color: $text-muted;
     }
     ToolCallList #tool-content {
         width: auto;
-    }
-    ToolCallList.--collapsed {
-        padding: 0 2;
     }
     ToolCallList.--collapsed #tool-content {
         display: none;
@@ -42,21 +42,21 @@ class ToolCallList(Widget, can_focus=True):
         super().__init__(**kwargs)
         self._tools: list[str] = []
         self._collapsed = False
-        self._update_title()
 
     def compose(self) -> ComposeResult:
+        yield Static(self._title_text(), id="tool-title")
         yield Static("", id="tool-content")
 
-    def _update_title(self) -> None:
+    def _title_text(self) -> str:
+        c = Colors.TOOLCALL_TITLE
         if self._collapsed:
             count = len(self._tools)
             s = "s" if count != 1 else ""
-            title = f"{count} tool call{s} (click to expand...) ▶"
-        else:
-            title = "tool calls ▼"
-        self.border_title = title
-        # +6 accounts for border chars (┌─ … ─┐) and padding
-        self.styles.min_width = len(title) + 6
+            return f"[{c}]{count} tool call{s}[/{c}] (click to expand...) ▶"
+        return f"[{c}]tool calls[/{c}] ▼"
+
+    def _update_title(self) -> None:
+        self.query_one("#tool-title", Static).update(self._title_text())
 
     def add_tool(self, name: str) -> None:
         """Append a tool name and re-render."""

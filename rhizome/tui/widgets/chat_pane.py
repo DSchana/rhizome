@@ -43,20 +43,26 @@ class ChatPane(Widget):
     }
     #status-bar {
         height: auto;
-        background: $surface;
-        padding: 0 1;
+        background: rgb(12, 12, 12);
+        padding: 0 1 1 1;
         border-top: solid rgb(60, 60, 60);
     }
     #message-area {
         background: $surface-darken-1;
         padding: 1;
+        scrollbar-color: rgb(60, 60, 60);
+        scrollbar-color-hover: rgb(80, 80, 80);
+        scrollbar-color-active: rgb(100, 100, 100);
     }
     #chat-input {
         height: auto;
         min-height: 3;
         max-height: 10;
+        padding: 0 1;
+        background: rgb(12, 12, 12);
     }
     #command-palette {
+        background: rgb(12, 12, 12);
     }
     """
 
