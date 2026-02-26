@@ -147,8 +147,15 @@ class ChatMessage(Widget):
         if event.button.id != "msg-collapse":
             return
         event.stop()
+        self.toggle_collapse()
+
+    def toggle_collapse(self) -> None:
+        """Programmatically toggle the collapsed state of this message."""
+        if not self.has_class("--collapsible"):
+            return
         self._collapsed = not self._collapsed
-        event.button.label = "▶" if self._collapsed else "▼"
+        btn = self.query_one("#msg-collapse", Button)
+        btn.label = "▶" if self._collapsed else "▼"
         if self._collapsed:
             self.add_class("--collapsed")
             self.inner_markdown.update(self._truncated_body())

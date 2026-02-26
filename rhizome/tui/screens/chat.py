@@ -8,8 +8,10 @@ from textual.screen import Screen
 from textual.widgets import TabbedContent, TabPane
 
 from rhizome.tui.options import Options
-from rhizome.tui.types import ChatMessageData, Role
+from rhizome.tui.types import ChatMessageData, Mode, Role
+from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
 from rhizome.tui.widgets.chat_pane import ChatPane
+from rhizome.tui.widgets.message import ChatMessage
 
 
 class ChatTabPane(TabPane):
@@ -55,6 +57,12 @@ class ChatScreen(Screen):
         # priority=True so the screen captures Ctrl+W before focused child
         # widgets (e.g. ChatInput) consume it.
         Binding("ctrl+w", "close_tab", "Close tab", priority=True),
+        Binding("ctrl+pagedown", "next_tab", "Next tab", show=False, priority=True),
+        Binding("ctrl+pageup", "prev_tab", "Previous tab", show=False, priority=True),
+        Binding("ctrl+l", "refocus_input", "Refocus input", show=False, priority=True),
+        Binding("ctrl+t", "toggle_last_agent_message", "Toggle agent msg", show=False, priority=True),
+        Binding("ctrl+o", "toggle_last_tool_call", "Toggle tool call", show=False, priority=True),
+        Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -120,3 +128,56 @@ class ChatScreen(Screen):
 
     def action_new_tab(self) -> None:
         self.run_worker(self._add_tab())
+
+    def _switch_tab(self, delta: int) -> None:
+        """Switch to the tab *delta* positions away (wrapping)."""
+        tabs = self.query_one("#tabs", TabbedContent)
+        panes = list(tabs.query(TabPane))
+        if len(panes) <= 1:
+            return
+        ids = [p.id for p in panes]
+        idx = ids.index(tabs.active)
+        new_id = ids[(idx + delta) % len(ids)]
+        tabs.active = new_id
+        # Focus the new pane's chat input so the old pane's focused widget
+        # doesn't cause TabbedContent to revert the switch.
+        new_pane = tabs.get_pane(new_id)
+        new_pane.query_one(ChatPane).query_one("#chat-input").focus()
+
+    def action_next_tab(self) -> None:
+        self._switch_tab(1)
+
+    def action_prev_tab(self) -> None:
+        self._switch_tab(-1)
+
+    def action_refocus_input(self) -> None:
+        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
+        pane.query_one("#chat-input").focus()
+
+    def action_toggle_last_agent_message(self) -> None:
+        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
+        harnesses = pane.query(AgentMessageHarness)
+        for harness in reversed(harnesses):
+            msgs = harness.query(ChatMessage)
+            if msgs:
+                last_msg = list(msgs)[-1]
+                last_msg.toggle_collapse()
+                return
+
+    def action_toggle_last_tool_call(self) -> None:
+        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
+        harnesses = pane.query(AgentMessageHarness)
+        for harness in reversed(harnesses):
+            tool_list = harness._last_tool_list
+            if tool_list is not None:
+                tool_list.action_toggle_collapse()
+                return
+
+    def action_cycle_mode(self) -> None:
+        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
+        cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
+        pane.session_mode = cycle[pane.session_mode]
+        pane.update_status_bar()
+        pane.append_message(
+            ChatMessageData(role=Role.SYSTEM, content=f"Mode changed to **{pane.session_mode.value}**.")
+        )
