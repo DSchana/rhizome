@@ -11,15 +11,14 @@ from textual.containers import VerticalScroll
 from textual.widget import Widget
 from textual.worker import Worker
 
-from langchain_core.messages.utils import count_tokens_approximately
 from langchain.messages import ToolMessage
 
-from rhizome.agent import build_lc_messages, compute_chat_model_max_tokens, stream_agent
+from rhizome.agent import AgentSession
 from rhizome.config import get_log_dir
 from rhizome.db import Topic
 from rhizome.tui.commands import COMMANDS, parse_input
 from rhizome.tui.options import Options, OptionScope
-from rhizome.tui.types import ChatMessageData, Mode, Role, TokenUsageData
+from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
@@ -75,7 +74,7 @@ class ChatPane(Widget):
         self.active_topic: Topic | None = None
         self._topic_path: list[str] = []
         self.options: Options | None = None  # set on mount when app is available
-        self._token_usage = TokenUsageData()
+        self._agent_session: AgentSession | None = None
         self._agent_log: logging.Logger | None = None
         self._agent_log_handler: logging.FileHandler | None = None
         # Commit mode state
@@ -94,8 +93,12 @@ class ChatPane(Widget):
         # Construct the per-session options object
         self.options = Options(scope=OptionScope.Session, parent=self.app.options)  # type: ignore[attr-defined]
 
-        # Compute max context window tokens from the model profile.
-        self._token_usage.max_tokens = compute_chat_model_max_tokens(self.app.chat_model)
+        # Create the per-session agent
+        self._agent_session = AgentSession(
+            self.app.session_factory,  # type: ignore[attr-defined]
+            app=self.app,
+        )
+        self._agent_session.on_token_usage_changed = self.update_status_bar
 
         area = self.query_one("#message-area", VerticalScroll)
         if self._show_welcome:
@@ -224,17 +227,16 @@ class ChatPane(Widget):
         harness = AgentMessageHarness()
         message_area.mount(harness)
 
+        agent_session = self._agent_session
+        assert agent_session is not None
+
         async def _run_agent() -> None:
             # Before we receive anything from the stream, add a thinking indicator.
             await harness.start_thinking()
             message_area.scroll_end(animate=False)
 
             try:
-                async for mode, payload in stream_agent(
-                    self.app.agent,  # type: ignore[attr-defined]
-                    self.app.session_factory,  # type: ignore[attr-defined]
-                    self.messages,
-                    app=self.app,
+                async for mode, payload in agent_session.stream(
                     mode=self.session_mode.value,
                     topic_name=(
                         self.active_topic.name
@@ -249,24 +251,16 @@ class ChatPane(Widget):
                             mode,
                             serialize_stream_payload(payload),
                         )
+
                     if mode == "messages":
                         chunk, metadata = payload
                         if isinstance(chunk, ToolMessage):
                             continue
                         await harness.append(chunk)
 
-                        # If we have usage metadata, update the status bar to display the total
-                        # number of tokens.
-                        if (
-                            hasattr(chunk, "usage_metadata") and
-                            chunk.usage_metadata and
-                            chunk.usage_metadata.get("total_tokens")
-                        ):
-                            self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
-                            self.update_status_bar()
-
                     elif mode == "updates":
                         await harness.post_update(payload)
+
                     message_area.scroll_end(animate=False)
 
                 # Finalize the message, retrieve the final agent message body, and
@@ -275,19 +269,6 @@ class ChatPane(Widget):
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
-                # Compute overhead tokens (system prompt + app-generated system messages)
-                non_conversation = [m for m in self.messages if m.role == Role.SYSTEM]
-                lc_messages = build_lc_messages(
-                    non_conversation,
-                    mode=self.session_mode.value,
-                    topic_name=(
-                        self.active_topic.name if self.active_topic else ""
-                    ),
-                )
-                overhead = count_tokens_approximately(lc_messages)
-                if overhead <= self._token_usage.total_tokens:
-                    self._token_usage.overhead_tokens = overhead
-                self.update_status_bar()
 
             except asyncio.CancelledError:
                 # Post a "cancelled" message, retrieve this final message body,
@@ -299,6 +280,7 @@ class ChatPane(Widget):
             except Exception as exc:
                 await harness.cancel()
                 self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
+                raise
 
             finally:
                 self._agent_busy = False
@@ -313,13 +295,22 @@ class ChatPane(Widget):
         bar = self.query_one("#status-bar", StatusBar)
         bar.mode = self.session_mode.value
         bar.topic_path = list(self._topic_path)
-        bar.token_usage = self._token_usage
+        if self._agent_session is not None:
+            bar.token_usage = self._agent_session.token_usage
         bar.mutate_reactive(StatusBar.token_usage)
 
     def append_message(self, msg: ChatMessageData) -> None:
         """Append a message to the history and mount its widget."""
         msg.mode = self.session_mode
         self.messages.append(msg)
+
+        # Add message to agent message history.
+        if self._agent_session is not None:
+            if msg.role == Role.USER:
+                self._agent_session.add_human_message(msg.content)
+            elif msg.role == Role.SYSTEM:
+                self._agent_session.add_system_notification(msg.content)
+
         area = self.query_one("#message-area", VerticalScroll)
         widget = ChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
         if msg.role in (Role.SYSTEM, Role.ERROR):

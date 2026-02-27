@@ -4,16 +4,15 @@ LLM agent integration using LangChain and LangGraph.
 
 ## Architecture
 
-The agent graph is built **once** at app startup (`build_agent`) and reused for every chat message. Each invocation gets a fresh DB session via `AgentContext`, passed through LangChain's `context_schema` / `ToolRuntime` mechanism.
+Each chat tab creates its own `AgentSession`, which owns the LangChain conversation history (a list of `BaseMessage`) and a compiled agent graph. The session builds a fresh DB session per `stream()` call via `AgentContext`, passed through LangChain's `context_schema` / `ToolRuntime` mechanism. AIMessages and ToolMessages from the agent are captured into the session's history automatically during streaming, preserving full tool context across turns.
 
 ## Modules
 
 - **config.py** — Reads `ANTHROPIC_API_KEY` (required) and `CURRICULUM_AGENT_MODEL` (optional, defaults to `claude-sonnet-4-20250514`) from environment variables.
 - **context.py** — `AgentContext` dataclass holding the `AsyncSession` and optional `CurriculumApp` reference for the current invocation.
 - **tools.py** — `@tool`-decorated async functions wrapping `rhizome.tools`. Each tool receives a `ToolRuntime[AgentContext]` parameter to access the session. `get_all_tools()` returns the full list.
-- **agent.py** — `build_agent()` returns a `(model, agent)` tuple: the chat model instance (for inspecting its `profile` dict with context window limits) and the compiled agent graph.
-- **utils.py** — `compute_chat_model_max_tokens(chat_model)` attempts to derive the total context window size (`max_input_tokens + max_output_tokens`) from a chat model's `profile` dict. Returns `None` if the profile is unavailable or incomplete (profiles are a beta LangChain feature).
-- **runner.py** — `stream_agent()` opens a session, prepends a system prompt with mode/context info, and streams agent output using dual `stream_mode=["updates", "messages"]`. Yields `("message", text_str)` for filtered model text tokens and `("update", chunk_dict)` for raw graph state updates. Commits on completion.
+- **agent.py** — `AgentSession` class encapsulating a conversation's agent graph, message history, and token usage tracking. Also contains `SYSTEM_PROMPT`. Each session builds its own model and agent graph via `_build_agent()`, enabling per-tab model configuration in the future. Exposes `stream()` as an async iterator of `(kind, payload)` tuples, and `add_human_message()`/`add_system_notification()` for appending to history.
+- **utils.py** — `TokenUsageData` dataclass for tracking token consumption and context window limits. `compute_chat_model_max_tokens(chat_model)` derives the total context window size from a chat model's `profile` dict.
 
 ## Tool List
 

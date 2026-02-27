@@ -59,13 +59,35 @@ class StatusBar(Static):
         right = Text()
         if self.token_usage.total_tokens:
             total = self.token_usage.total_tokens
-            overhead = self.token_usage.overhead_tokens
-            if overhead is not None:
-                conversation = total - overhead
-                right.append(f"tokens: {conversation:,} ")
-                right.append(f"(+{overhead:,})", style="rgb(120,120,120)")
+
+            system_overhead = self.token_usage.breakdown.get(TokenUsageData.BreakdownCategory.SYSTEM)
+            tool_overhead = self.token_usage.breakdown.get(TokenUsageData.BreakdownCategory.TOOL_MESSAGES)
+
+            if system_overhead is not None or tool_overhead is not None:
+                overhead_parts = []
+                if system_overhead is not None:
+                    overhead_parts.append((
+                        f"system: {system_overhead:,}",
+                        "rgb(120,120,120)"
+                    ))
+                if tool_overhead is not None:
+                    overhead_parts.append((
+                        f"tools: {tool_overhead:,}",
+                        "rgb(220,160,80)",
+                    ))
+
+                right.append(f"tokens: {total:,}")
+                right.append(" (", style="rgb(100,100,100)")
+
+                for i, (part, color) in enumerate(overhead_parts):
+                    right.append(f"{part}", style=color)
+                    if i < len(overhead_parts) - 1:
+                        right.append(", ", style="rgb(100,100,100)")
+
+                right.append(")", style="rgb(100,100,100)")
             else:
                 right.append(f"tokens: {total:,}")
+
             pct = self.token_usage.usage_percent
             if pct is not None:
                 right.append(f"  context usage: {pct:.1f}%")

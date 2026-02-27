@@ -7,7 +7,6 @@ from textual import messages
 from textual.app import App
 from textual.widgets import TabbedContent
 
-from rhizome.agent import build_agent
 from rhizome.config import get_default_db_path
 from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
@@ -31,7 +30,6 @@ class CurriculumApp(App):
         self.debug_logging = debug
         engine = get_engine(db_path or get_default_db_path())
         self.session_factory: async_sessionmaker = get_session_factory(engine)
-        self.chat_model, self.agent = build_agent()
         self.options: Options = Options.load()
         self.options.subscribe(Options.Theme, self._on_theme_changed)
         self.options.subscribe(Options.TabMaxLength, self._on_tab_max_length_changed)
