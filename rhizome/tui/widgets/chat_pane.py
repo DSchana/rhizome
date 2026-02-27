@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widget import Widget
+from textual.widgets import Static
 from textual.worker import Worker
 
 from langchain.messages import ToolMessage
@@ -25,9 +26,9 @@ from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
 from rhizome.tui.widgets.message import ChatMessage
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
-from rhizome.tui.utils import serialize_stream_payload
 from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.topic_tree import TopicTree
+from rhizome.tui.utils import serialize_stream_payload
 
 
 class ChatPane(Widget):
@@ -66,18 +67,41 @@ class ChatPane(Widget):
 
     def __init__(self, *, show_welcome: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
+
+        # Whether to show the welcome header on mount, or start with an empty message area.
         self._show_welcome = show_welcome
+
+        # The list of all messages in this chat pane, including those from the agent stream and user/system messages.
+        # This is the "view" level representation of the messages, separate from the conversation history managed by
+        # the agent session.
+        #
+        # TODO: do we even really need this?
         self.messages: list[ChatMessageData] = []
-        self._agent_busy: bool = False
-        self._agent_worker: Worker[None] | None = None
+
         self.session_mode: Mode = Mode.IDLE
+        self.options: Options | None = None  # set on mount when app is available
+
+        # Active topic and path, if any. _topic_path is the list of topic names from the root to the active topic, 
+        # used for display in the status bar.
         self.active_topic: Topic | None = None
         self._topic_path: list[str] = []
-        self.options: Options | None = None  # set on mount when app is available
+
+        # Agent session and worker state. 
+        # - _agent_session is the AgentSession instance for this chat pane, which manages the conversation history and agent stream.
+        # - _agent_busy is True from the moment an agent turn is initiated until its worker completes.
+        # - _agent_worker holds the current agent worker, if any, so it can be cancelled if the user interrupts.
         self._agent_session: AgentSession | None = None
+        self._agent_busy: bool = False
+        self._agent_worker: Worker[None] | None = None
+        # TODO: move logging into the AgentSession.
         self._agent_log: logging.Logger | None = None
         self._agent_log_handler: logging.FileHandler | None = None
+
         # Commit mode state
+        # - _commit_mode is True when the user has entered commit mode for selecting learn-mode messages to commit.
+        # - _commit_selectable is the list of ChatMessage widgets that are selectable in commit mode.
+        # - _commit_cursor is the index of the currently highlighted message in _commit_selectable.
+        # - _commit_selected is the set of indices in _commit_selectable that the user has selected for commit.
         self._commit_mode: bool = False
         self._commit_selectable: list[ChatMessage] = []
         self._commit_cursor: int = 0
@@ -91,20 +115,27 @@ class ChatPane(Widget):
 
     def on_mount(self) -> None:
         # Construct the per-session options object
-        self.options = Options(scope=OptionScope.Session, parent=self.app.options)  # type: ignore[attr-defined]
+        self.options = Options(
+            scope=OptionScope.Session, 
+            parent=self.app.options # type: ignore[attr-defined]
+        )
 
-        # Create the per-session agent
+        # Create the agent
         self._agent_session = AgentSession(
             self.app.session_factory,  # type: ignore[attr-defined]
             app=self.app,
+            on_token_usage_changed=self.update_status_bar,
         )
-        self._agent_session.on_token_usage_changed = self.update_status_bar
 
+        # Add the welcome header, assuming _show_welcome is True.
         area = self.query_one("#message-area", VerticalScroll)
         if self._show_welcome:
             area.mount(WelcomeHeader())
+
+        # Focus the chat input
         self.query_one("#chat-input", ChatInput).focus()
 
+        # TODO: move this logging setup into the AgentSession.
         if self.app.debug_logging:  # type: ignore[attr-defined]
             ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%f")
             logger_name = f"rhizome.agent_stream.{ts}"
@@ -120,8 +151,10 @@ class ChatPane(Widget):
         """Close and detach the agent stream file handler."""
         if self._agent_log_handler is not None:
             self._agent_log_handler.close()
+
             if self._agent_log is not None:
                 self._agent_log.removeHandler(self._agent_log_handler)
+
             self._agent_log_handler = None
             self._agent_log = None
 
@@ -357,6 +390,8 @@ class ChatPane(Widget):
 
     def enter_commit_mode(self) -> None:
         """Activate commit mode: decorate learn-mode agent messages for selection."""
+
+        # First, find all the learn-mode agent messages in the current message area.
         selectable = list(self.query("ChatMessage.agent-message.learn-mode"))
         if not selectable:
             self.append_message(ChatMessageData(role=Role.SYSTEM, content="No learn-mode messages to commit."))
@@ -367,8 +402,8 @@ class ChatPane(Widget):
         self._commit_cursor = 0
         self._commit_selected = set()
 
-        from textual.widgets import Static
-
+        # Decorate each message with a checkbox and the --commit-selectable class, mount a checkbox
+        # to the message, and set the first message as the initial cursor position.
         for msg in self._commit_selectable:
             msg.add_class("--commit-selectable")
             checkbox = Static("☐", classes="commit-checkbox")
@@ -377,12 +412,15 @@ class ChatPane(Widget):
         self._commit_selectable[0].add_class("--commit-cursor")
         self._commit_selectable[0].scroll_visible()
 
+        # Disable the chat input and show commit mode instructions in the placeholder.
         chat_input = self.query_one("#chat-input", ChatInput)
         chat_input.disabled = True
         chat_input.placeholder = "↑↓ navigate  Space select  Ctrl+Enter confirm  Esc cancel"
 
     def exit_commit_mode(self, selected: list[ChatMessageData] | None) -> None:
         """Deactivate commit mode, clean up decorations, and optionally post results."""
+
+        # Clean up all commit-mode decorations and state.
         for msg in self._commit_selectable:
             msg.remove_class("--commit-selectable")
             msg.remove_class("--commit-cursor")
@@ -390,59 +428,84 @@ class ChatPane(Widget):
             for cb in msg.query(".commit-checkbox"):
                 cb.remove()
 
+        # Reset commit mode state.
         self._commit_mode = False
         self._commit_selectable = []
         self._commit_cursor = 0
         self._commit_selected = set()
 
+        # Restore the chat input.
         chat_input = self.query_one("#chat-input", ChatInput)
         chat_input.disabled = False
         self._restore_chat_input()
 
+        # TODO: for now this is just a placeholder for the actual commit logic.
         if selected is not None and selected:
             count = len(selected)
             self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected {count} message(s) for commit."))
 
-    def _commit_move_cursor(self, new_index: int) -> None:
+    def _commit_move_cursor(self, delta: int) -> None:
         """Move the commit-mode cursor highlight."""
         if not self._commit_selectable:
             return
+        
+        new_index = self._commit_cursor + delta
+        if new_index < 0 or new_index >= len(self._commit_selectable):
+            return
+
+        # Remove cursor highlight from the old message, update the index, and add it to the new message.
         if 0 <= self._commit_cursor < len(self._commit_selectable):
             self._commit_selectable[self._commit_cursor].remove_class("--commit-cursor")
         self._commit_cursor = new_index
+
         target = self._commit_selectable[self._commit_cursor]
         target.add_class("--commit-cursor")
         target.scroll_visible()
 
     def on_key(self, event) -> None:
-        """Intercept keys during commit mode."""
+        # Remark: we only capture key events for commit mode, so we don't interfere with normal input,
+        # command palette navigation, etc.
         if not self._commit_mode:
             return
 
-        key = event.key
+        # Stop propagation and prevent default behavior for all keys in commit mode, 
+        # since we're using them for navigation and selection.
         event.stop()
         event.prevent_default()
 
+        key = event.key
         if key == "up":
             if self._commit_cursor > 0:
-                self._commit_move_cursor(self._commit_cursor - 1)
+                self._commit_move_cursor(-1)
+
         elif key == "down":
             if self._commit_cursor < len(self._commit_selectable) - 1:
-                self._commit_move_cursor(self._commit_cursor + 1)
+                self._commit_move_cursor(1)
+
         elif key == "space":
             msg = self._commit_selectable[self._commit_cursor]
-            checkboxes = list(msg.query(".commit-checkbox"))
+            checkbox = msg.query_one(".commit-checkbox")
+
             if self._commit_cursor in self._commit_selected:
+                # Deselect the current message.
                 self._commit_selected.discard(self._commit_cursor)
                 msg.remove_class("--commit-selected")
-                if checkboxes:
-                    checkboxes[0].update("☐")
+
+                if checkbox:
+                    checkbox.update("☐")
             else:
+                # Select, and move the cursor to the next message if possible.
                 self._commit_selected.add(self._commit_cursor)
                 msg.add_class("--commit-selected")
-                if checkboxes:
-                    checkboxes[0].update("☑")
+
+                if checkbox:
+                    checkbox.update("☑")
+
+                if self._commit_cursor < len(self._commit_selectable) - 1:
+                    self._commit_move_cursor(1)
+
         elif key == "ctrl+j":
+            # Confirm selection and exit commit mode.
             selected_messages = []
             for idx in sorted(self._commit_selected):
                 m = self._commit_selectable[idx]
@@ -450,5 +513,7 @@ class ChatPane(Widget):
                     ChatMessageData(role=Role.AGENT, content=m.content_text)
                 )
             self.exit_commit_mode(selected_messages)
+
         elif key == "escape":
+            # Cancel selection and exit commit mode.
             self.exit_commit_mode(None)

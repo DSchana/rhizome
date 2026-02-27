@@ -218,14 +218,24 @@ CURRENT ANSWER VERBOSITY: 4
 class AgentSession:
     """Encapsulates a single conversation's agent graph and message history."""
 
-    def __init__(self, session_factory, *, app=None):
+    def __init__(
+            self, 
+            session_factory, 
+            *, 
+            app=None, 
+            on_token_usage_changed: Callable[[], Any] | None = None
+        ):
         self._session_factory = session_factory
         self._app = app
+
+        # Build the initial agent graph.
+        self._model, self._agent = self._build_agent()
+
+        # Initialize message history with the system prompt, and set up token usage tracking.
         self._history: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
         self._token_usage = TokenUsageData()
-        self._model, self._agent = self._build_agent()
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
-        self.on_token_usage_changed: Callable[[], Any] | None = None
+        self.on_token_usage_changed = on_token_usage_changed
 
     def _build_agent(self):
         """Build (or rebuild) the model + compiled graph."""
