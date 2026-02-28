@@ -10,6 +10,7 @@ from langchain_core.messages.utils import count_tokens_approximately
 
 from rhizome.agent.config import get_api_key, get_model_name
 from rhizome.agent.context import AgentContext
+from rhizome.agent.middleware.cache_aware_settings import AnthropicCacheAwareSettingsMiddleware
 from rhizome.agent.tools import get_all_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 
@@ -214,6 +215,29 @@ CURRENT ANSWER VERBOSITY: 4
 
 """
 
+def _build_agent(provider: str = "anthropic"):
+    """Buildthe model + compiled graph."""
+    if provider == "anthropic":
+        model_name = get_model_name()
+
+        model = init_chat_model(
+            model_name,
+            api_key=get_api_key(),
+            temperature=0.3,
+        )
+
+        agent = create_agent(
+            model=model,
+            tools=get_all_tools(),
+            context_schema=AgentContext,
+            # middleware=[
+            #     AnthropicCacheAwareSettingsMiddleware()
+            # ]
+        )
+        return model, agent
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")
+
 
 class AgentSession:
     """Encapsulates a single conversation's agent graph and message history."""
@@ -229,7 +253,7 @@ class AgentSession:
         self._app = app
 
         # Build the initial agent graph.
-        self._model, self._agent = self._build_agent()
+        self._model, self._agent = _build_agent()
 
         # Initialize message history with the system prompt, and set up token usage tracking.
         self._history: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
@@ -237,23 +261,9 @@ class AgentSession:
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         self.on_token_usage_changed = on_token_usage_changed
 
-    def _build_agent(self):
-        """Build (or rebuild) the model + compiled graph."""
-        model = init_chat_model(
-            get_model_name(),
-            api_key=get_api_key(),
-            temperature=0.3,
-        )
-        agent = create_agent(
-            model=model,
-            tools=get_all_tools(),
-            context_schema=AgentContext,
-        )
-        return model, agent
-
     def rebuild_agent(self):
         """Rebuild the agent graph (e.g. after model option changes)."""
-        self._model, self._agent = self._build_agent()
+        self._model, self._agent = _build_agent()
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
 
     def add_human_message(self, text: str) -> None:

@@ -13,6 +13,7 @@ Each chat tab creates its own `AgentSession`, which owns the LangChain conversat
 - **tools.py** — `@tool`-decorated async functions wrapping `rhizome.tools`. Each tool receives a `ToolRuntime[AgentContext]` parameter to access the session. `get_all_tools()` returns the full list.
 - **agent.py** — `AgentSession` class encapsulating a conversation's agent graph, message history, and token usage tracking. Also contains `SYSTEM_PROMPT`. Each session builds its own model and agent graph via `_build_agent()`, enabling per-tab model configuration in the future. Exposes `stream()` as an async iterator of `(kind, payload)` tuples, and `add_human_message()`/`add_system_notification()` for appending to history.
 - **utils.py** — `TokenUsageData` dataclass for tracking token consumption and context window limits. `compute_chat_model_max_tokens(chat_model)` derives the total context window size from a chat model's `profile` dict.
+- **middleware/** — LangChain agent middleware components. See `middleware/CONTEXT.md`.
 
 ## Tool List
 
