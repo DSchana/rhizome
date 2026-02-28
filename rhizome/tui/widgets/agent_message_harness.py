@@ -32,7 +32,10 @@ class AgentMessageHarness(Widget):
 
     @property
     def _session_mode(self) -> Mode:
-        pane = self.app.active_chat_pane  # type: ignore[attr-defined]
+        # Needed to avoid circular import
+        from rhizome.tui.widgets.chat_pane import ChatPane
+
+        pane = self.query_ancestor(ChatPane)
         return pane.session_mode
 
     @property

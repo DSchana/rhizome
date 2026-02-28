@@ -269,6 +269,7 @@ class AgentSession:
             session_factory,
             *,
             app=None,
+            chat_pane=None,
             provider: str = "anthropic",
             model_name: str | None = None,
             agent_kwargs: dict[str, Any] | None = None,
@@ -277,6 +278,7 @@ class AgentSession:
         ):
         self._session_factory = session_factory
         self._app = app
+        self._chat_pane = chat_pane
         self._provider = provider
         self._model_name = model_name
         self._agent_kwargs = agent_kwargs or {}
@@ -337,7 +339,7 @@ class AgentSession:
         self._session_logger.debug("Stream started (mode=%s, topic=%s)", mode, topic_name)
         try:
             async with self._session_factory() as session:
-                context = AgentContext(session=session, app=self._app)
+                context = AgentContext(session=session, app=self._app, chat_pane=self._chat_pane)
                 async for update in self._agent.astream(
                     {"messages": self._history},
                     context=context,

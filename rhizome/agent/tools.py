@@ -204,8 +204,9 @@ async def set_mode_tool(
         target = Mode(mode)
     except ValueError:
         return f"Invalid mode '{mode}'. Must be one of: idle, learn, review."
-    await set_mode(app, target, silent=True)
-    return f"Mode is now: {app.active_chat_pane.session_mode.value}"
+    pane = runtime.context.chat_pane
+    await set_mode(app, target, pane, silent=True)
+    return f"Mode is now: {pane.session_mode.value}"
 
 
 @tool("rename_tab", description="Rename the active chat session tab.")
@@ -214,7 +215,7 @@ async def rename_tab(name: str, runtime: ToolRuntime[AgentContext]) -> str:
     app = runtime.context.app
     if app is None:
         return "Error: app context not available."
-    await _handle_rename(app, name)
+    await _handle_rename(app, name, runtime.context.chat_pane)
     return f"Tab renamed to: {name}"
 
 

@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from textual.widgets import TabbedContent
 
@@ -40,7 +40,7 @@ class Command:
 
     name: str
     description: str
-    handler: Callable[[CurriculumApp, str], Awaitable[None]] | None
+    handler: Callable[[CurriculumApp, str, Any], Awaitable[None]] | None
 
 
 def parse_input(text: str) -> ParsedCommand | None:
@@ -65,14 +65,13 @@ def parse_input(text: str) -> ParsedCommand | None:
 # ---------------------------------------------------------------------------
 
 
-async def set_mode(app: CurriculumApp, mode: Mode, *, silent: bool = False) -> None:
+async def set_mode(app: CurriculumApp, mode: Mode, pane, *, silent: bool = False) -> None:
     """Set the session mode. This is the shared implementation used by all
     mode-switching commands and agent tools.
 
     When *silent* is ``True`` the system message is suppressed (useful when
     the agent switches modes programmatically).
     """
-    pane = app.active_chat_pane
     if pane.session_mode == mode:
         if not silent:
             pane.append_message(
@@ -86,16 +85,16 @@ async def set_mode(app: CurriculumApp, mode: Mode, *, silent: bool = False) -> N
     pane.update_status_bar()
 
 
-async def _handle_idle(app: CurriculumApp, _args: str) -> None:
-    await set_mode(app, Mode.IDLE)
+async def _handle_idle(app: CurriculumApp, _args: str, pane) -> None:
+    await set_mode(app, Mode.IDLE, pane)
 
 
-async def _handle_learn(app: CurriculumApp, _args: str) -> None:
-    await set_mode(app, Mode.LEARN)
+async def _handle_learn(app: CurriculumApp, _args: str, pane) -> None:
+    await set_mode(app, Mode.LEARN, pane)
 
 
-async def _handle_review(app: CurriculumApp, _args: str) -> None:
-    await set_mode(app, Mode.REVIEW)
+async def _handle_review(app: CurriculumApp, _args: str, pane) -> None:
+    await set_mode(app, Mode.REVIEW, pane)
 
 
 def _build_jsonc_snapshot(target: Options) -> str:
@@ -136,8 +135,7 @@ def _build_jsonc_snapshot(target: Options) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def _handle_options(app: CurriculumApp, args: str) -> None:
-    pane = app.active_chat_pane
+async def _handle_options(app: CurriculumApp, args: str, pane) -> None:
     parts = args.strip().split()
     use_editor = "-e" in parts
     is_global = "global" in parts
@@ -190,8 +188,7 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
     editor_widget.focus()
 
 
-async def _handle_explore(app: CurriculumApp, _args: str) -> None:
-    pane = app.active_chat_pane
+async def _handle_explore(app: CurriculumApp, _args: str, pane) -> None:
     # If a topic tree already exists, just focus it instead of creating a new one.
     existing = list(pane.query(TopicTree))
     if existing:
@@ -211,7 +208,7 @@ async def _handle_explore(app: CurriculumApp, _args: str) -> None:
     )
 
 
-async def _handle_help(app: CurriculumApp, args: str) -> None:
+async def _handle_help(app: CurriculumApp, args: str, pane) -> None:
     """Show available commands, or details for a specific command."""
     if args:
         name = args.strip().lstrip("/")
@@ -229,24 +226,23 @@ async def _handle_help(app: CurriculumApp, args: str) -> None:
         lines.append("Type /help <command> for details.")
         text = "\n".join(lines)
 
-    app.active_chat_pane.append_message(ChatMessageData(role=Role.AGENT, content=text))
+    pane.append_message(ChatMessageData(role=Role.AGENT, content=text))
 
 
-async def _handle_clear(app: CurriculumApp, _args: str) -> None:
+async def _handle_clear(app: CurriculumApp, _args: str, pane) -> None:
     """Clear all visible chat messages from the message area."""
-    pane = app.active_chat_pane
     area = pane.query_one("#message-area")
     await area.remove_children()
     pane.messages.clear()
 
 
-async def _handle_rename(app: CurriculumApp, args: str) -> None:
+async def _handle_rename(app: CurriculumApp, args: str, pane) -> None:
     """Rename the active chat session tab."""
     from rhizome.tui.screens.chat import ChatTabPane # Avoid circular import
 
     new_name = args.strip()
     if not new_name:
-        app.active_chat_pane.append_message(
+        pane.append_message(
             ChatMessageData(role=Role.SYSTEM, content="Usage: /rename <name>")
         )
         return
@@ -258,7 +254,7 @@ async def _handle_rename(app: CurriculumApp, args: str) -> None:
         active_pane._update_tab_label()
 
 
-async def _handle_new(app: CurriculumApp, _args: str) -> None:
+async def _handle_new(app: CurriculumApp, _args: str, _pane) -> None:
     """Create a new chat session tab."""
     from rhizome.tui.screens.chat import ChatScreen # Avoid circular import
 
@@ -267,13 +263,12 @@ async def _handle_new(app: CurriculumApp, _args: str) -> None:
         await screen._add_tab()
 
 
-async def _handle_commit(app: CurriculumApp, _args: str) -> None:
+async def _handle_commit(app: CurriculumApp, _args: str, pane) -> None:
     """Select learn-mode messages to commit as knowledge."""
-    pane = app.active_chat_pane
     pane.enter_commit_mode()
 
 
-async def _handle_logs(app: CurriculumApp, _args: str) -> None:
+async def _handle_logs(app: CurriculumApp, _args: str, _pane) -> None:
     """Open the logs tab."""
     from rhizome.tui.screens.chat import ChatScreen  # Avoid circular import
 
@@ -282,7 +277,7 @@ async def _handle_logs(app: CurriculumApp, _args: str) -> None:
         await screen._add_log_tab()
 
 
-async def _handle_close(app: CurriculumApp, _args: str) -> None:
+async def _handle_close(app: CurriculumApp, _args: str, _pane) -> None:
     """Close the current chat session tab."""
     from rhizome.tui.screens.chat import ChatScreen # Avoid circular import
 

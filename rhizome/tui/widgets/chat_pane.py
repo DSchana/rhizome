@@ -130,6 +130,7 @@ class ChatPane(Widget):
         self._agent_session = AgentSession(
             self.app.session_factory,  # type: ignore[attr-defined]
             app=self.app,
+            chat_pane=self,
             provider=provider,
             model_name=model_name,
             agent_kwargs=agent_kwargs,
@@ -263,7 +264,7 @@ class ChatPane(Widget):
             return
 
         async def _run() -> None:
-            await handler(self.app, args)  # pyright: ignore[reportArgumentType]
+            await handler(self.app, args, self)  # pyright: ignore[reportArgumentType]
 
         self.run_worker(_run())
 
