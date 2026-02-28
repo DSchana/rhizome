@@ -14,6 +14,8 @@ class TokenUsageData:
 
     total_tokens: int = 0
     max_tokens: int | None = None  # None means we couldn't determine the limit
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
 
     breakdown: dict[str, int | None] = field(default_factory=lambda: {
         TokenUsageData.BreakdownCategory.SYSTEM: None,

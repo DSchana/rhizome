@@ -46,6 +46,19 @@ class StatusBar(Static):
         else:
             topic_line.append("none", style="rgb(100,100,100)")
 
+        # Right-align cache usage on the topic line
+        cache_text = Text()
+        cache_read = self.token_usage.cache_read_tokens
+        cache_create = self.token_usage.cache_creation_tokens
+        if cache_read is not None or cache_create is not None:
+            cache_text.append(
+                f"cache read: {cache_read:,}  create: {cache_create:,}",
+                style="rgb(90,90,90)",
+            )
+            gap = max(self.size.width - len(topic_line.plain) - len(cache_text.plain), 2)
+            topic_line.append(" " * gap)
+            topic_line.append(cache_text)
+
         # -- line 2: mode + token usage --
         left = Text()
         left.append("mode: ", style=_label)

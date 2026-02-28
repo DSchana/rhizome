@@ -5,7 +5,8 @@ from typing import Any
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AIMessageChunk, BaseMessage, AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
 
 from rhizome.agent.config import get_api_key, get_model_name
@@ -230,6 +231,9 @@ def _build_agent(provider: str = "anthropic"):
             model=model,
             tools=get_all_tools(),
             context_schema=AgentContext,
+            middleware=[
+               AnthropicPromptCachingMiddleware(ttl='5m') 
+            ]
             # middleware=[
             #     AnthropicCacheAwareSettingsMiddleware()
             # ]
@@ -299,13 +303,30 @@ class AgentSession:
                                     self._notify_token_usage()
                     elif kind == "messages":
                         chunk, _metadata = payload
-                        if (
-                            hasattr(chunk, "usage_metadata") and
-                            chunk.usage_metadata and
-                            chunk.usage_metadata.get("total_tokens")
-                        ):
-                            self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
+
+                        if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                            if chunk.usage_metadata.get("total_tokens"):
+                                self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
+
+                            # Extract cache usage from input_token_details
+                            details = chunk.usage_metadata.get("input_token_details", {})
+                            cache_read = details.get("cache_read")
+                            cache_create = details.get("cache_creation")
+
+                            if not cache_read and not cache_create:
+                                # Fallback to response_metadata on full messages
+                                resp_meta = getattr(chunk, "response_metadata", {})
+                                usage = resp_meta.get("usage", {})
+
+                                cache_read = usage.get("cache_read_input_tokens")
+                                cache_create = usage.get("cache_creation_input_tokens")
+
+                            if cache_read or cache_create:
+                                self._token_usage.cache_read_tokens = cache_read
+                                self._token_usage.cache_creation_tokens = cache_create
+
                             self._notify_token_usage()
+
                     yield kind, payload
                 await session.commit()
         except:
