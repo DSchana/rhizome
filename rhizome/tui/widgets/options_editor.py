@@ -9,7 +9,6 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widget import Widget
-from collections import OrderedDict
 
 from textual.widgets import Button, Input, Label, Rule, Select, Static
 
@@ -17,9 +16,11 @@ from rhizome.tui.options import (
     ChoicesOptionSpec,
     ConditionalChoicesOptionSpec,
     IntRangeOptionSpec,
+    OptionNamespaceNode,
     OptionScope,
     OptionSpec,
     Options,
+    ToggleOptionSpec,
 )
 
 # ---------------------------------------------------------------------------
@@ -37,6 +38,9 @@ WIDGET_BUILDERS: dict[type[OptionSpec], Any] = {
     ),
     IntRangeOptionSpec: lambda spec, val, wid, **kw: Input(
         str(val), placeholder=f"{spec.min}-{spec.max}", id=wid, type="integer"
+    ),
+    ToggleOptionSpec: lambda spec, val, wid, **kw: Select(
+        [(str(c), c) for c in spec.choices], value=val, id=wid
     ),
 }
 
@@ -158,35 +162,59 @@ class OptionsEditor(Widget):
         with Vertical():
             yield Static(f"Options ({scope_label})", id="options-title")
 
-            # Group specs by top-level prefix, preserving definition order.
-            groups: OrderedDict[str, list[OptionSpec]] = OrderedDict()
-            for spec in Options.spec():
+            top_level, nodes = Options.spec_tree()
+            first = True
+
+            # Top-level options (no namespace)
+            for spec in top_level:
                 if spec.scope < self._options._scope:
                     continue
-                prefix = spec.resolved_name.split(".", 1)[0] if "." in spec.resolved_name else ""
-                groups.setdefault(prefix, []).append(spec)
+                first = False
+                yield from self._yield_option_row(spec)
 
-            first_group = True
-            for prefix, specs in groups.items():
-                if not first_group:
-                    yield Rule()
-                first_group = False
-
-                if prefix:
-                    yield Static(prefix, classes="option-group-title")
-
-                for spec in specs:
-                    wid = _sanitize_id(spec.resolved_name)
-                    self._widget_specs[wid] = spec
-                    current = self._options.get(spec)
-
-                    with Horizontal(classes="option-row"):
-                        with Vertical(classes="option-info"):
-                            yield Label(spec.resolved_name, classes="option-name")
-                            yield Label(spec.help, classes="option-desc")
-                        yield _build_widget(spec, current, wid, self._options)
+            # Namespace nodes
+            for node in nodes:
+                yield from self._yield_node(node, first)
+                first = False
 
             yield Button("done", id="options-done")
+
+    def _yield_option_row(self, spec: OptionSpec):
+        """Yield widgets for a single option row."""
+        wid = _sanitize_id(spec.resolved_name)
+        self._widget_specs[wid] = spec
+        current = self._options.get(spec)
+
+        with Horizontal(classes="option-row"):
+            with Vertical(classes="option-info"):
+                yield Label(spec.resolved_name, classes="option-name")
+                yield Label(spec.help, classes="option-desc")
+            yield _build_widget(spec, current, wid, self._options)
+
+    def _yield_node(self, node: OptionNamespaceNode, first: bool):
+        """Recursively yield widgets for a namespace node."""
+        # Filter to specs visible at current scope
+        visible = [s for s in node.options if s.scope >= self._options._scope]
+        visible_children = any(
+            any(s.scope >= self._options._scope for s in c.options) or c.children
+            for c in node.children
+        )
+        if not visible and not visible_children:
+            return
+
+        if not first:
+            yield Rule()
+
+        ns = node.namespace
+        yield Static(ns.resolved_name, classes="option-group-title")
+        if ns.description:
+            yield Label(ns.description, classes="option-desc")
+
+        for spec in visible:
+            yield from self._yield_option_row(spec)
+
+        for child in node.children:
+            yield from self._yield_node(child, False)
 
     def on_mount(self) -> None:
         """Subscribe to condition specs so dependent widgets update in-place."""

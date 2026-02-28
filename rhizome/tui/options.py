@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, overload
@@ -178,6 +179,19 @@ class IntRangeOptionSpec(OptionSpec):
         return f"{self.help} ({self.min}-{self.max})"
 
 
+class ToggleOptionSpec(ChoicesOptionSpec):
+    """Boolean-like option with ``"enabled"`` / ``"disabled"`` choices."""
+
+    def __init__(
+        self,
+        name: str,
+        scope: OptionScope,
+        default: str,
+        help: str,
+    ) -> None:
+        super().__init__(name, scope, default, help, choices=["enabled", "disabled"])
+
+
 # ---------------------------------------------------------------------------
 # OptionNamespace
 # ---------------------------------------------------------------------------
@@ -192,6 +206,16 @@ class OptionNamespace:
 
     name: str
     resolved_name: str = ""
+    description: str = ""
+
+
+@dataclass
+class OptionNamespaceNode:
+    """A node in the hierarchical spec tree."""
+
+    namespace: type[OptionNamespace]
+    options: list[OptionSpec] = field(default_factory=list)
+    children: list[OptionNamespaceNode] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -216,14 +240,48 @@ def _collect_specs(
             _collect_specs(obj, obj.resolved_name, target)
 
 
+def _build_spec_tree(
+    cls: type,
+) -> tuple[list[OptionSpec], list[OptionNamespaceNode]]:
+    """Build a hierarchical spec tree from the class.
+
+    Returns ``(top_level_options, namespace_nodes)`` where top-level options
+    are specs defined directly on *cls* (not inside a namespace).
+    """
+    top_level: list[OptionSpec] = []
+    nodes: list[OptionNamespaceNode] = []
+
+    for attr_name in list(vars(cls)):
+        obj = getattr(cls, attr_name)
+        if isinstance(obj, OptionSpec):
+            top_level.append(obj)
+        elif isinstance(obj, type) and issubclass(obj, OptionNamespace) and obj is not OptionNamespace:
+            nodes.append(_build_ns_node(obj))
+
+    return top_level, nodes
+
+
+def _build_ns_node(ns: type[OptionNamespace]) -> OptionNamespaceNode:
+    """Recursively build an ``OptionNamespaceNode`` for *ns*."""
+    node = OptionNamespaceNode(namespace=ns)
+    for attr_name in list(vars(ns)):
+        obj = getattr(ns, attr_name)
+        if isinstance(obj, OptionSpec):
+            node.options.append(obj)
+        elif isinstance(obj, type) and issubclass(obj, OptionNamespace) and obj is not OptionNamespace:
+            node.children.append(_build_ns_node(obj))
+    return node
+
+
 class OptionsMeta(type):
-    """Metaclass that walks class attrs to build a flat spec registry."""
+    """Metaclass that walks class attrs to build a flat spec registry and tree."""
 
     def __new__(mcs, name: str, bases: tuple[type, ...], namespace: dict[str, Any]) -> type:
         cls = super().__new__(mcs, name, bases, namespace)
         specs: list[OptionSpec] = []
         _collect_specs(cls, "", specs)
         cls._all_specs = specs  # type: ignore[attr-defined]
+        cls._spec_tree = _build_spec_tree(cls)  # type: ignore[attr-defined]
         return cls
 
 
@@ -313,6 +371,24 @@ class Options(metaclass=OptionsMeta):
                 "openai": "gpt-5-mini",
             },
         )
+
+        class Anthropic(OptionNamespace):
+            name = "anthropic"
+            description = "Only used when agent.provider is anthropic."
+
+            PromptCache = ToggleOptionSpec(
+                name="prompt_cache",
+                scope=OptionScope.Session,
+                default="enabled",
+                help="Whether to include Anthropic cache-control breakpoints in messages.",
+            )
+            PromptCacheTTL = ChoicesOptionSpec(
+                name="prompt_cache_ttl",
+                scope=OptionScope.Session,
+                default="5m",
+                help="TTL for Anthropic prompt cache (if enabled)",
+                choices=["5m", "1h"],
+            )
 
     # ---- Instance ----
 
@@ -463,6 +539,11 @@ class Options(metaclass=OptionsMeta):
         """Flat list of all ``OptionSpec`` instances defined on the class."""
         return list(cls._all_specs)  # type: ignore[attr-defined]
 
+    @classmethod
+    def spec_tree(cls) -> tuple[list[OptionSpec], list[OptionNamespaceNode]]:
+        """Hierarchical spec tree: ``(top_level_options, namespace_nodes)``."""
+        return cls._spec_tree  # type: ignore[attr-defined]
+
     # -- JSONC persistence --
 
     def flush(self) -> None:
@@ -472,22 +553,50 @@ class Options(metaclass=OptionsMeta):
         path = get_options_path()
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        all_specs = self.spec()
+        last_resolved = all_specs[-1].resolved_name if all_specs else ""
+        top_level, nodes = self.spec_tree()
+
         lines = ["{"]
-        specs = self.spec()
-        for i, s in enumerate(specs):
-            for comment_line in s.jsonc_comment().splitlines():
-                if comment_line.startswith("//"):
-                    lines.append(f"    {comment_line}")
-                else:
-                    lines.append(f"    // {comment_line}")
-            value = self._values.get(s.resolved_name, s.default)
-            json_val = json.dumps(value)
-            comma = "," if i < len(specs) - 1 else ""
-            lines.append(f"    {json.dumps(s.resolved_name)}: {json_val}{comma}")
-            if i < len(specs) - 1:
-                lines.append("")
+        self._flush_specs(lines, top_level, "    ", last_resolved)
+        for node in nodes:
+            self._flush_node(lines, node, "    ", last_resolved)
         lines.append("}")
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def _flush_specs(
+        self,
+        lines: list[str],
+        specs: list[OptionSpec],
+        indent: str,
+        last_resolved: str,
+    ) -> None:
+        for s in specs:
+            for comment_line in s.jsonc_comment().splitlines():
+                if comment_line.startswith("//"):
+                    lines.append(f"{indent}{comment_line}")
+                else:
+                    lines.append(f"{indent}// {comment_line}")
+            value = self._values.get(s.resolved_name, s.default)
+            json_val = json.dumps(value)
+            comma = "," if s.resolved_name != last_resolved else ""
+            lines.append(f"{indent}{json.dumps(s.resolved_name)}: {json_val}{comma}")
+            if s.resolved_name != last_resolved:
+                lines.append("")
+
+    def _flush_node(
+        self,
+        lines: list[str],
+        node: OptionNamespaceNode,
+        indent: str,
+        last_resolved: str,
+    ) -> None:
+        ns = node.namespace
+        if ns.description:
+            lines.append(f"{indent}// {ns.description}")
+        self._flush_specs(lines, node.options, indent, last_resolved)
+        for child in node.children:
+            self._flush_node(lines, child, indent, last_resolved)
 
     @classmethod
     def load(cls) -> Options:

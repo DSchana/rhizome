@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from textual.widgets import TabbedContent
 
-from rhizome.tui.options import Options, parse_jsonc
+from rhizome.tui.options import OptionNamespaceNode, Options, parse_jsonc
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.topic_tree import TopicTree
@@ -98,6 +98,44 @@ async def _handle_review(app: CurriculumApp, _args: str) -> None:
     await set_mode(app, Mode.REVIEW)
 
 
+def _build_jsonc_snapshot(target: Options) -> str:
+    """Build a JSONC string from the spec tree for external editor use."""
+    all_specs = Options.spec()
+    last_resolved = all_specs[-1].resolved_name if all_specs else ""
+    top_level, nodes = Options.spec_tree()
+
+    lines = ["{"]
+
+    def _emit_specs(specs: list, indent: str = "    ") -> None:
+        for s in specs:
+            for comment_line in s.jsonc_comment().splitlines():
+                if comment_line.startswith("//"):
+                    lines.append(f"{indent}{comment_line}")
+                else:
+                    lines.append(f"{indent}// {comment_line}")
+            value = target.get(s)
+            json_val = json.dumps(value)
+            comma = "," if s.resolved_name != last_resolved else ""
+            lines.append(f"{indent}{json.dumps(s.resolved_name)}: {json_val}{comma}")
+            if s.resolved_name != last_resolved:
+                lines.append("")
+
+    def _emit_node(node: OptionNamespaceNode, indent: str = "    ") -> None:
+        ns = node.namespace
+        if ns.description:
+            lines.append(f"{indent}// {ns.description}")
+        _emit_specs(node.options, indent)
+        for child in node.children:
+            _emit_node(child, indent)
+
+    _emit_specs(top_level)
+    for node in nodes:
+        _emit_node(node)
+
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 async def _handle_options(app: CurriculumApp, args: str) -> None:
     pane = app.active_chat_pane
     parts = args.strip().split()
@@ -109,22 +147,7 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
     if use_editor:
         # Editor mode: suspend TUI and open $EDITOR
         # Build a JSONC snapshot of current values
-        specs = Options.spec()
-        lines = ["{"]
-        for i, s in enumerate(specs):
-            for comment_line in s.jsonc_comment().splitlines():
-                if comment_line.startswith("//"):
-                    lines.append(f"    {comment_line}")
-                else:
-                    lines.append(f"    // {comment_line}")
-            value = target.get(s)
-            json_val = json.dumps(value)
-            comma = "," if i < len(specs) - 1 else ""
-            lines.append(f"    {json.dumps(s.resolved_name)}: {json_val}{comma}")
-            if i < len(specs) - 1:
-                lines.append("")
-        lines.append("}")
-        jsonc_text = "\n".join(lines) + "\n"
+        jsonc_text = _build_jsonc_snapshot(target)
 
         editor = os.environ.get("EDITOR", "nano")
 
