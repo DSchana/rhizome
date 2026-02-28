@@ -35,7 +35,7 @@ Usage::
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Callable, Generic, Literal, TypeVar
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -60,6 +60,9 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
     runtime context, or pass ``settings_attribute`` for simple attribute access.
 
     Args:
+        ttl: Optional TTL for the cache control block. If provided, this sets 
+            the cache control type to "ephemeral" with the given TTL. Ignored if
+            ``cache_control`` is provided.
         cache_control: Anthropic cache-control descriptor applied to the
             penultimate message. Defaults to 5-minute ephemeral caching.
         include_system_prompt: If ``True``, :meth:`system_prompt` output will
@@ -76,10 +79,13 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
     def __init__(
         self,
         *,
+        ttl: Literal["5m", "1h"] | None = None,
         cache_control: dict[str, str] | None = None,
         include_system_prompt: bool = False,
         settings_attribute: str | None = None,
     ) -> None:
+        if ttl is not None:
+            cache_control = {"type": "ephemeral", "ttl": ttl}
         self._cache_control = cache_control or self.DEFAULT_CACHE_CONTROL
         self._include_system_prompt = include_system_prompt
         self._settings_attribute = settings_attribute

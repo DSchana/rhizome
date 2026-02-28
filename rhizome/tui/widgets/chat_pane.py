@@ -15,6 +15,7 @@ from textual.worker import Worker
 from langchain.messages import ToolMessage
 
 from rhizome.agent import AgentSession
+from rhizome.agent.agent import get_agent_kwargs
 from rhizome.config import get_log_dir
 from rhizome.db import Topic
 from rhizome.tui.commands import COMMANDS, parse_input
@@ -123,11 +124,13 @@ class ChatPane(Widget):
         # Create the agent with initial provider/model from options
         provider = self.options.get(Options.Agent.Provider)
         model_name = self.options.get(Options.Agent.Model)
+        agent_kwargs = get_agent_kwargs(self.options)
         self._agent_session = AgentSession(
             self.app.session_factory,  # type: ignore[attr-defined]
             app=self.app,
             provider=provider,
             model_name=model_name,
+            agent_kwargs=agent_kwargs,
             on_token_usage_changed=self.update_status_bar,
             on_rebuild_agent=self._on_agent_rebuilt,
         )

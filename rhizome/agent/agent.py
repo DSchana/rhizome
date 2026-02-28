@@ -218,7 +218,17 @@ CURRENT ANSWER VERBOSITY: 4
 
 """
 
-def _build_agent(provider: str = "anthropic", model_name: str | None = None):
+def get_agent_kwargs(options: Options) -> dict[str, Any]:
+    """Build provider-specific kwargs from the current options."""
+    provider = options.get(Options.Agent.Provider)
+    kwargs: dict[str, Any] = {}
+    if provider == "anthropic":
+        kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
+        kwargs["prompt_cache_ttl"] = options.get(Options.Agent.Anthropic.PromptCacheTTL)
+    return kwargs
+
+
+def _build_agent(provider: str = "anthropic", model_name: str | None = None, **agent_kwargs):
     """Build the model + compiled graph."""
     if provider == "anthropic":
         if model_name is None:
@@ -230,16 +240,16 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None):
             temperature=0.3,
         )
 
+        middleware = []
+        if agent_kwargs.get("prompt_cache", True):
+            ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
+            middleware.append(AnthropicPromptCachingMiddleware(ttl=ttl))
+
         agent = create_agent(
             model=model,
             tools=get_all_tools(),
             context_schema=AgentContext,
-            middleware=[
-               AnthropicPromptCachingMiddleware(ttl='5m') 
-            ]
-            # middleware=[
-            #     AnthropicCacheAwareSettingsMiddleware()
-            # ]
+            middleware=middleware,
         )
         return model, agent
     else:
@@ -256,6 +266,7 @@ class AgentSession:
             app=None,
             provider: str = "anthropic",
             model_name: str | None = None,
+            agent_kwargs: dict[str, Any] | None = None,
             on_token_usage_changed: Callable[[], Any] | None = None,
             on_rebuild_agent: Callable[[str, str], Any] | None = None,
         ):
@@ -263,9 +274,10 @@ class AgentSession:
         self._app = app
         self._provider = provider
         self._model_name = model_name
+        self._agent_kwargs = agent_kwargs or {}
 
         # Build the initial agent graph.
-        self._model, self._agent = _build_agent(self._provider, self._model_name)
+        self._model, self._agent = _build_agent(self._provider, self._model_name, **self._agent_kwargs)
 
         # Initialize message history with the system prompt, and set up token usage tracking.
         self._history: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
@@ -274,23 +286,26 @@ class AgentSession:
         self.on_token_usage_changed = on_token_usage_changed
         self.on_rebuild_agent = on_rebuild_agent
 
-    def rebuild_agent(self, provider: str, model_name: str) -> None:
+    def rebuild_agent(self, provider: str, model_name: str, agent_kwargs: dict[str, Any] | None = None) -> None:
         """Rebuild the agent graph with the given provider and model."""
         old_model = self._model_name or "(default)"
         self._provider = provider
         self._model_name = model_name
-        self._model, self._agent = _build_agent(provider, model_name)
+        if agent_kwargs is not None:
+            self._agent_kwargs = agent_kwargs
+        self._model, self._agent = _build_agent(provider, model_name, **self._agent_kwargs)
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         if self.on_rebuild_agent is not None:
             self.on_rebuild_agent(old_model, model_name)
 
     async def on_options_post_update(self, options: Options) -> None:
-        """Called by Options.post_update(); rebuilds agent if provider/model changed."""
+        """Called by Options.post_update(); rebuilds agent if provider/model/kwargs changed."""
         provider = options.get(Options.Agent.Provider)
         model_name = options.get(Options.Agent.Model)
+        new_kwargs = get_agent_kwargs(options)
 
-        if provider != self._provider or model_name != self._model_name:
-            self.rebuild_agent(provider, model_name)
+        if provider != self._provider or model_name != self._model_name or new_kwargs != self._agent_kwargs:
+            self.rebuild_agent(provider, model_name, agent_kwargs=new_kwargs)
 
     def add_human_message(self, text: str) -> None:
         self._history.append(HumanMessage(content=text))
