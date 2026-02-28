@@ -147,6 +147,7 @@ async def _handle_options(app: CurriculumApp, args: str) -> None:
                 if s is not None:
                     await target.set(s, val)
 
+            await target.post_update()
             pane.append_message(
                 ChatMessageData(role=Role.SYSTEM, content="Options updated.")
             )

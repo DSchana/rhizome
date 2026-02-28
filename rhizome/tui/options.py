@@ -322,8 +322,14 @@ class Options(metaclass=OptionsMeta):
         self._children: list[Options] = []
         self._values: dict[str, Any] = {}
         self._subscribers: dict[OptionSpec, list[EventHandler]] = {}
+        self._post_update_subscribers: list[Callable[[Options], Awaitable[None]]] = []
+
+        # Link into parent/child hierarchy
         if parent is not None:
             parent._children.append(self)
+
+        # At the root scope, all options are initialized to their defaults. 
+        # At child scopes, values are inherited from the parent unless explicitly overridden.
         if scope == OptionScope.Root:
             for s in self.spec():
                 self._values[s.resolved_name] = s.default
@@ -394,6 +400,9 @@ class Options(metaclass=OptionsMeta):
         self, spec: OptionSpec, old: Any, new: Any
     ) -> None:
         for child in self._children:
+            # Only propagate if the child doesn't have a local override. Child options take
+            # precedence over parent values, so if the child has an override we assume it's intentional and 
+            # don't propagate changes from the parent.
             if spec.resolved_name not in child._values:
                 for listener in child._subscribers.get(spec, []):
                     await listener(old, new)
@@ -426,6 +435,17 @@ class Options(metaclass=OptionsMeta):
             listeners.remove(listener)
         except ValueError:
             pass
+
+    def subscribe_post_update(self, listener: Callable[[Options], Awaitable[None]]) -> None:
+        """Register a callback invoked after a batch of option changes completes."""
+        self._post_update_subscribers.append(listener)
+
+    async def post_update(self) -> None:
+        """Notify post-update subscribers, then propagate to children."""
+        for listener in self._post_update_subscribers:
+            await listener(self)
+        for child in self._children:
+            await child.post_update()
 
     def detach(self) -> None:
         """Remove this instance from parent's children list."""

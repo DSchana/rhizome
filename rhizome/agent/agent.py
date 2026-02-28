@@ -14,6 +14,8 @@ from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.cache_aware_settings import AnthropicCacheAwareSettingsMiddleware
 from rhizome.agent.tools import get_all_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
+from rhizome.tui.options import Options
+    
 
 SYSTEM_PROMPT = """
 You are acting right now as an agent attached to a 'knowledge database management' app. You're a general purpose knowledge
@@ -216,10 +218,11 @@ CURRENT ANSWER VERBOSITY: 4
 
 """
 
-def _build_agent(provider: str = "anthropic"):
-    """Buildthe model + compiled graph."""
+def _build_agent(provider: str = "anthropic", model_name: str | None = None):
+    """Build the model + compiled graph."""
     if provider == "anthropic":
-        model_name = get_model_name()
+        if model_name is None:
+            model_name = get_model_name()
 
         model = init_chat_model(
             model_name,
@@ -247,33 +250,54 @@ class AgentSession:
     """Encapsulates a single conversation's agent graph and message history."""
 
     def __init__(
-            self, 
-            session_factory, 
-            *, 
-            app=None, 
-            on_token_usage_changed: Callable[[], Any] | None = None
+            self,
+            session_factory,
+            *,
+            app=None,
+            provider: str = "anthropic",
+            model_name: str | None = None,
+            on_token_usage_changed: Callable[[], Any] | None = None,
+            on_rebuild_agent: Callable[[str, str], Any] | None = None,
         ):
         self._session_factory = session_factory
         self._app = app
+        self._provider = provider
+        self._model_name = model_name
 
         # Build the initial agent graph.
-        self._model, self._agent = _build_agent()
+        self._model, self._agent = _build_agent(self._provider, self._model_name)
 
         # Initialize message history with the system prompt, and set up token usage tracking.
         self._history: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
         self._token_usage = TokenUsageData()
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         self.on_token_usage_changed = on_token_usage_changed
+        self.on_rebuild_agent = on_rebuild_agent
 
-    def rebuild_agent(self):
-        """Rebuild the agent graph (e.g. after model option changes)."""
-        self._model, self._agent = _build_agent()
+    def rebuild_agent(self, provider: str, model_name: str) -> None:
+        """Rebuild the agent graph with the given provider and model."""
+        old_model = self._model_name or "(default)"
+        self._provider = provider
+        self._model_name = model_name
+        self._model, self._agent = _build_agent(provider, model_name)
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
+        if self.on_rebuild_agent is not None:
+            self.on_rebuild_agent(old_model, model_name)
+
+    async def on_options_post_update(self, options: Options) -> None:
+        """Called by Options.post_update(); rebuilds agent if provider/model changed."""
+        provider = options.get(Options.Agent.Provider)
+        model_name = options.get(Options.Agent.Model)
+
+        if provider != self._provider or model_name != self._model_name:
+            self.rebuild_agent(provider, model_name)
 
     def add_human_message(self, text: str) -> None:
         self._history.append(HumanMessage(content=text))
 
     def add_system_notification(self, text: str) -> None:
+        # Remark: certain providers only allow a single SystemPrompt at the beginning of the conversation, so we represent these
+        # as human messages with a [System] prefix.
         self._history.append(HumanMessage(content=f"[System] {text}"))
 
     async def stream(self, *, mode: str = "idle", topic_name: str = "") -> AsyncIterator[tuple[str, Any]]:

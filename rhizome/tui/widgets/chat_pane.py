@@ -120,12 +120,20 @@ class ChatPane(Widget):
             parent=self.app.options # type: ignore[attr-defined]
         )
 
-        # Create the agent
+        # Create the agent with initial provider/model from options
+        provider = self.options.get(Options.Agent.Provider)
+        model_name = self.options.get(Options.Agent.Model)
         self._agent_session = AgentSession(
             self.app.session_factory,  # type: ignore[attr-defined]
             app=self.app,
+            provider=provider,
+            model_name=model_name,
             on_token_usage_changed=self.update_status_bar,
+            on_rebuild_agent=self._on_agent_rebuilt,
         )
+
+        # Subscribe to post-update so agent rebuilds when options change
+        self.options.subscribe_post_update(self._agent_session.on_options_post_update)
 
         # Add the welcome header, assuming _show_welcome is True.
         area = self.query_one("#message-area", VerticalScroll)
@@ -323,6 +331,16 @@ class ChatPane(Widget):
         self._agent_busy = True
         self._agent_worker = self.run_worker(_run_agent())
 
+    def _on_agent_rebuilt(self, old_model: str, new_model: str) -> None:
+        """Called when the agent is rebuilt due to a model option change."""
+        self.append_message(ChatMessageData(
+            role=Role.SYSTEM,
+            content=(
+                f"Model changed to {self._agent_session._model_name}.  \n"
+                f"Profile: `{self._agent_session.model.profile}`"
+            ),
+        ))
+
     def update_status_bar(self) -> None:
         """Sync the status bar with the current mode and context."""
         bar = self.query_one("#status-bar", StatusBar)
@@ -346,10 +364,14 @@ class ChatPane(Widget):
 
         area = self.query_one("#message-area", VerticalScroll)
         widget = ChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
+
+        # Remark: this part identifies if the current message and the previous message are both system/error messages, and if so
+        # adds the --after-system class to the current message. This allows us to style consecutive system/error messages differently
         if msg.role in (Role.SYSTEM, Role.ERROR):
             children = area.children
             if children and isinstance(children[-1], ChatMessage) and children[-1]._role in (Role.SYSTEM, Role.ERROR):
                 widget.add_class("--after-system")
+
         area.mount(widget)
         area.scroll_end(animate=False)
 
@@ -383,6 +405,12 @@ class ChatPane(Widget):
         for ed in editors:
             ed.remove()
         self._restore_chat_input()
+
+        async def _notify() -> None:
+            if self.options is not None:
+                await self.options.post_update()
+
+        self.run_worker(_notify())
 
     # ------------------------------------------------------------------
     # Commit mode
