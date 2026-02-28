@@ -273,6 +273,15 @@ async def _handle_commit(app: CurriculumApp, _args: str) -> None:
     pane.enter_commit_mode()
 
 
+async def _handle_logs(app: CurriculumApp, _args: str) -> None:
+    """Open the logs tab."""
+    from rhizome.tui.screens.chat import ChatScreen  # Avoid circular import
+
+    screen = app.screen
+    if isinstance(screen, ChatScreen):
+        await screen._add_log_tab()
+
+
 async def _handle_close(app: CurriculumApp, _args: str) -> None:
     """Close the current chat session tab."""
     from rhizome.tui.screens.chat import ChatScreen # Avoid circular import
@@ -296,6 +305,7 @@ COMMANDS: dict[str, Command] = {
     "help": Command("help", "Show available commands and usage", _handle_help),
     "idle": Command("idle", "Return to idle mode", _handle_idle),
     "learn": Command("learn", "Enter learning mode: set curriculum and topic context", _handle_learn),
+    "logs": Command("logs", "Open the logs viewer tab", _handle_logs),
     "new": Command("new", "Open a new chat session tab", _handle_new),
     "rename": Command("rename", "Rename the current tab", _handle_rename),
     "review": Command("review", "Enter review mode: quizzes and practice", _handle_review),

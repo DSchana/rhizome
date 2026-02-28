@@ -243,11 +243,14 @@ class ChatPane(Widget):
         chat_input.remove_class("palette-open")
         chat_input.palette_active = False
 
+    _log = logging.getLogger("rhizome.tui.chat_pane")
+
     def _handle_command(self, name: str, args: str) -> None:
         if name == "quit":
             self.app.exit()
             return
 
+        self._log.debug("command dispatched: /%s %s", name, args)
         command = COMMANDS.get(name)
         if command is None:
             self.notify(f"Unknown command: /{name}", severity="error")

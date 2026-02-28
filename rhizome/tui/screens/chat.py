@@ -11,7 +11,33 @@ from rhizome.tui.options import Options
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
 from rhizome.tui.widgets.chat_pane import ChatPane
+from rhizome.tui.widgets.logging_pane import LoggingPane
 from rhizome.tui.widgets.message import ChatMessage
+
+
+class LogTabPane(TabPane):
+    """A TabPane that composes a LoggingPane for viewing log output."""
+
+    LOG_TAB_ID = "logs-tab"
+
+    def __init__(self, *, tab_max_length: int = 20, **kwargs) -> None:
+        self.full_name: str = "Logs"
+        self._tab_max_length: int = tab_max_length
+        super().__init__(self._truncated_label(), id=self.LOG_TAB_ID, **kwargs)
+
+    def _truncated_label(self) -> str:
+        if len(self.full_name) > self._tab_max_length:
+            return self.full_name[: self._tab_max_length] + "\u2026"
+        return self.full_name
+
+    def update_tab_max_length(self, new_length: int) -> None:
+        self._tab_max_length = new_length
+        tabbed_content = self.screen.query_one("#tabs", TabbedContent)
+        tab_widget = tabbed_content.get_tab(self.id)
+        tab_widget.label = self._truncated_label()
+
+    def compose(self) -> ComposeResult:
+        yield LoggingPane()
 
 
 class ChatTabPane(TabPane):
@@ -92,6 +118,20 @@ class ChatScreen(Screen):
         with TabbedContent(id="tabs"):
             yield ChatTabPane("Session 1", tab_max_length=max_len, show_welcome=True, id="session-1")
 
+    async def _add_log_tab(self) -> None:
+        """Open the logs tab, or switch to it if it already exists."""
+        tabs = self.query_one("#tabs", TabbedContent)
+        existing = tabs.query(f"#{LogTabPane.LOG_TAB_ID}")
+        if existing:
+            tabs.active = LogTabPane.LOG_TAB_ID
+            existing.first().query_one("#log-output").focus()
+            return
+        max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
+        pane = LogTabPane(tab_max_length=max_len)
+        await tabs.add_pane(pane)
+        tabs.active = LogTabPane.LOG_TAB_ID
+        pane.query_one("#log-output").focus()
+
     async def _add_tab(self, label: str | None = None) -> None:
         """Create a new chat session tab."""
         self._tab_counter += 1
@@ -142,7 +182,10 @@ class ChatScreen(Screen):
         # Focus the new pane's chat input so the old pane's focused widget
         # doesn't cause TabbedContent to revert the switch.
         new_pane = tabs.get_pane(new_id)
-        new_pane.query_one(ChatPane).query_one("#chat-input").focus()
+        if isinstance(new_pane, ChatTabPane):
+            new_pane.query_one(ChatPane).query_one("#chat-input").focus()
+        elif isinstance(new_pane, LogTabPane):
+            new_pane.query_one("#log-output").focus()
 
     def action_next_tab(self) -> None:
         self._switch_tab(1)
