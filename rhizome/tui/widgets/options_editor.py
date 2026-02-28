@@ -97,6 +97,7 @@ class OptionsEditor(Widget):
     }
     OptionsEditor .option-row .option-desc {
         color: $text-muted 60%;
+        width: 1fr;
     }
     OptionsEditor .option-row Select {
         width: 40;
