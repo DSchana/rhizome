@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from rhizome.db import CurriculumTopic, KnowledgeEntry, KnowledgeEntryTag, Tag, Topic
+from rhizome.logs import get_logger
+
+_logger = get_logger("tools.tags")
 
 
 async def create_tag(
@@ -16,6 +19,7 @@ async def create_tag(
     tag = Tag(name=name.lower())
     session.add(tag)
     await session.flush()
+    _logger.debug("Tag created: id=%d, name=%r", tag.id, tag.name)
     return tag
 
 
@@ -47,6 +51,7 @@ async def tag_entry(
     if existing is None:
         session.add(KnowledgeEntryTag(knowledge_entry_id=entry_id, tag_id=tag.id))
         await session.flush()
+        _logger.debug("Entry %d tagged with %r", entry_id, tag_name)
 
 
 async def untag_entry(

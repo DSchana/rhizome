@@ -6,6 +6,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from rhizome.logs import get_logger
+
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widget import Widget
@@ -243,7 +245,7 @@ class ChatPane(Widget):
         chat_input.remove_class("palette-open")
         chat_input.palette_active = False
 
-    _log = logging.getLogger("rhizome.tui.chat_pane")
+    _log = get_logger("tui.chat_pane")
 
     def _handle_command(self, name: str, args: str) -> None:
         if name == "quit":
@@ -266,6 +268,7 @@ class ChatPane(Widget):
         self.run_worker(_run())
 
     def _handle_chat(self, text: str) -> None:
+        self._log.debug("Chat submitted (%d chars)", len(text))
         # Post the user's message to the message history
         self.append_message(ChatMessageData(role=Role.USER, content=text))
 
@@ -325,6 +328,7 @@ class ChatPane(Widget):
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
             except Exception as exc:
+                self._log.error("Agent error: %s", exc)
                 await harness.cancel()
                 self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
                 raise
@@ -339,6 +343,7 @@ class ChatPane(Widget):
 
     def _on_agent_rebuilt(self, old_model: str, new_model: str) -> None:
         """Called when the agent is rebuilt due to a model option change."""
+        self._log.info("Agent rebuilt: %s → %s", old_model, new_model)
         self.append_message(ChatMessageData(
             role=Role.SYSTEM,
             content=(

@@ -9,6 +9,7 @@ from textual.app import App
 from textual.widgets import TabbedContent
 
 from rhizome.config import get_default_db_path
+from rhizome.logs import get_logger, initialize_global_logger
 from rhizome.tui.log_handler import TUILogHandler
 from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
@@ -41,11 +42,14 @@ class CurriculumApp(App):
         self.tui_log_handler = TUILogHandler()
         self.tui_log_handler.setLevel(logging.DEBUG)
         self.tui_log_handler.set_app(self)
-        rhizome_logger = logging.getLogger("rhizome")
-        rhizome_logger.setLevel(logging.DEBUG)
-        rhizome_logger.addHandler(self.tui_log_handler)
+        initialize_global_logger(self.tui_log_handler)
+
+        # REMARK: _logger is a reserved name in textual.App, which we can't override ourselves, so we use _log instead.
+        self._log = get_logger("tui.app")
+        self._log.info("App initialized (db=%s)", db_path or get_default_db_path())
 
     async def _on_theme_changed(self, old: str, new: str) -> None:
+        self._log.info("Theme changed: %s → %s", old, new)
         self.theme = new
 
     async def _on_tab_max_length_changed(self, old: int, new: int) -> None:

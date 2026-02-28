@@ -4,6 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rhizome.db import Curriculum, CurriculumTopic, Topic
+from rhizome.logs import get_logger
+
+_logger = get_logger("tools.curricula")
 
 
 async def create_curriculum(
@@ -16,6 +19,7 @@ async def create_curriculum(
     curriculum = Curriculum(name=name, description=description)
     session.add(curriculum)
     await session.flush()
+    _logger.info("Curriculum created: id=%d, name=%r", curriculum.id, curriculum.name)
     return curriculum
 
 
@@ -83,6 +87,7 @@ async def add_topic_to_curriculum(
     )
     session.add(ct)
     await session.flush()
+    _logger.debug("Topic %d added to curriculum %d at position %d", topic_id, curriculum_id, position)
     return ct
 
 

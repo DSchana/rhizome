@@ -4,6 +4,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rhizome.db import Topic
+from rhizome.logs import get_logger
+
+_logger = get_logger("tools.topics")
 
 
 async def create_topic(
@@ -17,6 +20,7 @@ async def create_topic(
     topic = Topic(parent_id=parent_id, name=name, description=description)
     session.add(topic)
     await session.flush()
+    _logger.info("Topic created: id=%d, name=%r, parent=%s", topic.id, topic.name, parent_id)
     return topic
 
 
@@ -114,3 +118,4 @@ async def delete_topic(
         raise ValueError(f"Topic {topic_id} not found")
     await session.delete(topic)
     await session.flush()
+    _logger.info("Topic deleted: id=%d", topic_id)

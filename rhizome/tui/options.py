@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, overload
 
 from rhizome.config import get_options_path
+from rhizome.logs import get_logger
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +396,7 @@ class Options(metaclass=OptionsMeta):
     def __init__(self, scope: OptionScope, parent: Options | None = None) -> None:
         self._scope = scope
         self._parent = parent
+        self._logger = get_logger("tui.options")
         self._children: list[Options] = []
         self._values: dict[str, Any] = {}
         self._subscribers: dict[OptionSpec, list[EventHandler]] = {}
@@ -451,6 +453,7 @@ class Options(metaclass=OptionsMeta):
             value = spec.validate(value)
         self._values[spec.resolved_name] = value
         if old != value:
+            self._logger.info("Option %s changed: %r → %r", spec.resolved_name, old, value)
             for listener in self._subscribers.get(spec, []):
                 await listener(old, value)
             await self._propagate_to_children(spec, old, value)
@@ -563,6 +566,7 @@ class Options(metaclass=OptionsMeta):
             self._flush_node(lines, node, "    ", last_resolved)
         lines.append("}")
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._logger.debug("Options saved to %s", path)
 
     def _flush_specs(
         self,
@@ -604,6 +608,7 @@ class Options(metaclass=OptionsMeta):
         instance = cls(OptionScope.Root)
         path = get_options_path()
         if not path.exists():
+            instance._logger.info("No options file found, using defaults")
             return instance
         try:
             raw = path.read_text(encoding="utf-8")
@@ -620,6 +625,7 @@ class Options(metaclass=OptionsMeta):
                 instance._values[s.resolved_name] = s.validate(val)
             except (ValueError, TypeError):
                 pass  # keep default
+        instance._logger.info("Options loaded from %s", path)
         return instance
 
 

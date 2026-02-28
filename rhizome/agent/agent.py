@@ -10,6 +10,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, To
 from langchain_core.messages.utils import count_tokens_approximately
 
 from rhizome.agent.config import get_api_key, get_model_name
+from rhizome.logs import get_logger
 from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.cache_aware_settings import AnthropicCacheAwareSettingsMiddleware
 from rhizome.agent.tools import get_all_tools
@@ -228,8 +229,12 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
     return kwargs
 
 
+_logger = get_logger("agent")
+
+
 def _build_agent(provider: str = "anthropic", model_name: str | None = None, **agent_kwargs):
     """Build the model + compiled graph."""
+    _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
     if provider == "anthropic":
         if model_name is None:
             model_name = get_model_name()
@@ -280,6 +285,9 @@ class AgentSession:
         self._model, self._agent = _build_agent(self._provider, self._model_name, **self._agent_kwargs)
 
         # Initialize message history with the system prompt, and set up token usage tracking.
+        self._session_logger = get_logger("agent.session")
+        self._session_logger.info("Session created (provider=%s, model=%s)", provider, model_name)
+
         self._history: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
         self._token_usage = TokenUsageData()
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
@@ -289,6 +297,7 @@ class AgentSession:
     def rebuild_agent(self, provider: str, model_name: str, agent_kwargs: dict[str, Any] | None = None) -> None:
         """Rebuild the agent graph with the given provider and model."""
         old_model = self._model_name or "(default)"
+        self._session_logger.info("Agent rebuilt: %s → %s", old_model, model_name)
         self._provider = provider
         self._model_name = model_name
         if agent_kwargs is not None:
@@ -325,6 +334,7 @@ class AgentSession:
 
         Yields ``(kind, payload)`` tuples with ``kind`` being ``"messages"`` or ``"updates"``.
         """
+        self._session_logger.debug("Stream started (mode=%s, topic=%s)", mode, topic_name)
         try:
             async with self._session_factory() as session:
                 context = AgentContext(session=session, app=self._app)
@@ -368,12 +378,16 @@ class AgentSession:
 
                     yield kind, payload
                 await session.commit()
-        except:
-            # Reraise so that the UI can display the error, but still compute overhead tokens for the messages 
-            # that were sent before the error occurred.
+        except Exception as exc:
+            self._session_logger.error("Stream error: %s", exc)
             raise
         finally:
             # Compute overhead tokens after the stream completes (or errors).
+            self._session_logger.debug(
+                f"Stream complete (tokens={self._token_usage.total_tokens}, "
+                f"cache_read={self._token_usage.cache_read_tokens}, "
+                f"cache_create={self._token_usage.cache_creation_tokens})"
+            )
             self._notify_token_usage()
 
     def _notify_token_usage(self) -> None:

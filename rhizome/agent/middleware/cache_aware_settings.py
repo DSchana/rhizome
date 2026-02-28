@@ -45,6 +45,8 @@ from langchain.agents.middleware.types import (
 )
 from langchain.messages import HumanMessage
 
+from rhizome.logs import get_logger
+
 ContextT = TypeVar("ContextT")
 
 
@@ -89,6 +91,7 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
         self._cache_control = cache_control or self.DEFAULT_CACHE_CONTROL
         self._include_system_prompt = include_system_prompt
         self._settings_attribute = settings_attribute
+        self._logger = get_logger("agent.middleware.cache_aware_settings")
 
     # -- Public API -----------------------------------------------------------
 
@@ -178,6 +181,7 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
         # Place a cache breakpoint on the penultimate message so the stable
         # prefix remains cached across turns.
         if len(messages) >= 2:
+            self._logger.debug("Injecting cache control breakpoint (messages=%d)", len(messages))
             messages[-2] = self._with_cache_control(messages[-2])
 
         # Wrap the last human message with settings.

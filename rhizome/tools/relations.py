@@ -4,6 +4,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rhizome.db import KnowledgeEntry, RelatedKnowledgeEntries
+from rhizome.logs import get_logger
+
+_logger = get_logger("tools.relations")
 
 
 class CycleError(Exception):
@@ -47,6 +50,7 @@ async def add_relation(
     Raises CycleError if the new edge would create a cycle.
     """
     if await _would_create_cycle(session, source_entry_id, target_entry_id):
+        _logger.warning("Cycle detected: %d → %d", source_entry_id, target_entry_id)
         raise CycleError(
             f"Adding {source_entry_id} -> {target_entry_id} would create a cycle"
         )
@@ -57,6 +61,7 @@ async def add_relation(
     )
     session.add(relation)
     await session.flush()
+    _logger.info("Relation added: %d → %d", source_entry_id, target_entry_id)
     return relation
 
 

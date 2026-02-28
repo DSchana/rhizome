@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from rhizome.db import CurriculumTopic, KnowledgeEntry, Topic
 from rhizome.db.models import EntryType
+from rhizome.logs import get_logger
+
+_logger = get_logger("tools.entries")
 
 
 async def create_entry(
@@ -30,6 +33,7 @@ async def create_entry(
     )
     session.add(entry)
     await session.flush()
+    _logger.info("Entry created: id=%d, title=%r", entry.id, entry.title)
     return entry
 
 
@@ -95,6 +99,7 @@ async def delete_entry(
         raise ValueError(f"KnowledgeEntry {entry_id} not found")
     await session.delete(entry)
     await session.flush()
+    _logger.info("Entry deleted: id=%d", entry_id)
 
 
 async def search_entries(
@@ -122,4 +127,6 @@ async def search_entries(
             .where(CurriculumTopic.curriculum_id == curriculum_id)
         )
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    entries = list(result.scalars().all())
+    _logger.debug("Search: query=%r, results=%d", query, len(entries))
+    return entries
