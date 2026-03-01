@@ -394,6 +394,45 @@ class ChatPane(Widget):
         area.scroll_end(animate=False)
         editor_widget.focus()
 
+    async def _cmd_options_get(self, *, scope: str = "session", name: str) -> None:
+        """Print the current value of a single option."""
+        spec_map = {s.resolved_name: s for s in Options.spec()}
+        spec = spec_map.get(name)
+        if spec is None:
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content=f"Unknown option: {name}")
+            )
+            return
+        is_global = scope == "global"
+        target = self.app.options if is_global else self.options  # type: ignore[attr-defined]
+        value = target.get(spec)
+        self.append_message(
+            ChatMessageData(role=Role.SYSTEM, content=f"{name} = {value!r}")
+        )
+
+    async def _cmd_options_set(self, *, scope: str = "session", name: str, value: str) -> None:
+        """Set an option value."""
+        spec_map = {s.resolved_name: s for s in Options.spec()}
+        spec = spec_map.get(name)
+        if spec is None:
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content=f"Unknown option: {name}")
+            )
+            return
+        is_global = scope == "global"
+        target = self.app.options if is_global else self.options  # type: ignore[attr-defined]
+        try:
+            coerced = spec.from_string(value)
+            await target.set(spec, coerced)
+            await target.post_update()
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content=f"{name} set to {coerced!r}")
+            )
+        except (ValueError, TypeError) as exc:
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content=f"Error setting {name}: {exc}")
+            )
+
     async def _cmd_help(self, command_name: str = "") -> None:
         """Show available commands, or details for a specific command."""
         if command_name:
@@ -468,12 +507,36 @@ class ChatPane(Widget):
     def _register_commands(self, registry: CommandRegistry) -> None:
         """Register all slash commands with the click-based registry."""
 
-        @registry.command(name="options", help="Open settings and configuration")
+        @registry.group(name="options", help="Open settings and configuration",
+                        invoke_without_command=True)
         @click.option("-e", "--edit", is_flag=True, help="Open in $EDITOR")
-        @click.argument("scope", default="session", required=False,
-                        type=click.Choice(["session", "global"]))
-        async def options(edit: bool, scope: str):
-            await self._cmd_options(edit=edit, scope=scope)
+        @click.option("-g", "--global", "scope", flag_value="global",
+                      help="Target global options")
+        @click.option("-s", "--session", "scope", flag_value="session",
+                      default=True, help="Target session options (default)")
+        @click.pass_context
+        async def options_group(ctx, edit, scope):
+            if ctx.invoked_subcommand is None:
+                await self._cmd_options(edit=edit, scope=scope)
+
+        @options_group.command(name="get", help="Get an option value")
+        @click.option("-g", "--global", "scope", flag_value="global",
+                      help="Target global options")
+        @click.option("-s", "--session", "scope", flag_value="session",
+                      default=True, help="Target session options (default)")
+        @click.argument("name")
+        async def options_get(scope, name):
+            await self._cmd_options_get(scope=scope, name=name)
+
+        @options_group.command(name="set", help="Set an option value")
+        @click.option("-g", "--global", "scope", flag_value="global",
+                      help="Target global options")
+        @click.option("-s", "--session", "scope", flag_value="session",
+                      default=True, help="Target session options (default)")
+        @click.argument("name")
+        @click.argument("value")
+        async def options_set(scope, name, value):
+            await self._cmd_options_set(scope=scope, name=name, value=value)
 
         @registry.command(name="rename", help="Rename the current tab")
         @click.argument("name", nargs=-1, required=True)

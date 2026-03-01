@@ -78,6 +78,9 @@ class CommandRegistry:
         cmd = self.commands[cmd_name]
 
         # Intercept --help/-h before click tries to print to stdout
+        # TODO: This approach doesn't work correctly for groups with
+        # subcommands (e.g. `/options get --help` would show the group
+        # help, not the subcommand help). This will be addressed separately.
         if "--help" in cmd_args or "-h" in cmd_args:
             with cmd.make_context(cmd_name, [], max_content_width=self.max_content_width) as ctx:
                 return ctx.get_help()
