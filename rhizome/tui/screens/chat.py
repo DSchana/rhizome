@@ -219,4 +219,4 @@ class ChatScreen(Screen):
     async def action_cycle_mode(self) -> None:
         pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
         cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
-        await pane._set_mode(cycle[pane.session_mode])
+        await pane._set_mode(cycle[pane.session_mode], silent=True)

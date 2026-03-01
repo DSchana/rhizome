@@ -2,6 +2,7 @@
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Markdown, Static
 
@@ -19,10 +20,16 @@ class ChatMessage(Widget):
     Subclasses must implement ``_compose_content()`` and ``_update_content_display()``.
     """
 
+    class Ping(Message):
+        """Posted when a message is pinged (visually highlighted)."""
+
     DEFAULT_CSS = f"""
     ChatMessage {{
         padding: 1 2;
         height: auto;
+    }}
+    ChatMessage.--ping {{
+        background: rgb(45, 45, 45);
     }}
     ChatMessage.user-message {{
         background: {Colors.USER_BG};
@@ -206,6 +213,27 @@ class ChatMessage(Widget):
         else:
             btn.label = arrow
         btn.refresh(layout=True)
+
+    def ping(self) -> None:
+        """Briefly highlight this message, then fade back.
+
+        Note: the fade animation produces correct rendering data but some
+        terminals (Windows Terminal / WSL) don't visually update the child
+        region during partial screen updates. Minimal repro in
+        workspace/test_ping.py.
+        """
+        from textual.color import Color
+
+        self.add_class("--ping")
+
+        def _fade() -> None:
+            self.remove_class("--ping")
+            self.styles.background = Color.parse("rgb(45, 45, 45)")
+            self.styles.animate("background", "transparent", duration=0.6)
+
+        self.set_timer(0.5, _fade)
+        self.post_message(self.Ping())
+        self.scroll_visible()
 
     def update_body(self, body: str) -> None:
         """Update the stored body text (used after streaming completes)."""

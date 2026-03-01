@@ -642,6 +642,9 @@ class ChatPane(Widget):
                 body = await harness.cancel()
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+                self.append_message(
+                    ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
+                )
 
             except Exception as exc:
                 self._log.error("Agent error: %s", exc)
@@ -679,6 +682,14 @@ class ChatPane(Widget):
 
     def append_message(self, msg: ChatMessageData) -> None:
         """Append a message to the history and mount its widget."""
+        # Deduplicate consecutive identical system messages by pinging the existing one.
+        if msg.role == Role.SYSTEM:
+            area = self.query_one("#message-area", VerticalScroll)
+            children = area.children
+            if children and isinstance(children[-1], ChatMessage) and children[-1]._role == Role.SYSTEM and children[-1]._body == msg.content:
+                children[-1].ping()
+                return
+
         msg.mode = self.session_mode
         self.messages.append(msg)
 
