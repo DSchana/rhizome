@@ -1,6 +1,7 @@
 """Chat message display widgets with role-based styling and content rendering."""
 
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.widget import Widget
 from textual.widgets import Button, Markdown, Static
 
@@ -72,6 +73,10 @@ class ChatMessage(Widget):
         height: 1;
         padding: 0;
     }}
+    ChatMessage .msg-header {{
+        height: auto;
+        width: 1fr;
+    }}
     ChatMessage #msg-collapse {{
         dock: right;
         width: auto;
@@ -124,9 +129,10 @@ class ChatMessage(Widget):
             self.add_class("review-mode")
 
     def compose(self) -> ComposeResult:
-        if self._role == Role.AGENT:
-            yield Button("▼", id="msg-collapse")
-        yield Static(self._prefix, classes="msg-prefix")
+        with Horizontal(classes="msg-header"):
+            yield Static(self._prefix, classes="msg-prefix")
+            if self._role == Role.AGENT:
+                yield Button("▼", id="msg-collapse")
         yield from self._compose_content()
         if self._role == Role.AGENT:
             yield Static("", id="msg-line-count")
@@ -199,6 +205,7 @@ class ChatMessage(Widget):
             btn.label = f"(ctrl+t) {arrow}"
         else:
             btn.label = arrow
+        btn.refresh(layout=True)
 
     def update_body(self, body: str) -> None:
         """Update the stored body text (used after streaming completes)."""

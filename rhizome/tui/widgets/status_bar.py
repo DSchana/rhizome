@@ -12,8 +12,8 @@ def _compact_rgb(s: str) -> str:
     return s.replace(" ", "")
 
 _MODE_COLORS: dict[str, str] = {
-    "learn": _compact_rgb(Colors.LEARN_AGENT_BORDER),
-    "review": _compact_rgb(Colors.REVIEW_AGENT_BORDER),
+    "learn": _compact_rgb(Colors.LEARN_SYSTEM_TEXT),
+    "review": _compact_rgb(Colors.REVIEW_SYSTEM_TEXT),
 }
 
 

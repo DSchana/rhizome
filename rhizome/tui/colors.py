@@ -14,9 +14,11 @@ class Colors:
     TOOLCALL_TITLE = "rgb(220, 160, 80)"
     SYSTEM_ERROR = "rgb(220, 80, 80)"
 
-    # -- Agent message borders (per mode) --
+    # -- Mode colors --
     LEARN_AGENT_BORDER = "rgb(60, 80, 160)"
+    LEARN_SYSTEM_TEXT = "rgb(110, 140, 240)"
     REVIEW_AGENT_BORDER = "rgb(120, 60, 160)"
+    REVIEW_SYSTEM_TEXT = "rgb(170, 90, 220)"
 
     # -- Commit selection borders --
     COMMIT_SELECTABLE = "rgb(140, 120, 50)"

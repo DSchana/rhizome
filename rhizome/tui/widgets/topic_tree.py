@@ -102,6 +102,9 @@ class TopicTree(Vertical):
     TopicTree _InnerTree {
         height: auto;
         scrollbar-size: 0 0;
+        padding-left: 2;
+        margin-top: 1;
+        background: transparent;
     }
     TopicTree #topic-tree-dismiss {
         dock: right;
