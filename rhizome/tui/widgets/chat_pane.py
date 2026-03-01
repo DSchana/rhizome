@@ -127,6 +127,8 @@ class ChatPane(Widget):
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
+        self._sync_registry_width()
+
         # Construct the per-session options object
         self.options = Options(
             scope=OptionScope.Session, 
@@ -186,6 +188,13 @@ class ChatPane(Widget):
         self._close_agent_log()
         if self.options is not None:
             self.options.detach()
+
+    def on_resize(self) -> None:
+        self._sync_registry_width()
+
+    def _sync_registry_width(self) -> None:
+        """Update the command registry's max_content_width from the pane's current width."""
+        self._command_registry.max_content_width = max(self.size.width - 15, 40)
 
     def on_text_area_changed(self, event: ChatInput.Changed) -> None:
         text = event.text_area.text
@@ -394,7 +403,7 @@ class ChatPane(Widget):
                 text = f"Unknown command: /{name}\nType /help to see available commands."
             else:
                 # Get help text from click command
-                ctx = click.Context(cmd, info_name=name)
+                ctx = click.Context(cmd, info_name=name, max_content_width=self._command_registry.max_content_width)
                 text = ctx.get_help()
         else:
             lines = ["**Available commands:**", ""]

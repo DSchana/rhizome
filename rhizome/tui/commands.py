@@ -42,8 +42,9 @@ class CommandRegistry:
     ``standalone_mode=False``, and ``await``s async callbacks.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_content_width: int | None = None) -> None:
         self.commands: dict[str, click.BaseCommand] = {}
+        self.max_content_width = max_content_width
 
     def command(self, *args, **kwargs):
         """Decorator: register a click command."""
@@ -78,7 +79,7 @@ class CommandRegistry:
 
         # Intercept --help/-h before click tries to print to stdout
         if "--help" in cmd_args or "-h" in cmd_args:
-            with cmd.make_context(cmd_name, []) as ctx:
+            with cmd.make_context(cmd_name, [], max_content_width=self.max_content_width) as ctx:
                 return ctx.get_help()
 
         try:
@@ -87,5 +88,5 @@ class CommandRegistry:
                 result = await result
             return result
         except click.UsageError as e:
-            with cmd.make_context(cmd_name, []) as ctx:
+            with cmd.make_context(cmd_name, [], max_content_width=self.max_content_width) as ctx:
                 return f"{e.format_message()}\n\n{ctx.get_help()}"
