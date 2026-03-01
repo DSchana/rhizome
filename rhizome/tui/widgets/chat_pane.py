@@ -278,7 +278,6 @@ class ChatPane(Widget):
             try:
                 line = f"{name} {args}".strip()
                 result = await self._command_registry.execute(line)
-                self._log.debug("command result: %s", result)
                 if result:
                     self.append_message(
                         ChatMessageData(role=Role.SYSTEM, content=result, rich=True)
@@ -442,8 +441,8 @@ class ChatPane(Widget):
                 text = f"Unknown command: /{name}\nType /help to see available commands."
             else:
                 # Get help text from click command
-                ctx = click.Context(cmd, info_name=name, max_content_width=self._command_registry.max_content_width)
-                text = ctx.get_help()
+                with cmd.make_context(name, [], max_content_width=self._command_registry.max_content_width) as ctx:
+                    text = ctx.get_help()
         else:
             lines = ["**Available commands:**", ""]
             for name in sorted(self._command_registry.commands):
@@ -457,7 +456,7 @@ class ChatPane(Widget):
             lines.append("Type /help <command> for details, or /<command> --help.")
             text = "\n".join(lines)
 
-        self.append_message(ChatMessageData(role=Role.AGENT, content=text))
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content=text, rich=True))
 
     async def _cmd_rename(self, name: str) -> None:
         """Rename the active chat session tab."""
@@ -552,7 +551,7 @@ class ChatPane(Widget):
         async def clear():
             await self._cmd_clear()
 
-        @registry.command(name="explore", help="Browse and select topics from the topic tree")
+        @registry.command(name="topics", help="Browse and select topics from the topic tree")
         async def explore():
             await self._cmd_explore()
 
