@@ -210,8 +210,6 @@ will be intercepted and displayed regardless, so there is often no need to accom
 - 4 (dynamic)
     - infer which verbosity to use (0-3) based on the content of the question.
 
-CURRENT ANSWER VERBOSITY: 4
-
 ## Style Guide
 
 - You have access to limited markdown rendering, however it is rendering in a TUI.
@@ -225,6 +223,7 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
     provider = options.get(Options.Agent.Provider)
     kwargs: dict[str, Any] = {}
     kwargs["parallel_tool_calling"] = options.get(Options.Agent.ParallelToolCalling) == "enabled"
+    kwargs["answer_verbosity"] = options.get(Options.Agent.AnswerVerbosity)
     if provider == "anthropic":
         kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
         kwargs["prompt_cache_ttl"] = options.get(Options.Agent.Anthropic.PromptCacheTTL)
@@ -253,6 +252,10 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
         if agent_kwargs.get("prompt_cache", True):
             ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
             middleware.append(AnthropicPromptCachingMiddleware(ttl=ttl))
+        middleware.append(AnthropicCacheAwareSettingsMiddleware(
+            settings_attribute="user_settings",
+            include_system_prompt=True,
+        ))
 
         agent = create_agent(
             model=model,
@@ -343,7 +346,15 @@ class AgentSession:
         self._session_logger.debug("Stream started (mode=%s, topic=%s)", mode, topic_name)
         try:
             async with self._session_factory() as session:
-                context = AgentContext(session=session, app=self._app, chat_pane=self._chat_pane)
+                user_settings = {
+                    "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "dynamic"),
+                }
+                context = AgentContext(
+                    session=session,
+                    app=self._app,
+                    chat_pane=self._chat_pane,
+                    user_settings=user_settings,
+                )
                 async for update in self._agent.astream(
                     {"messages": self._history},
                     context=context,

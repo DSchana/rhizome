@@ -373,6 +373,14 @@ class Options(metaclass=OptionsMeta):
             },
         )
 
+        AnswerVerbosity = ChoicesOptionSpec(
+            name="answer_verbosity",
+            scope=OptionScope.Session,
+            default="dynamic",
+            help="Controls response length and detail level",
+            choices=["terse", "standard", "verbose", "expository", "dynamic"],
+        )
+
         ParallelToolCalling = ToggleOptionSpec(
             name="parallel_tool_calling",
             scope=OptionScope.Session,

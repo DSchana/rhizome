@@ -14,6 +14,8 @@ class AgentContext:
     """Optional ``CurriculumApp`` instance, available when invoked from the TUI."""
     chat_pane: Any = field(default=None)
     """Optional ``ChatPane`` instance that owns the agent session."""
+    user_settings: dict = field(default_factory=dict)
+    """Dynamic user settings injected into model calls via middleware."""
     session_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     """Mutex guarding ``session`` against concurrent tool execution.
 

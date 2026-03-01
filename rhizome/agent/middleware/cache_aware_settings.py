@@ -182,7 +182,11 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
         # prefix remains cached across turns.
         if len(messages) >= 2:
             self._logger.debug("Injecting cache control breakpoint (messages=%d)", len(messages))
-            messages[-2] = self._with_cache_control(messages[-2])
+            try:
+                messages[-2] = self._with_cache_control(messages[-2])
+            except Exception as e:
+                import traceback
+                self._logger.error("Failed to add cache control: %s", traceback.format_exc())
 
         # Wrap the last human message with settings.
         last = messages[-1]
@@ -199,6 +203,13 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
 
     def _with_cache_control(self, msg):
         """Return a copy of *msg* with ``cache_control`` on its content."""
+
+        self._logger.debug(
+            "_with_cache_control - msg type: %s - content type: %s",
+            type(msg), 
+            type(msg.content)
+        )
+
         content = msg.content
         if isinstance(content, str):
             content = [
@@ -213,4 +224,8 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
             last_block = dict(content[-1])
             last_block["cache_control"] = self._cache_control
             content[-1] = last_block
-        return msg.__class__(content=content, id=msg.id)
+
+        # Update the content in-place
+        # TODO: seems potentially fragile?
+        msg.content = content
+        return msg
