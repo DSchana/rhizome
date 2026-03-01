@@ -32,7 +32,7 @@ from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
 from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
-from rhizome.tui.widgets.message import ChatMessage
+from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage, RichChatMessage
 from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
 from rhizome.tui.widgets.status_bar import StatusBar
@@ -272,7 +272,7 @@ class ChatPane(Widget):
                 self._log.debug("command result: %s", result)
                 if result:
                     self.append_message(
-                        ChatMessageData(role=Role.SYSTEM, content=f"```\n{result}\n```")
+                        ChatMessageData(role=Role.SYSTEM, content=result, rich=True)
                     )
             except KeyError:
                 self.notify(f"Unknown command: /{name}", severity="error")
@@ -619,7 +619,10 @@ class ChatPane(Widget):
                 self._agent_session.add_system_notification(msg.content)
 
         area = self.query_one("#message-area", VerticalScroll)
-        widget = ChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
+        if msg.rich:
+            widget = RichChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
+        else:
+            widget = MarkdownChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
 
         # Remark: this part identifies if the current message and the previous message are both system/error messages, and if so
         # adds the --after-system class to the current message. This allows us to style consecutive system/error messages differently

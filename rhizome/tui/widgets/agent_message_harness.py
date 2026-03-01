@@ -6,7 +6,7 @@ from textual.widget import Widget
 from textual.widgets.markdown import Markdown, MarkdownStream
 
 from rhizome.tui.types import Mode, Role
-from rhizome.tui.widgets.message import ChatMessage
+from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
 from rhizome.tui.widgets.tool_call_list import ToolCallList
 
@@ -126,7 +126,7 @@ class AgentMessageHarness(Widget):
 
     async def _start_chat_segment(self) -> None:
         """Create and mount a new ChatMessage segment, opening a fresh stream."""
-        chat = ChatMessage(role=Role.AGENT, mode=self._session_mode)
+        chat = MarkdownChatMessage(role=Role.AGENT, mode=self._session_mode)
         self._segments.append(chat)
         await self.mount(chat)
         self._active_stream = Markdown.get_stream(chat.inner_markdown)
@@ -180,7 +180,7 @@ class AgentMessageHarness(Widget):
 
         if not has_chat:
             if empty_chat_message:
-                chat = ChatMessage(role=Role.AGENT, content=empty_chat_message)
+                chat = MarkdownChatMessage(role=Role.AGENT, content=empty_chat_message)
                 self._segments.append(chat)
                 await self.mount(chat)
             else:

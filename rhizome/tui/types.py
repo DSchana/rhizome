@@ -30,3 +30,4 @@ class ChatMessageData:
     role: Role
     content: str
     mode: Mode = Mode.IDLE
+    rich: bool = False

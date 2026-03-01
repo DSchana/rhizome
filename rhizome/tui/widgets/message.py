@@ -1,4 +1,4 @@
-"""Chat message display widget built on Textual's Markdown."""
+"""Chat message display widgets with role-based styling and content rendering."""
 
 from textual.app import ComposeResult
 from textual.widget import Widget
@@ -13,7 +13,10 @@ COLLAPSE_LINE_THRESHOLD = 4
 
 
 class ChatMessage(Widget):
-    """Renders a single chat message with role-based styling and markdown support."""
+    """Base class for chat messages. Handles role styling, collapse logic, and layout.
+
+    Subclasses must implement ``_compose_content()`` and ``_update_content_display()``.
+    """
 
     DEFAULT_CSS = f"""
     ChatMessage {{
@@ -124,17 +127,20 @@ class ChatMessage(Widget):
         if self._role == Role.AGENT:
             yield Button("▼", id="msg-collapse")
         yield Static(self._prefix, classes="msg-prefix")
-        yield Markdown(self._body, classes="msg-content")
+        yield from self._compose_content()
         if self._role == Role.AGENT:
             yield Static("", id="msg-line-count")
 
+    def _compose_content(self) -> ComposeResult:
+        """Yield the content widget(s). Subclasses must override."""
+        raise NotImplementedError
+
+    def _update_content_display(self, text: str) -> None:
+        """Update the visible content widget with *text*. Subclasses must override."""
+        raise NotImplementedError
+
     def on_mount(self) -> None:
         self._check_collapsible()
-
-    @property
-    def inner_markdown(self) -> Markdown:
-        """Access the inner Markdown widget."""
-        return self.query_one(".msg-content", Markdown)
 
     @property
     def content_text(self) -> str:
@@ -168,13 +174,13 @@ class ChatMessage(Widget):
         self._update_collapse_label()
         if self._collapsed:
             self.add_class("--collapsed")
-            self.inner_markdown.update(self._truncated_body())
+            self._update_content_display(self._truncated_body())
             extra = self._extra_line_count()
             if extra > 0:
                 self.query_one("#msg-line-count", Static).update(f"(+{extra} more lines)")
         else:
             self.remove_class("--collapsed")
-            self.inner_markdown.update(self._body)
+            self._update_content_display(self._body)
 
     def _check_collapsible(self) -> None:
         """Show or hide the collapse button based on line count."""
@@ -198,3 +204,32 @@ class ChatMessage(Widget):
         """Update the stored body text (used after streaming completes)."""
         self._body = body
         self._check_collapsible()
+
+
+class MarkdownChatMessage(ChatMessage):
+    """Chat message rendered via Textual's Markdown widget."""
+
+    def _compose_content(self) -> ComposeResult:
+        yield Markdown(self._body, classes="msg-content")
+
+    def _update_content_display(self, text: str) -> None:
+        self.inner_markdown.update(text)
+
+    @property
+    def inner_markdown(self) -> Markdown:
+        """Access the inner Markdown widget."""
+        return self.query_one(".msg-content", Markdown)
+
+
+class RichChatMessage(ChatMessage):
+    """Chat message rendered via Rich Text (supports ANSI escape codes)."""
+
+    def _compose_content(self) -> ComposeResult:
+        from rich.text import Text
+
+        yield Static(Text.from_ansi(self._body), classes="msg-content")
+
+    def _update_content_display(self, text: str) -> None:
+        from rich.text import Text
+
+        self.query_one(".msg-content", Static).update(Text.from_ansi(text))
