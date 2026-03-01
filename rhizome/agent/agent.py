@@ -223,6 +223,7 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
     provider = options.get(Options.Agent.Provider)
     kwargs: dict[str, Any] = {}
     kwargs["parallel_tool_calling"] = options.get(Options.Agent.ParallelToolCalling) == "enabled"
+    kwargs["temperature"] = options.get(Options.Agent.Temperature)
     kwargs["answer_verbosity"] = options.get(Options.Agent.AnswerVerbosity)
     if provider == "anthropic":
         kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
@@ -240,10 +241,11 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
         if model_name is None:
             model_name = get_model_name()
 
+        temperature = agent_kwargs.get("temperature", 0.3)
         model = init_chat_model(
             model_name,
             api_key=get_api_key(),
-            temperature=0.3,
+            temperature=temperature,
         )
 
         middleware = []

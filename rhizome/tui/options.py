@@ -180,6 +180,40 @@ class IntRangeOptionSpec(OptionSpec):
         return f"{self.help} ({self.min}-{self.max})"
 
 
+class FloatRangeOptionSpec(OptionSpec):
+    """Option constrained to a float range."""
+
+    def __init__(
+        self,
+        name: str,
+        scope: OptionScope,
+        default: float,
+        help: str,
+        min: float,
+        max: float,
+        step: float | None = None,
+    ) -> None:
+        super().__init__(name, scope, default, help)
+        self.min = min
+        self.max = max
+        self.step = step
+
+    def validate(self, value: Any) -> float:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Expected number, got {value!r}")
+        if v < self.min or v > self.max:
+            raise ValueError(f"Must be between {self.min} and {self.max}")
+        return v
+
+    def from_string(self, raw: str) -> float:
+        return self.validate(raw.strip())
+
+    def jsonc_comment(self) -> str:
+        return f"{self.help} ({self.min}-{self.max})"
+
+
 class ToggleOptionSpec(ChoicesOptionSpec):
     """Boolean-like option with ``"enabled"`` / ``"disabled"`` choices."""
 
@@ -371,6 +405,16 @@ class Options(metaclass=OptionsMeta):
                 "anthropic": "claude-opus-4-6",
                 "openai": "gpt-5-mini",
             },
+        )
+
+        Temperature = FloatRangeOptionSpec(
+            name="temperature",
+            scope=OptionScope.Session,
+            default=0.3,
+            help="Sampling temperature for LLM responses",
+            min=0.0,
+            max=1.0,
+            step=0.1,
         )
 
         AnswerVerbosity = ChoicesOptionSpec(
