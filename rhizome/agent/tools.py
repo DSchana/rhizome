@@ -195,27 +195,20 @@ async def set_mode_tool(
     mode: str,
     runtime: ToolRuntime[AgentContext]
 ) -> str:
-    from rhizome.tui.commands import set_mode
     from rhizome.tui.types import Mode
-    app = runtime.context.app
-    if app is None:
-        return "Error: app context not available."
     try:
         target = Mode(mode)
     except ValueError:
         return f"Invalid mode '{mode}'. Must be one of: idle, learn, review."
     pane = runtime.context.chat_pane
-    await set_mode(app, target, pane, silent=True)
+    await pane._set_mode(target, silent=True)
     return f"Mode is now: {pane.session_mode.value}"
 
 
 @tool("rename_tab", description="Rename the active chat session tab.")
 async def rename_tab(name: str, runtime: ToolRuntime[AgentContext]) -> str:
-    from rhizome.tui.commands import _handle_rename
-    app = runtime.context.app
-    if app is None:
-        return "Error: app context not available."
-    await _handle_rename(app, name, runtime.context.chat_pane)
+    pane = runtime.context.chat_pane
+    await pane._cmd_rename(name)
     return f"Tab renamed to: {name}"
 
 

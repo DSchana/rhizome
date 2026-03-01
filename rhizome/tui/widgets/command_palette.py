@@ -9,16 +9,6 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from rhizome.tui.commands import COMMANDS
-
-
-# Build the full command list (including quit which isn't in COMMANDS registry
-# but is a valid TUI command).
-_ALL_COMMANDS: list[tuple[str, str]] = sorted(
-    [(cmd.name, cmd.description) for cmd in COMMANDS.values()],
-    key=lambda c: c[0],
-)
-
 
 class CommandPalette(Widget):
     """Filtered dropdown list of slash commands."""
@@ -56,9 +46,28 @@ class CommandPalette(Widget):
             super().__init__()
             self.name = name
 
+    def _get_command_list(self) -> list[tuple[str, str]]:
+        """Build command list from the parent ChatPane's registry."""
+        from rhizome.tui.widgets.chat_pane import ChatPane
+
+        # Walk up to find the parent ChatPane
+        node = self.parent
+        while node is not None and not isinstance(node, ChatPane):
+            node = node.parent
+        if node is None:
+            return []
+
+        registry = node._command_registry
+        items = []
+        for name, cmd in sorted(registry.commands.items()):
+            desc = cmd.help or (cmd.callback.__doc__ if cmd.callback else "") or ""
+            desc = desc.strip().split("\n")[0] if desc else ""
+            items.append((name, desc))
+        return items
+
     def _get_filtered(self) -> list[tuple[str, str]]:
         prefix = self.filter_text.lstrip("/")
-        return [(n, d) for n, d in _ALL_COMMANDS if n.startswith(prefix)]
+        return [(n, d) for n, d in self._get_command_list() if n.startswith(prefix)]
 
     def watch_filter_text(self) -> None:
         self.selected_index = 0

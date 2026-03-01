@@ -217,7 +217,6 @@ class ChatScreen(Screen):
                 return
 
     async def action_cycle_mode(self) -> None:
-        from rhizome.tui.commands import set_mode
         pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
         cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
-        await set_mode(self.app, cycle[pane.session_mode], pane)  # type: ignore[arg-type]
+        await pane._set_mode(cycle[pane.session_mode])

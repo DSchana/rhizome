@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
+
+import rich_click as click
 
 from rhizome.logs import get_logger
 
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import Static, TabbedContent
 from textual.worker import Worker
 
 from langchain.messages import ToolMessage
@@ -20,8 +26,8 @@ from rhizome.agent import AgentSession
 from rhizome.agent.agent import get_agent_kwargs
 from rhizome.config import get_log_dir
 from rhizome.db import Topic
-from rhizome.tui.commands import COMMANDS, parse_input
-from rhizome.tui.options import Options, OptionScope
+from rhizome.tui.commands import CommandRegistry, parse_input
+from rhizome.tui.options import Options, OptionScope, build_jsonc_snapshot, parse_jsonc
 from rhizome.tui.types import ChatMessageData, Mode, Role
 from rhizome.tui.widgets.chat_input import ChatInput
 from rhizome.tui.widgets.command_palette import CommandPalette
@@ -109,6 +115,10 @@ class ChatPane(Widget):
         self._commit_selectable: list[ChatMessage] = []
         self._commit_cursor: int = 0
         self._commit_selected: set[int] = set()
+
+        # Command registry
+        self._command_registry = CommandRegistry()
+        self._register_commands(self._command_registry)
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
@@ -254,19 +264,253 @@ class ChatPane(Widget):
             return
 
         self._log.debug("command dispatched: /%s %s", name, args)
-        command = COMMANDS.get(name)
-        if command is None:
-            self.notify(f"Unknown command: /{name}", severity="error")
-            return
-        handler = command.handler
-        if handler is None:
-            self.notify(f"Error: command /{name} doesn't have an associated handler", severity="error")
-            return
 
         async def _run() -> None:
-            await handler(self.app, args, self)  # pyright: ignore[reportArgumentType]
+            try:
+                line = f"{name} {args}".strip()
+                result = await self._command_registry.execute(line)
+                self._log.debug("command result: %s", result)
+                if result:
+                    self.append_message(
+                        ChatMessageData(role=Role.SYSTEM, content=f"```\n{result}\n```")
+                    )
+            except KeyError:
+                self.notify(f"Unknown command: /{name}", severity="error")
+            except Exception as e:
+                self._log.exception("Error executing command: /%s %s", name, args)
+                self.notify(str(e), severity="error")
 
         self.run_worker(_run())
+
+    # ------------------------------------------------------------------
+    # Command handlers
+    # ------------------------------------------------------------------
+
+    async def _set_mode(self, mode: Mode, *, silent: bool = False) -> None:
+        """Set the session mode.
+
+        When *silent* is ``True`` the system message is suppressed (useful
+        when the agent switches modes programmatically).
+        """
+        if self.session_mode == mode:
+            if not silent:
+                self.append_message(
+                    ChatMessageData(role=Role.SYSTEM, content=f"Already in {mode.value} mode.")
+                )
+            return
+        self.session_mode = mode
+        if not silent:
+            label = "Returned to idle mode." if mode == Mode.IDLE else f"Entered {mode.value} mode."
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=label))
+        self.update_status_bar()
+
+    async def _cmd_idle(self) -> None:
+        await self._set_mode(Mode.IDLE)
+
+    async def _cmd_learn(self) -> None:
+        await self._set_mode(Mode.LEARN)
+
+    async def _cmd_review(self) -> None:
+        await self._set_mode(Mode.REVIEW)
+
+    async def _cmd_clear(self) -> None:
+        """Clear all visible chat messages from the message area."""
+        area = self.query_one("#message-area")
+        await area.remove_children()
+        self.messages.clear()
+
+    async def _cmd_explore(self) -> None:
+        """Browse and select topics from the topic tree."""
+        existing = list(self.query(TopicTree))
+        if existing:
+            tree = existing[-1]
+            tree.query_one("#topic-tree-help").update(
+                "Use arrow keys to navigate, enter to select a topic."
+            )
+            tree.focus()
+        else:
+            area = self.query_one("#message-area")
+            tree = TopicTree(id="topic-tree")
+            await area.mount(tree)
+            area.scroll_end(animate=False)
+            tree.focus()
+        self.query_one("#chat-input").placeholder = (
+            "Use Tab/Shift+Tab to navigate between widgets"
+        )
+
+    async def _cmd_options(self, *, edit: bool = False, scope: str = "session") -> None:
+        """Open settings and configuration."""
+        is_global = scope == "global"
+        target = self.app.options if is_global else self.options  # type: ignore[attr-defined]
+
+        if edit:
+            jsonc_text = build_jsonc_snapshot(target)
+            editor = os.environ.get("EDITOR", "nano")
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".jsonc", prefix="rhizome-options-", delete=False
+            ) as tmp:
+                tmp.write(jsonc_text)
+                tmp_path = tmp.name
+
+            try:
+                with self.app.suspend():
+                    subprocess.run([editor, tmp_path])
+
+                new_text = Path(tmp_path).read_text(encoding="utf-8")
+                new_opts = parse_jsonc(new_text)
+
+                spec_map = {s.resolved_name: s for s in Options.spec()}
+                for key, val in new_opts.items():
+                    s = spec_map.get(key)
+                    if s is not None:
+                        await target.set(s, val)
+
+                await target.post_update()
+                self.append_message(
+                    ChatMessageData(role=Role.SYSTEM, content="Options updated.")
+                )
+            except Exception as exc:
+                self.append_message(
+                    ChatMessageData(role=Role.SYSTEM, content=f"Error applying options: {exc}")
+                )
+            finally:
+                os.unlink(tmp_path)
+            return
+
+        # Inline widget mode
+        area = self.query_one("#message-area")
+        editor_widget = OptionsEditor(target, id="options-editor")
+        await area.mount(editor_widget)
+        area.scroll_end(animate=False)
+        editor_widget.focus()
+
+    async def _cmd_help(self, command_name: str = "") -> None:
+        """Show available commands, or details for a specific command."""
+        if command_name:
+            name = command_name.strip().lstrip("/")
+            cmd = self._command_registry.commands.get(name)
+            if cmd is None:
+                text = f"Unknown command: /{name}\nType /help to see available commands."
+            else:
+                # Get help text from click command
+                ctx = click.Context(cmd, info_name=name)
+                text = ctx.get_help()
+        else:
+            lines = ["**Available commands:**", ""]
+            for name in sorted(self._command_registry.commands):
+                cmd = self._command_registry.commands[name]
+                # Use the callback's docstring or the click help string
+                desc = cmd.help or (cmd.callback.__doc__ if cmd.callback else "") or ""
+                # Take only the first line of the description
+                desc = desc.strip().split("\n")[0] if desc else ""
+                lines.append(f"  /{name} — {desc}")
+            lines.append("")
+            lines.append("Type /help <command> for details, or /<command> --help.")
+            text = "\n".join(lines)
+
+        self.append_message(ChatMessageData(role=Role.AGENT, content=text))
+
+    async def _cmd_rename(self, name: str) -> None:
+        """Rename the active chat session tab."""
+        from rhizome.tui.screens.chat import ChatTabPane
+
+        new_name = name.strip()
+        if not new_name:
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content="Usage: /rename <name>")
+            )
+            return
+
+        tabs = self.app.screen.query_one("#tabs", TabbedContent)
+        active_pane = tabs.active_pane
+        if active_pane is not None and isinstance(active_pane, ChatTabPane):
+            active_pane.full_name = new_name
+            active_pane._update_tab_label()
+
+    async def _cmd_new(self) -> None:
+        """Create a new chat session tab."""
+        from rhizome.tui.screens.chat import ChatScreen
+
+        screen = self.app.screen
+        if isinstance(screen, ChatScreen):
+            await screen._add_tab()
+
+    async def _cmd_commit(self) -> None:
+        """Select learn-mode messages to commit as knowledge."""
+        self.enter_commit_mode()
+
+    async def _cmd_logs(self) -> None:
+        """Open the logs tab."""
+        from rhizome.tui.screens.chat import ChatScreen
+
+        screen = self.app.screen
+        if isinstance(screen, ChatScreen):
+            await screen._add_log_tab()
+
+    async def _cmd_close(self) -> None:
+        """Close the current chat session tab."""
+        from rhizome.tui.screens.chat import ChatScreen
+
+        screen = self.app.screen
+        if isinstance(screen, ChatScreen):
+            await screen._close_active_tab()
+
+    def _register_commands(self, registry: CommandRegistry) -> None:
+        """Register all slash commands with the click-based registry."""
+
+        @registry.command(name="options", help="Open settings and configuration")
+        @click.option("-e", "--edit", is_flag=True, help="Open in $EDITOR")
+        @click.argument("scope", default="session", required=False,
+                        type=click.Choice(["session", "global"]))
+        async def options(edit: bool, scope: str):
+            await self._cmd_options(edit=edit, scope=scope)
+
+        @registry.command(name="rename", help="Rename the current tab")
+        @click.argument("name", nargs=-1, required=True)
+        async def rename(name: tuple[str, ...]):
+            await self._cmd_rename(" ".join(name))
+
+        @registry.command(name="help", help="Show available commands and usage")
+        @click.argument("command_name", default="", required=False)
+        async def help_cmd(command_name: str):
+            await self._cmd_help(command_name)
+
+        @registry.command(name="clear", help="Clear chat messages")
+        async def clear():
+            await self._cmd_clear()
+
+        @registry.command(name="explore", help="Browse and select topics from the topic tree")
+        async def explore():
+            await self._cmd_explore()
+
+        @registry.command(name="idle", help="Return to idle mode")
+        async def idle():
+            await self._cmd_idle()
+
+        @registry.command(name="learn", help="Enter learning mode: set curriculum and topic context")
+        async def learn():
+            await self._cmd_learn()
+
+        @registry.command(name="review", help="Enter review mode: quizzes and practice")
+        async def review():
+            await self._cmd_review()
+
+        @registry.command(name="new", help="Open a new chat session tab")
+        async def new():
+            await self._cmd_new()
+
+        @registry.command(name="commit", help="Select learn-mode messages to commit as knowledge")
+        async def commit():
+            await self._cmd_commit()
+
+        @registry.command(name="logs", help="Open the logs viewer tab")
+        async def logs():
+            await self._cmd_logs()
+
+        @registry.command(name="close", help="Close the current chat session tab")
+        async def close():
+            await self._cmd_close()
 
     def _handle_chat(self, text: str) -> None:
         self._log.debug("Chat submitted (%d chars)", len(text))

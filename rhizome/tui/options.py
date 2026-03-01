@@ -642,6 +642,44 @@ def _strip_comments(text: str) -> str:
     )
 
 
+def build_jsonc_snapshot(target: Options) -> str:
+    """Build a JSONC string from the spec tree for external editor use."""
+    all_specs = Options.spec()
+    last_resolved = all_specs[-1].resolved_name if all_specs else ""
+    top_level, nodes = Options.spec_tree()
+
+    lines = ["{"]
+
+    def _emit_specs(specs: list, indent: str = "    ") -> None:
+        for s in specs:
+            for comment_line in s.jsonc_comment().splitlines():
+                if comment_line.startswith("//"):
+                    lines.append(f"{indent}{comment_line}")
+                else:
+                    lines.append(f"{indent}// {comment_line}")
+            value = target.get(s)
+            json_val = json.dumps(value)
+            comma = "," if s.resolved_name != last_resolved else ""
+            lines.append(f"{indent}{json.dumps(s.resolved_name)}: {json_val}{comma}")
+            if s.resolved_name != last_resolved:
+                lines.append("")
+
+    def _emit_node(node: OptionNamespaceNode, indent: str = "    ") -> None:
+        ns = node.namespace
+        if ns.description:
+            lines.append(f"{indent}// {ns.description}")
+        _emit_specs(node.options, indent)
+        for child in node.children:
+            _emit_node(child, indent)
+
+    _emit_specs(top_level)
+    for node in nodes:
+        _emit_node(node)
+
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
 def parse_jsonc(text: str) -> dict[str, Any]:
     """Parse a JSONC string, validating values against the spec registry."""
     data = json.loads(_strip_comments(text))

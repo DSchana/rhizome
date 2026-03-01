@@ -3,7 +3,7 @@
 from textual.message import Message
 from textual.widgets import TextArea
 
-from rhizome.tui.commands import COMMANDS, parse_input
+from rhizome.tui.commands import parse_input
 
 
 class ChatInput(TextArea):
@@ -128,10 +128,20 @@ class ChatInput(TextArea):
         else:
             super()._on_key(event)  # pyright: ignore[reportUnusedCoroutine]
 
-    @staticmethod
-    def _is_complete_command(text: str) -> bool:
+    def _is_complete_command(self, text: str) -> bool:
         """Return True if *text* is a fully typed known command (e.g. '/explore')."""
+        from rhizome.tui.widgets.chat_pane import ChatPane
+
         parsed = parse_input(text)
         if parsed is None:
             return False
-        return parsed.name in COMMANDS or parsed.name == "quit"
+        if parsed.name == "quit":
+            return True
+
+        # Walk up to find the parent ChatPane's registry
+        node = self.parent
+        while node is not None and not isinstance(node, ChatPane):
+            node = node.parent
+        if node is None:
+            return False
+        return parsed.name in node._command_registry.commands
