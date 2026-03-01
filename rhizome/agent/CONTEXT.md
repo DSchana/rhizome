@@ -9,7 +9,7 @@ Each chat tab creates its own `AgentSession`, which owns the LangChain conversat
 ## Modules
 
 - **config.py** — Reads `ANTHROPIC_API_KEY` (required) and `CURRICULUM_AGENT_MODEL` (optional, defaults to `claude-sonnet-4-20250514`) from environment variables.
-- **context.py** — `AgentContext` dataclass holding the `AsyncSession` and optional `CurriculumApp` reference for the current invocation.
+- **context.py** — `AgentContext` dataclass holding the `AsyncSession`, optional `CurriculumApp` reference, and a `session_lock` (`asyncio.Lock`) for the current invocation. The lock serialises concurrent tool access to the session.
 - **tools.py** — `@tool`-decorated async functions wrapping `rhizome.tools`. Each tool receives a `ToolRuntime[AgentContext]` parameter to access the session. `get_all_tools()` returns the full list.
 - **agent.py** — `AgentSession` class encapsulating a conversation's agent graph, message history, and token usage tracking. Also contains `SYSTEM_PROMPT`. Each session builds its own model and agent graph via `_build_agent(provider, model_name)`. Stores `_provider` and `_model_name` and exposes `rebuild_agent(provider, model_name)` for hot-swapping models. `on_options_post_update(options)` is designed as a callback for `Options.post_update()` — it reads provider/model from the passed-in Options instance and rebuilds if changed. Exposes `stream()` as an async iterator of `(kind, payload)` tuples, and `add_human_message()`/`add_system_notification()` for appending to history.
 - **utils.py** — `TokenUsageData` dataclass for tracking token consumption and context window limits. `compute_chat_model_max_tokens(chat_model)` derives the total context window size from a chat model's `profile` dict.

@@ -344,7 +344,7 @@ class Options(metaclass=OptionsMeta):
 
         Provider = ChoicesOptionSpec(
             name="provider",
-            scope=OptionScope.Root,
+            scope=OptionScope.Session,
             default="anthropic",
             help="LLM provider",
             choices=["anthropic", "openai"],
@@ -371,6 +371,16 @@ class Options(metaclass=OptionsMeta):
                 "anthropic": "claude-opus-4-6",
                 "openai": "gpt-5-mini",
             },
+        )
+
+        ParallelToolCalling = ToggleOptionSpec(
+            name="parallel_tool_calling",
+            scope=OptionScope.Session,
+            default="enabled",
+            help=(
+                "Allow the LLM to issue multiple tool calls per response. "
+                "Database tools are always serialised via a session lock regardless of this setting."
+            ),
         )
 
         class Anthropic(OptionNamespace):

@@ -13,6 +13,7 @@ from rhizome.agent.config import get_api_key, get_model_name
 from rhizome.logs import get_logger
 from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.cache_aware_settings import AnthropicCacheAwareSettingsMiddleware
+from rhizome.agent.middleware.disable_parallel_tools import DisableParallelToolCallsMiddleware
 from rhizome.agent.tools import get_all_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.tui.options import Options
@@ -223,6 +224,7 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
     """Build provider-specific kwargs from the current options."""
     provider = options.get(Options.Agent.Provider)
     kwargs: dict[str, Any] = {}
+    kwargs["parallel_tool_calling"] = options.get(Options.Agent.ParallelToolCalling) == "enabled"
     if provider == "anthropic":
         kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
         kwargs["prompt_cache_ttl"] = options.get(Options.Agent.Anthropic.PromptCacheTTL)
@@ -246,6 +248,8 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
         )
 
         middleware = []
+        if not agent_kwargs.get("parallel_tool_calling", True):
+            middleware.append(DisableParallelToolCallsMiddleware())
         if agent_kwargs.get("prompt_cache", True):
             ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
             middleware.append(AnthropicPromptCachingMiddleware(ttl=ttl))
