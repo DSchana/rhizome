@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import threading
 from collections import deque
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -32,7 +32,6 @@ class TUILogHandler(logging.Handler):
 
     def set_app(self, app: App) -> None:
         self._app = app
-        self._main_thread_id = threading.get_ident()
 
     def register_pane(self, pane) -> None:
         """Register a LoggingPane so new log lines are written to it."""
@@ -50,10 +49,14 @@ class TUILogHandler(logging.Handler):
             line = self._format_rich(record)
             self.lines.append(line)
             if self._app is not None and self._panes:
-                if threading.get_ident() == self._main_thread_id:
-                    self._write_to_panes(line)
-                else:
+                try:
+                    asyncio.get_running_loop()
+                except RuntimeError:
+                    # No event loop on this thread — schedule via Textual
                     self._app.call_from_thread(self._write_to_panes, line)
+                else:
+                    # Already on the event loop thread — call directly
+                    self._write_to_panes(line)
         except Exception:
             self.handleError(record)
 
