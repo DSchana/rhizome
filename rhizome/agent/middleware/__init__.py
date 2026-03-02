@@ -1,7 +1,9 @@
-from .cache_aware_settings import AnthropicCacheAwareSettingsMiddleware
 from .disable_parallel_tools import DisableParallelToolCallsMiddleware
+from .inject_user_settings import InjectUserSettingsMiddleware
+from .penultimate_cache import AnthropicPenultimateCacheMiddleware
 
 __all__ = [
-    "AnthropicCacheAwareSettingsMiddleware",
+    "AnthropicPenultimateCacheMiddleware",
     "DisableParallelToolCallsMiddleware",
+    "InjectUserSettingsMiddleware",
 ]

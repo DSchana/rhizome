@@ -15,8 +15,9 @@ from langgraph.types import Command
 from rhizome.agent.config import get_api_key, get_model_name
 from rhizome.logs import get_logger
 from rhizome.agent.context import AgentContext
-from rhizome.agent.middleware.cache_aware_settings import AnthropicCacheAwareSettingsMiddleware
 from rhizome.agent.middleware.disable_parallel_tools import DisableParallelToolCallsMiddleware
+from rhizome.agent.middleware.inject_user_settings import InjectUserSettingsMiddleware
+from rhizome.agent.middleware.penultimate_cache import AnthropicPenultimateCacheMiddleware
 from rhizome.agent.tools import get_all_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.tui.options import Options
@@ -256,18 +257,14 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
         if not agent_kwargs.get("parallel_tool_calling", True):
             middleware.append(DisableParallelToolCallsMiddleware())
 
-        # if agent_kwargs.get("prompt_cache", True):
-        #     ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
-        #     middleware.append(AnthropicPromptCachingMiddleware(ttl=ttl))
+        middleware.append(InjectUserSettingsMiddleware(
+            settings_attribute="user_settings",
+            include_system_prompt=True,
+        ))
 
         if agent_kwargs.get("prompt_cache", True):
             ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
-            middleware.append(AnthropicCacheAwareSettingsMiddleware(
-                ttl=ttl,
-                settings_attribute="user_settings",
-                include_system_prompt=True,
-            ))
-        # TODO: else needs to still inject user settings
+            middleware.append(AnthropicPenultimateCacheMiddleware(ttl=ttl))
 
         agent = create_agent(
             model=model,
