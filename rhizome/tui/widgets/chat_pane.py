@@ -611,6 +611,7 @@ class ChatPane(Widget):
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
             except asyncio.CancelledError:
+                self._log.info("User cancelled agent stream.")
                 body = await harness.cancel()
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))

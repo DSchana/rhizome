@@ -1,16 +1,16 @@
 """Agent session: owns the LangChain conversation history and agent graph."""
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 
 from rhizome.agent.config import get_api_key, get_model_name
 from rhizome.logs import get_logger
@@ -252,15 +252,22 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
         )
 
         middleware = []
+
         if not agent_kwargs.get("parallel_tool_calling", True):
             middleware.append(DisableParallelToolCallsMiddleware())
+
+        # if agent_kwargs.get("prompt_cache", True):
+        #     ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
+        #     middleware.append(AnthropicPromptCachingMiddleware(ttl=ttl))
+
         if agent_kwargs.get("prompt_cache", True):
             ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
-            middleware.append(AnthropicPromptCachingMiddleware(ttl=ttl))
-        middleware.append(AnthropicCacheAwareSettingsMiddleware(
-            settings_attribute="user_settings",
-            include_system_prompt=True,
-        ))
+            middleware.append(AnthropicCacheAwareSettingsMiddleware(
+                ttl=ttl,
+                settings_attribute="user_settings",
+                include_system_prompt=True,
+            ))
+        # TODO: else needs to still inject user settings
 
         agent = create_agent(
             model=model,
@@ -384,79 +391,84 @@ class AgentSession:
                 while True:
                     interrupted = False
 
-                    async for update in self._agent.astream(
-                        next_input,
-                        config=config,
-                        context=context,
-                        stream_mode=["updates", "messages"],
-                    ):
-                        kind, payload = update
+                    try:
+                        async for update in self._agent.astream(
+                            next_input,
+                            config=config,
+                            context=context,
+                            stream_mode=["updates", "messages"],
+                        ):
+                            kind, payload = update
 
-                        if kind == "updates":
+                            if kind == "updates":
 
-                            # First, inspect the payload for any completed messages and
-                            # append them to the internal message history.
-                            for node_output in payload.values():
-                                
-                                # Remark: when an interrupt occurs, that registers as a node_output consisting
-                                # of a tuple (Interrupt,). I don't think there's anything we need to do
-                                # with that though?
-                                if not isinstance(node_output, dict):
-                                    continue
+                                # First, inspect the payload for any completed messages and
+                                # append them to the internal message history.
+                                for node_output in payload.values():
 
-                                for msg in node_output.get("messages", []):
-                                    if not isinstance(msg, BaseMessage):
+                                    # Remark: when an interrupt occurs, that registers as a node_output consisting
+                                    # of a tuple (Interrupt,). I don't think there's anything we need to do
+                                    # with that though?
+                                    if not isinstance(node_output, dict):
                                         continue
-                                    self._history.append(msg)
 
-                                    # Notify token usage to recompute token breakdowns into
-                                    # system/tool tokens.
-                                    self._notify_token_usage()
+                                    for msg in node_output.get("messages", []):
+                                        if not isinstance(msg, BaseMessage):
+                                            continue
+                                        self._history.append(msg)
 
-                            # Check for interrupt
-                            if (
-                                on_interrupt and \
-                                "__interrupt__" in payload and \
-                                payload["__interrupt__"]
-                            ):
-                                interrupt_value = payload["__interrupt__"]
+                                        # Notify token usage to recompute token breakdowns into
+                                        # system/tool tokens.
+                                        self._notify_token_usage()
 
-                                # Extract the value from the interrupt info
-                                if isinstance(interrupt_value, (list, tuple)) and len(interrupt_value) > 0:
-                                    interrupt_value = interrupt_value[0]
-                                value = getattr(interrupt_value, "value", interrupt_value)
+                                # Check for interrupt
+                                if (
+                                    on_interrupt and \
+                                    "__interrupt__" in payload and \
+                                    payload["__interrupt__"]
+                                ):
+                                    interrupt_value = payload["__interrupt__"]
 
-                                # Pass to interrupt handler
-                                resume = await on_interrupt(value)
+                                    # Extract the value from the interrupt info
+                                    if isinstance(interrupt_value, (list, tuple)) and len(interrupt_value) > 0:
+                                        interrupt_value = interrupt_value[0]
+                                    value = getattr(interrupt_value, "value", interrupt_value)
 
-                                # Construct the Command break, restarting the stream with
-                                # Command(resume) as the next input.
-                                if isinstance(resume, Command):
-                                    next_input = resume
-                                else:
-                                    next_input = Command(resume=resume)
-                                interrupted = True
-                                break
+                                    # Pass to interrupt handler
+                                    resume = await on_interrupt(value)
 
-                            # Pass to update handler
-                            if on_update:
-                                await on_update(kind, payload)
+                                    # Construct the Command break, restarting the stream with
+                                    # Command(resume) as the next input.
+                                    if isinstance(resume, Command):
+                                        next_input = resume
+                                    else:
+                                        next_input = Command(resume=resume)
+                                    interrupted = True
+                                    break
 
-                        elif kind == "messages":
-                            chunk, _metadata = payload
+                                # Pass to update handler
+                                if on_update:
+                                    await on_update(kind, payload)
 
-                            # Extract token/cache usage metadata and notify a
-                            # token usage update.
-                            self._extract_usage_metadata(chunk)
+                            elif kind == "messages":
+                                chunk, _metadata = payload
 
-                            # Pass to message handler
-                            if on_message:
-                                await on_message(kind, payload)
+                                # Extract token/cache usage metadata and notify a
+                                # token usage update.
+                                self._extract_usage_metadata(chunk)
 
-                        if post_chunk_handler:
-                            result = post_chunk_handler()
-                            if result is not None and hasattr(result, "__await__"):
-                                await result
+                                # Pass to message handler
+                                if on_message:
+                                    await on_message(kind, payload)
+
+                            if post_chunk_handler:
+                                result = post_chunk_handler()
+                                if result is not None and hasattr(result, "__await__"):
+                                    await result
+
+                    except asyncio.CancelledError:
+                        self._patch_orphaned_tool_calls()
+                        raise
 
                     if not interrupted:
                         # astream completed without interrupt → done
@@ -499,6 +511,44 @@ class AgentSession:
             self._token_usage.cache_creation_tokens = cache_create
 
         self._notify_token_usage()
+
+    def _patch_orphaned_tool_calls(self) -> None:
+        """Inject synthetic ToolMessages for any tool_use blocks without results.
+
+        When a stream is cancelled mid-tool-call, the AIMessage with
+        ``tool_use`` content may already be in the history but the
+        corresponding ``ToolMessage`` was never appended.  The Anthropic
+        API rejects conversations where a ``tool_use`` has no matching
+        ``tool_result``, so we scan backwards and patch the gap.
+        """
+        # Collect tool_call IDs that already have a ToolMessage.
+        answered: set[str] = set()
+        for msg in self._history:
+            if isinstance(msg, ToolMessage) and msg.tool_call_id:
+                answered.add(msg.tool_call_id)
+
+        # Walk backwards to find the most recent AIMessage with tool calls.
+        # In normal operation this is the last (or second-to-last) message.
+        orphaned_ids: list[str] = []
+        for msg in reversed(self._history):
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if tc["id"] not in answered:
+                        orphaned_ids.append(tc["id"])
+                break  # only patch the most recent AIMessage
+
+        if not orphaned_ids:
+            return
+
+        self._session_logger.info(
+            "Patching %d orphaned tool call(s): %s",
+            len(orphaned_ids), orphaned_ids,
+        )
+        for tc_id in orphaned_ids:
+            self._history.append(ToolMessage(
+                content="Tool call cancelled by user.",
+                tool_call_id=tc_id,
+            ))
 
     def _notify_token_usage(self) -> None:
         self._compute_overhead_tokens()

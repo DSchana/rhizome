@@ -255,9 +255,19 @@ async def ask_user_input(
 
 def get_all_tools() -> list:
     """Return the list of all tool functions."""
+    import asyncio
+
+    @tool("sleep", description=("Test function that just sleeps for 10 seconds - run at user request."))
+    async def sleep(
+        runtime: ToolRuntime[AgentContext]
+    ) -> str:
+        await asyncio.sleep(10)
+        return "Done"
+    
     return [
         # list_all_curricula,
         # list_curriculum_topics_tool,
+        sleep,
         list_root_topics_tool,
         list_topic_children,
         get_topic_subtree,
