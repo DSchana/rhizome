@@ -5,40 +5,37 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Horizontal
+from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Button, Label
+from textual.widgets import Label, Static
 
 
-class InterruptChoices(Widget):
-    """Displays an interrupt prompt with option buttons and resolves an asyncio.Future.
+class InterruptChoices(Widget, can_focus=True):
+    """Displays an interrupt prompt with a navigable list of options.
 
     The widget is mounted by ``AgentMessageHarness.on_interrupt()`` and blocks
     the agent stream until the user selects an option.  The selection is
     returned via ``wait_for_selection()``, which awaits an internal
     ``asyncio.Future``.
+
+    Navigation: Up/Down to move highlight, Enter to select.
     """
 
     DEFAULT_CSS = """
     InterruptChoices {
         height: auto;
         layout: vertical;
-        padding: 1 2;
+        padding: 0 2;
         margin: 1 0;
-        background: $surface;
-        border: round $accent;
     }
     InterruptChoices .interrupt-prompt {
         margin-bottom: 1;
     }
-    InterruptChoices .interrupt-buttons {
-        height: auto;
-    }
-    InterruptChoices Button {
-        margin: 0 1 0 0;
-    }
     """
+
+    cursor: reactive[int] = reactive(0)
 
     def __init__(
         self,
@@ -53,19 +50,46 @@ class InterruptChoices(Widget):
 
     def compose(self) -> ComposeResult:
         yield Label(self._prompt, classes="interrupt-prompt")
-        with Horizontal(classes="interrupt-buttons"):
-            for i, option in enumerate(self._options):
-                yield Button(option, id=f"interrupt-opt-{i}", variant="primary" if i == 0 else "default")
+        yield Static(id="interrupt-options")
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Resolve the future with the selected option."""
+    def on_mount(self) -> None:
+        self._render_options()
+        self.focus()
+
+    def watch_cursor(self) -> None:
+        self._render_options()
+
+    def _render_options(self) -> None:
+        text = Text()
+        for i, option in enumerate(self._options):
+            if i > 0:
+                text.append("\n")
+            label = f"  {i + 1}. {option}"
+            if i == self.cursor:
+                text.append(label, style="bold white")
+            else:
+                text.append(label, style="rgb(100,100,100)")
+        self.query_one("#interrupt-options", Static).update(text)
+
+    def on_key(self, event) -> None:
         if self._future.done():
             return
-        # Extract the option index from the button id
-        button_id = event.button.id or ""
-        idx = int(button_id.split("-")[-1]) if button_id.startswith("interrupt-opt-") else 0
-        value = self._options[idx] if idx < len(self._options) else self._options[0]
-        self._future.set_result(value)
+        if event.key == "up":
+            self.cursor = (self.cursor - 1) % len(self._options)
+            event.prevent_default()
+            event.stop()
+        elif event.key == "down":
+            self.cursor = (self.cursor + 1) % len(self._options)
+            event.prevent_default()
+            event.stop()
+        elif event.key == "enter":
+            selected = self._options[self.cursor]
+            self._future.set_result(selected)
+            display = Text()
+            display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
+            self.query_one("#interrupt-options", Static).update(display)
+            event.prevent_default()
+            event.stop()
 
     async def wait_for_selection(self) -> Any:
         """Block until the user selects an option. Returns the selected value."""

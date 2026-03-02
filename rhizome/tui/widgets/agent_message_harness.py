@@ -223,6 +223,7 @@ class AgentMessageHarness(Widget):
             self._interrupt_widget = None
             # Tell ChatPane to re-enable input
             self.post_message(self.InterruptResolved())
+            await self.start_thinking()
 
         return result
 
