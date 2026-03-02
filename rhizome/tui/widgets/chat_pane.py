@@ -17,6 +17,7 @@ import rich_click as click
 from rhizome.logs import get_logger
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Static, TabbedContent
@@ -41,6 +42,14 @@ from rhizome.tui.widgets.topic_tree import TopicTree
 
 class ChatPane(Widget):
     """Reusable chat pane containing the message area, input, and command palette."""
+
+    BINDINGS = [
+        ("ctrl+c", "cancel_agent", "Cancel agent"),
+        Binding("ctrl+l", "refocus_input", "Refocus input", show=False, priority=True),
+        Binding("ctrl+t", "toggle_last_agent_message", "Toggle agent msg", show=False, priority=True),
+        Binding("ctrl+o", "toggle_last_tool_call", "Toggle tool call", show=False, priority=True),
+        Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
+    ]
 
     DEFAULT_CSS = """
     ChatPane {
@@ -235,6 +244,33 @@ class ChatPane(Widget):
         """Cancel the running agent worker, if any."""
         if self._agent_busy and self._agent_worker is not None:
             self._agent_worker.cancel()
+
+    def action_cancel_agent(self) -> None:
+        self.cancel_agent()
+
+    def action_refocus_input(self) -> None:
+        self.query_one("#chat-input").focus()
+
+    def action_toggle_last_agent_message(self) -> None:
+        harnesses = self.query(AgentMessageHarness)
+        for harness in reversed(harnesses):
+            msgs = harness.query(ChatMessage)
+            if msgs:
+                last_msg = list(msgs)[-1]
+                last_msg.toggle_collapse()
+                return
+
+    def action_toggle_last_tool_call(self) -> None:
+        harnesses = self.query(AgentMessageHarness)
+        for harness in reversed(harnesses):
+            tool_list = harness._last_tool_list
+            if tool_list is not None:
+                tool_list.action_toggle_collapse()
+                return
+
+    async def action_cycle_mode(self) -> None:
+        cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
+        await self._set_mode(cycle[self.session_mode], silent=True)
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         self._hide_palette()

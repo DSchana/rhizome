@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
-import os
-import re
-import subprocess
-import tempfile
-from pathlib import Path
-
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import TabbedContent, TabPane
 
 from rhizome.tui.options import Options
-from rhizome.tui.types import ChatMessageData, Mode, Role, UserFeedback
-from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
+from rhizome.tui.types import ChatMessageData, Role, UserFeedback
 from rhizome.tui.widgets.chat_pane import ChatPane
 from rhizome.tui.widgets.logging_pane import LoggingPane
-from rhizome.tui.widgets.message import ChatMessage
 
 
 class LogTabPane(TabPane):
@@ -91,18 +83,12 @@ class ChatScreen(Screen):
     """Primary screen: composes tabbed ChatPanes and a StatusBar."""
 
     BINDINGS = [
-        ("ctrl+c", "cancel_agent", "Cancel agent"),
         ("ctrl+n", "new_tab", "New tab"),
         # priority=True so the screen captures Ctrl+W before focused child
         # widgets (e.g. ChatInput) consume it.
         Binding("ctrl+w", "close_tab", "Close tab", priority=True),
         Binding("ctrl+pagedown", "next_tab", "Next tab", show=False, priority=True),
         Binding("ctrl+pageup", "prev_tab", "Previous tab", show=False, priority=True),
-        Binding("ctrl+l", "refocus_input", "Refocus input", show=False, priority=True),
-        Binding("ctrl+t", "toggle_last_agent_message", "Toggle agent msg", show=False, priority=True),
-        Binding("ctrl+o", "toggle_last_tool_call", "Toggle tool call", show=False, priority=True),
-        Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
-        Binding("ctrl+g", "open_logs_in_editor", "Open logs in editor", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -171,9 +157,6 @@ class ChatScreen(Screen):
         else:
             self.notify(text, severity=severity)
 
-    def action_cancel_agent(self) -> None:
-        self.app.active_chat_pane.cancel_agent()  # type: ignore[attr-defined]
-
     async def _close_active_tab(self) -> None:
         """Close the active chat session tab (refuses to close the last one)."""
         tabs = self.query_one("#tabs", TabbedContent)
@@ -215,53 +198,3 @@ class ChatScreen(Screen):
     def action_prev_tab(self) -> None:
         self._switch_tab(1)
 
-    def action_refocus_input(self) -> None:
-        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
-        pane.query_one("#chat-input").focus()
-
-    def action_toggle_last_agent_message(self) -> None:
-        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
-        harnesses = pane.query(AgentMessageHarness)
-        for harness in reversed(harnesses):
-            msgs = harness.query(ChatMessage)
-            if msgs:
-                last_msg = list(msgs)[-1]
-                last_msg.toggle_collapse()
-                return
-
-    def action_toggle_last_tool_call(self) -> None:
-        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
-        harnesses = pane.query(AgentMessageHarness)
-        for harness in reversed(harnesses):
-            tool_list = harness._last_tool_list
-            if tool_list is not None:
-                tool_list.action_toggle_collapse()
-                return
-
-    async def action_cycle_mode(self) -> None:
-        pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
-        cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
-        await pane._set_mode(cycle[pane.session_mode], silent=True)
-
-    def action_open_logs_in_editor(self) -> None:
-        """Dump current log buffer to a temp file and open it in $EDITOR."""
-        handler = getattr(self.app, "tui_log_handler", None)
-        if handler is None or not handler.lines:
-            return
-
-        # Strip Rich markup to produce plain text for the editor.
-        _markup_re = re.compile(r"\[/?[^\]]*\]")
-        plain_lines = [_markup_re.sub("", line) for line in handler.lines]
-
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".log", prefix="rhizome-logs-", delete=False
-        ) as tmp:
-            tmp.write("\n".join(plain_lines) + "\n")
-            tmp_path = tmp.name
-
-        editor = os.environ.get("EDITOR", "nano")
-        try:
-            with self.app.suspend():
-                subprocess.run([editor, tmp_path])
-        finally:
-            os.unlink(tmp_path)
