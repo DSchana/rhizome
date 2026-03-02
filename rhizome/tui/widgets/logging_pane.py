@@ -4,7 +4,25 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.widget import Widget
-from textual.widgets import RichLog
+from textual.widgets import RichLog, Static
+
+
+class LogsStatusBar(Static):
+    """Static hint bar displayed at the bottom of the logs pane."""
+
+    DEFAULT_CSS = """
+    LogsStatusBar {
+        height: 3;
+        dock: bottom;
+        background: rgb(12, 12, 12);
+        color: rgb(100, 100, 100);
+        padding: 0 1;
+        border-top: solid rgb(60, 60, 60);
+    }
+    """
+
+    def render(self):
+        return "ctrl+g to open in editor"
 
 
 class LoggingPane(Widget):
@@ -24,6 +42,7 @@ class LoggingPane(Widget):
 
     def compose(self) -> ComposeResult:
         yield RichLog(max_lines=2000, markup=True, wrap=True, auto_scroll=True, id="log-output")
+        yield LogsStatusBar()
 
     def on_mount(self) -> None:
         handler = getattr(self.app, "tui_log_handler", None)
