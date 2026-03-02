@@ -210,10 +210,10 @@ class ChatScreen(Screen):
             new_pane.query_one("#log-output").focus()
 
     def action_next_tab(self) -> None:
-        self._switch_tab(1)
+        self._switch_tab(-1)
 
     def action_prev_tab(self) -> None:
-        self._switch_tab(-1)
+        self._switch_tab(1)
 
     def action_refocus_input(self) -> None:
         pane: ChatPane = self.app.active_chat_pane  # type: ignore[attr-defined]
