@@ -706,14 +706,14 @@ def _strip_comments(text: str) -> str:
 
 def build_jsonc_snapshot(target: Options) -> str:
     """Build a JSONC string from the spec tree for external editor use."""
-    all_specs = Options.spec()
+    all_specs = [s for s in Options.spec() if s.scope >= target._scope]
     last_resolved = all_specs[-1].resolved_name if all_specs else ""
     top_level, nodes = Options.spec_tree()
 
     lines = ["{"]
 
     def _emit_specs(specs: list, indent: str = "    ") -> None:
-        for s in specs:
+        for s in [s for s in specs if s.scope >= target._scope]:
             for comment_line in s.jsonc_comment().splitlines():
                 if comment_line.startswith("//"):
                     lines.append(f"{indent}{comment_line}")

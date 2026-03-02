@@ -375,14 +375,21 @@ class ChatPane(Widget):
                 new_opts = parse_jsonc(new_text)
 
                 spec_map = {s.resolved_name: s for s in Options.spec()}
+                changed: list[str] = []
                 for key, val in new_opts.items():
                     s = spec_map.get(key)
-                    if s is not None:
+                    if s is not None and target.get(s) != val:
                         await target.set(s, val)
+                        changed.append(key)
 
                 await target.post_update()
+                if changed:
+                    names = ", ".join(f"`{n}`" for n in changed)
+                    msg = f"Options updated: {names}"
+                else:
+                    msg = "No changes made."
                 self.append_message(
-                    ChatMessageData(role=Role.SYSTEM, content="Options updated.")
+                    ChatMessageData(role=Role.SYSTEM, content=msg)
                 )
             except Exception as exc:
                 self.append_message(
