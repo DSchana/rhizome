@@ -52,7 +52,7 @@ State lives at the level of the component that needs it:
 ```python
 class CurriculumApp(App):
     def on_mount(self) -> None:
-        self.push_screen(ChatScreen())
+        self.push_screen(MainScreen())
 ```
 
 The `App` holds shared infrastructure (`session_factory`, `agent`) and provides an `active_chat_pane` property to access the currently visible `ChatPane`. It does **not** hold session state — all session state lives in `ChatPane`.
@@ -67,7 +67,7 @@ class ChatPane(Widget):
     active_topic: Topic | None = None
 ```
 
-Each `ChatPane` instance is an independent chat session with its own mode, context, curriculum/topic selection, message history, and agent worker. Multiple panes live inside `TabbedContent` tabs in `ChatScreen`.
+Each `ChatPane` instance is an independent chat session with its own mode, context, curriculum/topic selection, message history, and agent worker. Multiple panes live inside `TabbedContent` tabs in `MainScreen`.
 
 ### Widget-level state
 
@@ -80,7 +80,7 @@ Commands are async functions that take the `CurriculumApp` instance and an args 
 ```python
 async def handle_help(app: CurriculumApp, args: str) -> None:
     help_text = _build_help_text(args)
-    chat = app.query_one(ChatScreen)
+    chat = app.query_one(MainScreen)
     chat._append_message(ChatMessage(role="agent", content=help_text))
 
 async def handle_learn(app: CurriculumApp, args: str) -> None:
@@ -92,7 +92,7 @@ Commands are full async functions, so they can perform multi-step interactions:
 
 ```python
 async def handle_complex_command(app: CurriculumApp, args: str) -> None:
-    chat = app.query_one(ChatScreen)
+    chat = app.query_one(MainScreen)
     chat.is_thinking = True
 
     options = await fetch_options_from_db(...)
@@ -142,13 +142,13 @@ For async operations (agent calls, DB queries):
 
 ### Step 0: Setup
 
-`CurriculumApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `ChatScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, curriculum/topic).
+`CurriculumApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `MainScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, curriculum/topic).
 
 ### Step 1: Textual posts `ChatInput.Submitted`
 
-The user presses Ctrl+Enter. The `ChatInput` widget catches the key event internally, clears the text area, and posts a `ChatInput.Submitted` message containing the text. Textual's message bubble system sends this up the DOM: first to `ChatInput` itself (no handler), then to its parent, `ChatScreen`.
+The user presses Ctrl+Enter. The `ChatInput` widget catches the key event internally, clears the text area, and posts a `ChatInput.Submitted` message containing the text. Textual's message bubble system sends this up the DOM: first to `ChatInput` itself (no handler), then to its parent, `MainScreen`.
 
-### Step 2: ChatScreen receives the event
+### Step 2: MainScreen receives the event
 
 ```python
 def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
@@ -164,7 +164,7 @@ def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
 
 The Screen does everything: extracts the value, checks the thinking guard, parses for commands, and routes to the appropriate handler.
 
-### Step 3: ChatScreen updates state and DOM
+### Step 3: MainScreen updates state and DOM
 
 ```python
 def _handle_chat(self, text: str) -> None:
@@ -185,13 +185,13 @@ When the user sends a chat that triggers an agent response, we show an ephemeral
 
 ### The thinking flag
 
-`is_thinking` is a `reactive` property on `ChatScreen`. It serves two purposes:
+`is_thinking` is a `reactive` property on `MainScreen`. It serves two purposes:
 
 1. **Guard** — `on_chat_input_submitted` checks `self.is_thinking` and returns early if true, preventing concurrent submissions.
 2. **Rendering trigger** — `watch_is_thinking` automatically fires when the value changes, mounting or removing the spinner widget.
 
 ```python
-class ChatScreen(Screen):
+class MainScreen(Screen):
     is_thinking = reactive(False)
 
     def watch_is_thinking(self, thinking: bool) -> None:

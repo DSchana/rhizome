@@ -1,4 +1,4 @@
-"""Main chat screen — tabbed chat sessions + StatusBar."""
+"""Main screen — tabbed chat sessions, log panes, and StatusBar."""
 
 from __future__ import annotations
 
@@ -79,8 +79,8 @@ class ChatTabPane(TabPane):
         yield ChatPane(show_welcome=self._show_welcome)
 
 
-class ChatScreen(Screen):
-    """Primary screen: composes tabbed ChatPanes and a StatusBar."""
+class MainScreen(Screen):
+    """Primary screen: composes tabbed panes and a StatusBar."""
 
     BINDINGS = [
         ("ctrl+n", "new_tab", "New tab"),
@@ -92,7 +92,7 @@ class ChatScreen(Screen):
     ]
 
     DEFAULT_CSS = """
-    ChatScreen {
+    MainScreen {
         layout: grid;
         grid-size: 1;
         grid-rows: 1fr;

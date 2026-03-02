@@ -13,7 +13,7 @@ from rhizome.logs import get_logger, initialize_global_logger
 from rhizome.tui.log_handler import TUILogHandler
 from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
-from rhizome.tui.screens.chat import ChatScreen, ChatTabPane, LogTabPane
+from rhizome.tui.screens.main import MainScreen, ChatTabPane, LogTabPane
 from rhizome.tui.widgets.chat_pane import ChatPane
 
 
@@ -59,7 +59,7 @@ class CurriculumApp(App):
             pane.update_tab_max_length(new)
 
     def on_mount(self) -> None:
-        self.push_screen(ChatScreen())
+        self.push_screen(MainScreen())
 
     def on_exit_app(self, event: messages.ExitApp) -> None:
         for pane in self.query(ChatPane):

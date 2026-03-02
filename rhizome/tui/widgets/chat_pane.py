@@ -519,7 +519,7 @@ class ChatPane(Widget):
 
     async def _cmd_rename(self, name: str) -> None:
         """Rename the active chat session tab."""
-        from rhizome.tui.screens.chat import ChatTabPane
+        from rhizome.tui.screens.main import ChatTabPane
 
         new_name = name.strip()
         if not new_name:
@@ -536,10 +536,10 @@ class ChatPane(Widget):
 
     async def _cmd_new(self) -> None:
         """Create a new chat session tab."""
-        from rhizome.tui.screens.chat import ChatScreen
+        from rhizome.tui.screens.main import MainScreen
 
         screen = self.app.screen
-        if isinstance(screen, ChatScreen):
+        if isinstance(screen, MainScreen):
             await screen._add_tab()
 
     async def _cmd_commit(self) -> None:
@@ -548,18 +548,18 @@ class ChatPane(Widget):
 
     async def _cmd_logs(self) -> None:
         """Open the logs tab."""
-        from rhizome.tui.screens.chat import ChatScreen
+        from rhizome.tui.screens.main import MainScreen
 
         screen = self.app.screen
-        if isinstance(screen, ChatScreen):
+        if isinstance(screen, MainScreen):
             await screen._add_log_tab()
 
     async def _cmd_close(self) -> None:
         """Close the current chat session tab."""
-        from rhizome.tui.screens.chat import ChatScreen
+        from rhizome.tui.screens.main import MainScreen
 
         screen = self.app.screen
-        if isinstance(screen, ChatScreen):
+        if isinstance(screen, MainScreen):
             await screen._close_active_tab()
 
     def _register_commands(self, registry: CommandRegistry) -> None:
