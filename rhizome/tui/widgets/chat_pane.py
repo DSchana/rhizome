@@ -43,6 +43,10 @@ from rhizome.tui.widgets.topic_tree import TopicTree
 class ChatPane(Widget):
     """Reusable chat pane containing the message area, input, and command palette."""
 
+    # ------------------------------------------------------------------
+    # Class-level constants
+    # ------------------------------------------------------------------
+
     BINDINGS = [
         ("ctrl+c", "cancel_agent", "Cancel agent"),
         Binding("ctrl+l", "refocus_input", "Refocus input", show=False, priority=True),
@@ -83,6 +87,10 @@ class ChatPane(Widget):
     }
     """
 
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
     def __init__(self, *, show_welcome: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -99,12 +107,12 @@ class ChatPane(Widget):
         self.session_mode: Mode = Mode.IDLE
         self.options: Options | None = None  # set on mount when app is available
 
-        # Active topic and path, if any. _topic_path is the list of topic names from the root to the active topic, 
+        # Active topic and path, if any. _topic_path is the list of topic names from the root to the active topic,
         # used for display in the status bar.
         self.active_topic: Topic | None = None
         self._topic_path: list[str] = []
 
-        # Agent session and worker state. 
+        # Agent session and worker state.
         # - _agent_session is the AgentSession instance for this chat pane, which manages the conversation history and agent stream.
         # - _agent_busy is True from the moment an agent turn is initiated until its worker completes.
         # - _agent_worker holds the current agent worker, if any, so it can be cancelled if the user interrupts.
@@ -140,7 +148,7 @@ class ChatPane(Widget):
 
         # Construct the per-session options object
         self.options = Options(
-            scope=OptionScope.Session, 
+            scope=OptionScope.Session,
             parent=self.app.options # type: ignore[attr-defined]
         )
 
@@ -183,17 +191,6 @@ class ChatPane(Widget):
             self._agent_log_handler.setFormatter(logging.Formatter("%(message)s"))
             self._agent_log.addHandler(self._agent_log_handler)
 
-    def _close_agent_log(self) -> None:
-        """Close and detach the agent stream file handler."""
-        if self._agent_log_handler is not None:
-            self._agent_log_handler.close()
-
-            if self._agent_log is not None:
-                self._agent_log.removeHandler(self._agent_log_handler)
-
-            self._agent_log_handler = None
-            self._agent_log = None
-
     def on_unmount(self) -> None:
         self._close_agent_log()
         if self.options is not None:
@@ -205,6 +202,223 @@ class ChatPane(Widget):
     def _sync_registry_width(self) -> None:
         """Update the command registry's max_content_width from the pane's current width."""
         self._command_registry.max_content_width = max(self.size.width - 15, 40)
+
+    def _close_agent_log(self) -> None:
+        """Close and detach the agent stream file handler."""
+        if self._agent_log_handler is not None:
+            self._agent_log_handler.close()
+
+            if self._agent_log is not None:
+                self._agent_log.removeHandler(self._agent_log_handler)
+
+            self._agent_log_handler = None
+            self._agent_log = None
+
+    # ------------------------------------------------------------------
+    # Agent session
+    # ------------------------------------------------------------------
+
+    def _start_agent(self):
+        # Create a harness, and run the agent. This sets _agent_busy = True internally
+        # as well, until the worker finishes or is cancelled.
+        harness = AgentMessageHarness()
+        self._agent_worker = self.run_worker(partial(self._run_agent, harness))
+
+    async def _run_agent(self, harness: AgentMessageHarness) -> None:
+        message_area = self.query_one("#message-area", VerticalScroll)
+        message_area.mount(harness)
+        message_area.scroll_end(animate=False)
+
+        try:
+            assert self._agent_session is not None
+            assert not self._agent_busy
+
+            self._agent_busy = True
+            await harness.start_thinking()
+            message_area.scroll_end(animate=False)
+
+            await self._agent_session.stream(
+                mode=self.session_mode.value,
+                topic_name=self.active_topic.name if self.active_topic else "",
+                on_message=harness.on_message,
+                on_update=harness.on_update,
+                on_interrupt=harness.on_interrupt,
+                post_chunk_handler=lambda: message_area.scroll_end(animate=False),
+            )
+            body = await harness.finalize()
+            if body:
+                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+
+        except asyncio.CancelledError:
+            self._log.info("User cancelled agent stream.")
+            body = await harness.cancel()
+            if body:
+                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
+            )
+
+        except Exception as exc:
+            self._log.error("Agent error: %s", exc)
+            await harness.cancel()
+            self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
+            # raise
+
+        finally:
+            self._agent_busy = False
+            self._agent_worker = None
+
+    def _on_agent_rebuilt(self, old_model: str, new_model: str) -> None:
+        """Called when the agent is rebuilt due to a model option change."""
+        if new_model == old_model:
+            return
+
+        self._log.info("Agent rebuilt: %s → %s", old_model, new_model)
+        self.append_message(ChatMessageData(
+            role=Role.SYSTEM,
+            content=(
+                f"Model changed to {self._agent_session._model_name}.  \n"
+                f"Profile: `{self._agent_session.model.profile}`"
+            ),
+        ))
+        self.update_status_bar() # Model name changed.
+
+    def on_agent_message_harness_interrupt_pending(
+        self, event: AgentMessageHarness.InterruptPending
+    ) -> None:
+        """Disable chat input while an interrupt widget awaits user input."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = True
+        chat_input.placeholder = "Respond to the agent's prompt above..."
+        event.widget.focus()
+
+    def on_agent_message_harness_interrupt_resolved(
+        self, event: AgentMessageHarness.InterruptResolved
+    ) -> None:
+        """Re-enable chat input after the user resolves an interrupt."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = False
+        self._restore_chat_input()
+
+    # ------------------------------------------------------------------
+    # Message area & status bar
+    # ------------------------------------------------------------------
+
+    def append_message(self, msg: ChatMessageData) -> None:
+        """Append a message to the history and mount its widget."""
+        # Deduplicate consecutive identical system messages by pinging the existing one.
+        if msg.role == Role.SYSTEM:
+            area = self.query_one("#message-area", VerticalScroll)
+            children = area.children
+            if children and isinstance(children[-1], ChatMessage) and children[-1]._role == Role.SYSTEM and children[-1]._body == msg.content:
+                children[-1].ping()
+                return
+
+        msg.mode = self.session_mode
+        self.messages.append(msg)
+
+        # Add message to agent message history.
+        if self._agent_session is not None:
+            if msg.role == Role.USER:
+                self._agent_session.add_human_message(msg.content)
+            elif msg.role == Role.SYSTEM:
+                self._agent_session.add_system_notification(msg.content)
+
+        area = self.query_one("#message-area", VerticalScroll)
+        if msg.rich:
+            widget = RichChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
+        else:
+            widget = MarkdownChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
+
+        # Remark: this part identifies if the current message and the previous message are both system/error messages, and if so
+        # adds the --after-system class to the current message. This allows us to style consecutive system/error messages differently
+        if msg.role in (Role.SYSTEM, Role.ERROR):
+            children = area.children
+            if children and isinstance(children[-1], ChatMessage) and children[-1]._role in (Role.SYSTEM, Role.ERROR):
+                widget.add_class("--after-system")
+
+        area.mount(widget)
+        area.scroll_end(animate=False)
+
+    def update_status_bar(self) -> None:
+        """Sync the status bar with the current mode and context."""
+        bar = self.query_one("#status-bar", StatusBar)
+        bar.mode = self.session_mode.value
+        bar.topic_path = list(self._topic_path)
+        if self._agent_session is not None:
+            bar.token_usage = self._agent_session.token_usage
+            bar.model_name = self._agent_session._model_name or ""
+        if self.options is not None:
+            bar.verbosity = self.options.get(Options.Agent.AnswerVerbosity)
+        bar.mutate_reactive(StatusBar.token_usage)
+
+    def _restore_chat_input(self) -> None:
+        """Restore focus and placeholder to the chat input."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.placeholder = "Type a message or /command ..."
+        chat_input.focus()
+
+    # ------------------------------------------------------------------
+    # Input handling & command palette
+    # ------------------------------------------------------------------
+
+    _log = get_logger("tui.chat_pane")
+
+    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+        self._hide_palette()
+
+        if self._agent_busy:
+            self.notify("Agent is thinking, you can submit after it completes or interrupt with Ctrl+C")
+            return
+
+        text = event.value.strip()
+        if not text:
+            return
+
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.clear()
+        chat_input.push_history(text)
+
+        command = parse_input(text)
+        if command is not None:
+            self._handle_command(command.name, command.args)
+        else:
+            self._handle_chat(text)
+
+    def _handle_command(self, name: str, args: str) -> None:
+        self._log.debug("command dispatched: /%s %s", name, args)
+
+        async def _run() -> None:
+            try:
+                line = f"{name} {args}".strip()
+                result = await self._command_registry.execute(line)
+                if result:
+                    self.append_message(
+                        ChatMessageData(role=Role.SYSTEM, content=result, rich=True)
+                    )
+            except KeyError:
+                self.notify(f"Unknown command: /{name}", severity="error")
+            except Exception as e:
+                self._log.exception("Error executing command: /%s %s", name, args, exc_info=e, stack_info=True)
+                self.append_message(
+                    ChatMessageData(
+                        role=Role.ERROR,
+                        content=(
+                            f"Error executing command /{name} {args}: {traceback.format_exc()}"
+                        )
+                    )
+                )
+
+        self.run_worker(_run())
+
+    def _handle_chat(self, text: str) -> None:
+        self._log.debug("Chat submitted (%d chars)", len(text))
+
+        # Post the user's message to the message history
+        self.append_message(ChatMessageData(role=Role.USER, content=text))
+
+        # Start the agent to have it respond
+        self._start_agent()
 
     def on_text_area_changed(self, event: ChatInput.Changed) -> None:
         text = event.text_area.text
@@ -240,6 +454,18 @@ class ChatPane(Widget):
         chat_input.clear()
         chat_input.insert(f"/{event.name} ")
         self._hide_palette()
+
+    def _hide_palette(self) -> None:
+        """Hide the command palette and restore input margin."""
+        palette = self.query_one("#command-palette", CommandPalette)
+        chat_input = self.query_one("#chat-input", ChatInput)
+        palette.remove_class("visible")
+        chat_input.remove_class("palette-open")
+        chat_input.palette_active = False
+
+    # ------------------------------------------------------------------
+    # Keybinding actions
+    # ------------------------------------------------------------------
 
     def cancel_agent(self) -> None:
         """Cancel the running agent worker, if any."""
@@ -282,66 +508,93 @@ class ChatPane(Widget):
         await self.options.post_update()
         self.update_status_bar()
 
-    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
-        self._hide_palette()
-
-        if self._agent_busy:
-            self.notify("Agent is thinking, you can submit after it completes or interrupt with Ctrl+C")
-            return
-
-        text = event.value.strip()
-        if not text:
-            return
-
-        chat_input = self.query_one("#chat-input", ChatInput)
-        chat_input.clear()
-        chat_input.push_history(text)
-
-        command = parse_input(text)
-        if command is not None:
-            self._handle_command(command.name, command.args)
-        else:
-            self._handle_chat(text)
-
-    def _hide_palette(self) -> None:
-        """Hide the command palette and restore input margin."""
-        palette = self.query_one("#command-palette", CommandPalette)
-        chat_input = self.query_one("#chat-input", ChatInput)
-        palette.remove_class("visible")
-        chat_input.remove_class("palette-open")
-        chat_input.palette_active = False
-
-    _log = get_logger("tui.chat_pane")
-
-    def _handle_command(self, name: str, args: str) -> None:
-        self._log.debug("command dispatched: /%s %s", name, args)
-
-        async def _run() -> None:
-            try:
-                line = f"{name} {args}".strip()
-                result = await self._command_registry.execute(line)
-                if result:
-                    self.append_message(
-                        ChatMessageData(role=Role.SYSTEM, content=result, rich=True)
-                    )
-            except KeyError:
-                self.notify(f"Unknown command: /{name}", severity="error")
-            except Exception as e:
-                self._log.exception("Error executing command: /%s %s", name, args, exc_info=e, stack_info=True)
-                self.append_message(
-                    ChatMessageData(
-                        role=Role.ERROR, 
-                        content=(
-                            f"Error executing command /{name} {args}: {traceback.format_exc()}"
-                        )
-                    )
-                )
-
-        self.run_worker(_run())
-
     # ------------------------------------------------------------------
-    # Command handlers
+    # Command registration & handlers
     # ------------------------------------------------------------------
+
+    def _register_commands(self, registry: CommandRegistry) -> None:
+        """Register all slash commands with the click-based registry."""
+
+        @registry.group(name="options", help="Open settings and configuration",
+                        invoke_without_command=True)
+        @click.option("-e", "--edit", is_flag=True, help="Open in $EDITOR")
+        @click.option("-g", "--global", "scope", flag_value="global",
+                      help="Target global options")
+        @click.option("-s", "--session", "scope", flag_value="session",
+                      default=True, help="Target session options (default)")
+        @click.pass_context
+        async def options_group(ctx, edit, scope):
+            if ctx.invoked_subcommand is None:
+                await self._cmd_options(edit=edit, scope=scope)
+
+        @options_group.command(name="get", help="Get an option value")
+        @click.option("-g", "--global", "scope", flag_value="global",
+                      help="Target global options")
+        @click.option("-s", "--session", "scope", flag_value="session",
+                      default=True, help="Target session options (default)")
+        @click.argument("name")
+        async def options_get(scope, name):
+            await self._cmd_options_get(scope=scope, name=name)
+
+        @options_group.command(name="set", help="Set an option value")
+        @click.option("-g", "--global", "scope", flag_value="global",
+                      help="Target global options")
+        @click.option("-s", "--session", "scope", flag_value="session",
+                      default=True, help="Target session options (default)")
+        @click.argument("name")
+        @click.argument("value")
+        async def options_set(scope, name, value):
+            await self._cmd_options_set(scope=scope, name=name, value=value)
+
+        @registry.command(name="rename", help="Rename the current tab")
+        @click.argument("name", nargs=-1, required=True)
+        async def rename(name: tuple[str, ...]):
+            await self._cmd_rename(" ".join(name))
+
+        @registry.command(name="help", help="Show available commands and usage")
+        @click.argument("command_name", default="", required=False)
+        async def help_cmd(command_name: str):
+            await self._cmd_help(command_name)
+
+        @registry.command(name="quit", help="Quit the application")
+        async def quit_cmd():
+            self.app.exit()
+
+        @registry.command(name="clear", help="Clear chat messages")
+        async def clear():
+            await self._cmd_clear()
+
+        @registry.command(name="topics", help="Browse and select topics from the topic tree")
+        async def explore():
+            await self._cmd_explore()
+
+        @registry.command(name="idle", help="Return to idle mode")
+        async def idle():
+            await self._cmd_idle()
+
+        @registry.command(name="learn", help="Enter learning mode: set curriculum and topic context")
+        async def learn():
+            await self._cmd_learn()
+
+        @registry.command(name="review", help="Enter review mode: quizzes and practice")
+        async def review():
+            await self._cmd_review()
+
+        @registry.command(name="new", help="Open a new chat session tab")
+        async def new():
+            await self._cmd_new()
+
+        @registry.command(name="commit", help="Select learn-mode messages to commit as knowledge")
+        async def commit():
+            await self._cmd_commit()
+
+        @registry.command(name="logs", help="Open the logs viewer tab")
+        async def logs():
+            await self._cmd_logs()
+
+        @registry.command(name="close", help="Close the current chat session tab")
+        async def close():
+            await self._cmd_close()
 
     async def _set_mode(self, mode: Mode, *, silent: bool = False) -> None:
         """Set the session mode.
@@ -562,234 +815,9 @@ class ChatPane(Widget):
         if isinstance(screen, MainScreen):
             await screen._close_active_tab()
 
-    def _register_commands(self, registry: CommandRegistry) -> None:
-        """Register all slash commands with the click-based registry."""
-
-        @registry.group(name="options", help="Open settings and configuration",
-                        invoke_without_command=True)
-        @click.option("-e", "--edit", is_flag=True, help="Open in $EDITOR")
-        @click.option("-g", "--global", "scope", flag_value="global",
-                      help="Target global options")
-        @click.option("-s", "--session", "scope", flag_value="session",
-                      default=True, help="Target session options (default)")
-        @click.pass_context
-        async def options_group(ctx, edit, scope):
-            if ctx.invoked_subcommand is None:
-                await self._cmd_options(edit=edit, scope=scope)
-
-        @options_group.command(name="get", help="Get an option value")
-        @click.option("-g", "--global", "scope", flag_value="global",
-                      help="Target global options")
-        @click.option("-s", "--session", "scope", flag_value="session",
-                      default=True, help="Target session options (default)")
-        @click.argument("name")
-        async def options_get(scope, name):
-            await self._cmd_options_get(scope=scope, name=name)
-
-        @options_group.command(name="set", help="Set an option value")
-        @click.option("-g", "--global", "scope", flag_value="global",
-                      help="Target global options")
-        @click.option("-s", "--session", "scope", flag_value="session",
-                      default=True, help="Target session options (default)")
-        @click.argument("name")
-        @click.argument("value")
-        async def options_set(scope, name, value):
-            await self._cmd_options_set(scope=scope, name=name, value=value)
-
-        @registry.command(name="rename", help="Rename the current tab")
-        @click.argument("name", nargs=-1, required=True)
-        async def rename(name: tuple[str, ...]):
-            await self._cmd_rename(" ".join(name))
-
-        @registry.command(name="help", help="Show available commands and usage")
-        @click.argument("command_name", default="", required=False)
-        async def help_cmd(command_name: str):
-            await self._cmd_help(command_name)
-
-        @registry.command(name="quit", help="Quit the application")
-        async def quit_cmd():
-            self.app.exit()
-
-        @registry.command(name="clear", help="Clear chat messages")
-        async def clear():
-            await self._cmd_clear()
-
-        @registry.command(name="topics", help="Browse and select topics from the topic tree")
-        async def explore():
-            await self._cmd_explore()
-
-        @registry.command(name="idle", help="Return to idle mode")
-        async def idle():
-            await self._cmd_idle()
-
-        @registry.command(name="learn", help="Enter learning mode: set curriculum and topic context")
-        async def learn():
-            await self._cmd_learn()
-
-        @registry.command(name="review", help="Enter review mode: quizzes and practice")
-        async def review():
-            await self._cmd_review()
-
-        @registry.command(name="new", help="Open a new chat session tab")
-        async def new():
-            await self._cmd_new()
-
-        @registry.command(name="commit", help="Select learn-mode messages to commit as knowledge")
-        async def commit():
-            await self._cmd_commit()
-
-        @registry.command(name="logs", help="Open the logs viewer tab")
-        async def logs():
-            await self._cmd_logs()
-
-        @registry.command(name="close", help="Close the current chat session tab")
-        async def close():
-            await self._cmd_close()
-
-    def _handle_chat(self, text: str) -> None:
-        self._log.debug("Chat submitted (%d chars)", len(text))
-
-        # Post the user's message to the message history
-        self.append_message(ChatMessageData(role=Role.USER, content=text))
-
-        # Start the agent to have it respond
-        self._start_agent()
-
-    def _start_agent(self):
-        # Create a harness, and run the agent. This sets _agent_busy = True internally
-        # as well, until the worker finishes or is cancelled.
-        harness = AgentMessageHarness()
-        self._agent_worker = self.run_worker(partial(self._run_agent, harness))
-    
-    async def _run_agent(self, harness: AgentMessageHarness) -> None:
-        message_area = self.query_one("#message-area", VerticalScroll)
-        message_area.mount(harness)
-        message_area.scroll_end(animate=False)
-
-        try:
-            assert self._agent_session is not None
-            assert not self._agent_busy
-
-            self._agent_busy = True
-            await harness.start_thinking()
-            message_area.scroll_end(animate=False)
-
-            await self._agent_session.stream(
-                mode=self.session_mode.value,
-                topic_name=self.active_topic.name if self.active_topic else "",
-                on_message=harness.on_message,
-                on_update=harness.on_update,
-                on_interrupt=harness.on_interrupt,
-                post_chunk_handler=lambda: message_area.scroll_end(animate=False),
-            )
-            body = await harness.finalize()
-            if body:
-                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
-
-        except asyncio.CancelledError:
-            self._log.info("User cancelled agent stream.")
-            body = await harness.cancel()
-            if body:
-                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
-            self.append_message(
-                ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
-            )
-
-        except Exception as exc:
-            self._log.error("Agent error: %s", exc)
-            await harness.cancel()
-            self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
-            # raise
-
-        finally:
-            self._agent_busy = False
-            self._agent_worker = None
-
-    def _on_agent_rebuilt(self, old_model: str, new_model: str) -> None:
-        """Called when the agent is rebuilt due to a model option change."""
-        if new_model == old_model:
-            return
-        
-        self._log.info("Agent rebuilt: %s → %s", old_model, new_model)
-        self.append_message(ChatMessageData(
-            role=Role.SYSTEM,
-            content=(
-                f"Model changed to {self._agent_session._model_name}.  \n"
-                f"Profile: `{self._agent_session.model.profile}`"
-            ),
-        ))
-        self.update_status_bar() # Model name changed.
-
-    def on_agent_message_harness_interrupt_pending(
-        self, event: AgentMessageHarness.InterruptPending
-    ) -> None:
-        """Disable chat input while an interrupt widget awaits user input."""
-        chat_input = self.query_one("#chat-input", ChatInput)
-        chat_input.disabled = True
-        chat_input.placeholder = "Respond to the agent's prompt above..."
-        event.widget.focus()
-
-    def on_agent_message_harness_interrupt_resolved(
-        self, event: AgentMessageHarness.InterruptResolved
-    ) -> None:
-        """Re-enable chat input after the user resolves an interrupt."""
-        chat_input = self.query_one("#chat-input", ChatInput)
-        chat_input.disabled = False
-        self._restore_chat_input()
-
-    def update_status_bar(self) -> None:
-        """Sync the status bar with the current mode and context."""
-        bar = self.query_one("#status-bar", StatusBar)
-        bar.mode = self.session_mode.value
-        bar.topic_path = list(self._topic_path)
-        if self._agent_session is not None:
-            bar.token_usage = self._agent_session.token_usage
-            bar.model_name = self._agent_session._model_name or ""
-        if self.options is not None:
-            bar.verbosity = self.options.get(Options.Agent.AnswerVerbosity)
-        bar.mutate_reactive(StatusBar.token_usage)
-
-    def append_message(self, msg: ChatMessageData) -> None:
-        """Append a message to the history and mount its widget."""
-        # Deduplicate consecutive identical system messages by pinging the existing one.
-        if msg.role == Role.SYSTEM:
-            area = self.query_one("#message-area", VerticalScroll)
-            children = area.children
-            if children and isinstance(children[-1], ChatMessage) and children[-1]._role == Role.SYSTEM and children[-1]._body == msg.content:
-                children[-1].ping()
-                return
-
-        msg.mode = self.session_mode
-        self.messages.append(msg)
-
-        # Add message to agent message history.
-        if self._agent_session is not None:
-            if msg.role == Role.USER:
-                self._agent_session.add_human_message(msg.content)
-            elif msg.role == Role.SYSTEM:
-                self._agent_session.add_system_notification(msg.content)
-
-        area = self.query_one("#message-area", VerticalScroll)
-        if msg.rich:
-            widget = RichChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
-        else:
-            widget = MarkdownChatMessage(role=msg.role, content=msg.content, mode=msg.mode)
-
-        # Remark: this part identifies if the current message and the previous message are both system/error messages, and if so
-        # adds the --after-system class to the current message. This allows us to style consecutive system/error messages differently
-        if msg.role in (Role.SYSTEM, Role.ERROR):
-            children = area.children
-            if children and isinstance(children[-1], ChatMessage) and children[-1]._role in (Role.SYSTEM, Role.ERROR):
-                widget.add_class("--after-system")
-
-        area.mount(widget)
-        area.scroll_end(animate=False)
-
-    def _restore_chat_input(self) -> None:
-        """Restore focus and placeholder to the chat input."""
-        chat_input = self.query_one("#chat-input", ChatInput)
-        chat_input.placeholder = "Type a message or /command ..."
-        chat_input.focus()
+    # ------------------------------------------------------------------
+    # Child widget events (topic tree, options editor)
+    # ------------------------------------------------------------------
 
     def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
         self.active_topic = event.topic
@@ -886,7 +914,7 @@ class ChatPane(Widget):
         """Move the commit-mode cursor highlight."""
         if not self._commit_selectable:
             return
-        
+
         new_index = self._commit_cursor + delta
         if new_index < 0 or new_index >= len(self._commit_selectable):
             return
@@ -906,7 +934,7 @@ class ChatPane(Widget):
         if not self._commit_mode:
             return
 
-        # Stop propagation and prevent default behavior for all keys in commit mode, 
+        # Stop propagation and prevent default behavior for all keys in commit mode,
         # since we're using them for navigation and selection.
         event.stop()
         event.prevent_default()
