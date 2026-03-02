@@ -20,8 +20,6 @@ from textual.widget import Widget
 from textual.widgets import Static, TabbedContent
 from textual.worker import Worker
 
-from langchain.messages import ToolMessage
-
 from rhizome.agent import AgentSession
 from rhizome.agent.agent import get_agent_kwargs
 from rhizome.config import get_log_dir
@@ -37,7 +35,6 @@ from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
 from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.topic_tree import TopicTree
-from rhizome.tui.utils import serialize_stream_payload
 
 
 class ChatPane(Widget):
@@ -597,48 +594,23 @@ class ChatPane(Widget):
         assert agent_session is not None
 
         async def _run_agent() -> None:
-            # Before we receive anything from the stream, add a thinking indicator.
             await harness.start_thinking()
             message_area.scroll_end(animate=False)
 
             try:
-                async for mode, payload in agent_session.stream(
+                await agent_session.stream(
                     mode=self.session_mode.value,
-                    topic_name=(
-                        self.active_topic.name
-                        if self.active_topic
-                        else ""
-                    ),
-                ):
-                    if self._agent_log is not None:
-                        self._agent_log.debug(
-                            "[%s] [%s] %s",
-                            datetime.now(timezone.utc).isoformat(),
-                            mode,
-                            serialize_stream_payload(payload),
-                        )
-
-                    if mode == "messages":
-                        chunk, metadata = payload
-                        if isinstance(chunk, ToolMessage):
-                            continue
-                        await harness.append(chunk)
-
-                    elif mode == "updates":
-                        await harness.post_update(payload)
-
-                    message_area.scroll_end(animate=False)
-
-                # Finalize the message, retrieve the final agent message body, and
-                # add it to our own list of message data.
+                    topic_name=self.active_topic.name if self.active_topic else "",
+                    on_message=harness.on_message,
+                    on_update=harness.on_update,
+                    on_interrupt=harness.on_interrupt,
+                    post_chunk_handler=lambda: message_area.scroll_end(animate=False),
+                )
                 body = await harness.finalize()
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
-
             except asyncio.CancelledError:
-                # Post a "cancelled" message, retrieve this final message body,
-                # and add it to our own list of message data.
                 body = await harness.cancel()
                 if body:
                     self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
@@ -650,7 +622,7 @@ class ChatPane(Widget):
                 self._log.error("Agent error: %s", exc)
                 await harness.cancel()
                 self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
-                raise
+                # raise
 
             finally:
                 self._agent_busy = False
@@ -670,6 +642,23 @@ class ChatPane(Widget):
                 f"Profile: `{self._agent_session.model.profile}`"
             ),
         ))
+
+    def on_agent_message_harness_interrupt_pending(
+        self, event: AgentMessageHarness.InterruptPending
+    ) -> None:
+        """Disable chat input while an interrupt widget awaits user input."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = True
+        chat_input.placeholder = "Respond to the agent's prompt above..."
+        event.widget.focus()
+
+    def on_agent_message_harness_interrupt_resolved(
+        self, event: AgentMessageHarness.InterruptResolved
+    ) -> None:
+        """Re-enable chat input after the user resolves an interrupt."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = False
+        self._restore_chat_input()
 
     def update_status_bar(self) -> None:
         """Sync the status bar with the current mode and context."""

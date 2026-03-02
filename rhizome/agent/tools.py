@@ -11,6 +11,7 @@ once.
 """
 
 from langchain.tools import tool, ToolRuntime
+from langgraph.types import interrupt
 
 from rhizome.agent.context import AgentContext
 from rhizome.tools import (
@@ -232,6 +233,23 @@ async def rename_tab(name: str, runtime: ToolRuntime[AgentContext]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# User input (interrupt-based)
+# ---------------------------------------------------------------------------
+
+@tool("ask_user_input", description=(
+    "Present a multiple-choice prompt to the user and wait for their selection. "
+    "Use this when you need the user to choose between options before proceeding."
+))
+async def ask_user_input(
+    message: str,
+    choices: list[str],
+    runtime: ToolRuntime[AgentContext],
+) -> str:
+    result = interrupt({"message": message, "options": choices})
+    return f"User selected: {result}"
+
+
+# ---------------------------------------------------------------------------
 # Collect all tools for the agent
 # ---------------------------------------------------------------------------
 
@@ -253,4 +271,5 @@ def get_all_tools() -> list:
         # tag_knowledge_entry,
         set_mode_tool,
         rename_tab,
+        ask_user_input,
     ]

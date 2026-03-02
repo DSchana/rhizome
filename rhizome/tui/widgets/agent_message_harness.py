@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets.markdown import Markdown, MarkdownStream
 
+from langchain.messages import AIMessageChunk, ToolMessage
+
 from rhizome.tui.types import Mode, Role
+from rhizome.tui.widgets.interrupt_choices import InterruptChoices
 from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
 from rhizome.tui.widgets.tool_call_list import ToolCallList
-
-from langchain.messages import AIMessageChunk
 
 
 class AgentMessageHarness(Widget):
@@ -26,8 +30,9 @@ class AgentMessageHarness(Widget):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._thinking: ThinkingIndicator | None = None
-        self._segments: list[ChatMessage | ToolCallList] = []
+        self._segments: list[ChatMessage | ToolCallList | InterruptChoices] = []
         self._active_stream: MarkdownStream | None = None
+        self._interrupt_widget: InterruptChoices | None = None
         self._finalized: bool = False
 
     @property
@@ -159,6 +164,68 @@ class AgentMessageHarness(Widget):
             await self._active_stream.stop()
             self._active_stream = None
 
+    # ------------------------------------------------------------------
+    # Textual messages for interrupt coordination
+    # ------------------------------------------------------------------
+
+    class InterruptPending(Message):
+        """Posted when an interrupt widget is mounted and needs user input."""
+
+        def __init__(self, widget: InterruptChoices) -> None:
+            super().__init__()
+            self.widget = widget
+
+    class InterruptResolved(Message):
+        """Posted when the user has resolved an interrupt."""
+
+    # ------------------------------------------------------------------
+    # Callback methods for AgentSession.stream()
+    # ------------------------------------------------------------------
+
+    async def on_message(self, kind: str, payload: Any) -> None:
+        """Callback for ``"messages"`` chunks from the agent stream."""
+        chunk, _metadata = payload
+        if isinstance(chunk, ToolMessage):
+            return
+        await self.append(chunk)
+
+    async def on_update(self, kind: str, payload: Any) -> None:
+        """Callback for ``"updates"`` chunks from the agent stream."""
+        await self.post_update(payload)
+
+    async def on_interrupt(self, interrupt_value: Any) -> Any:
+        """Callback for graph interrupts. Blocks until the user responds.
+
+        Mounts an ``InterruptChoices`` widget, posts ``InterruptPending`` so
+        ``ChatPane`` can disable its input, and awaits the user's selection.
+        """
+        await self.stop_thinking()
+        await self._close_active_stream()
+
+        # Build options from the interrupt value
+        if isinstance(interrupt_value, dict):
+            prompt = interrupt_value.get("message", "The agent requires your input:")
+            options = interrupt_value.get("options", ["Continue", "Cancel"])
+        else:
+            prompt = str(interrupt_value) if interrupt_value else "The agent requires your input:"
+            options = ["Continue", "Cancel"]
+
+        self._interrupt_widget = InterruptChoices(prompt=prompt, options=options)
+        self._segments.append(self._interrupt_widget)
+        await self.mount(self._interrupt_widget)
+
+        # Tell ChatPane to disable its input and focus the choices widget
+        self.post_message(self.InterruptPending(widget=self._interrupt_widget))
+
+        try:
+            result = await self._interrupt_widget.wait_for_selection()
+        finally:
+            self._interrupt_widget = None
+            # Tell ChatPane to re-enable input
+            self.post_message(self.InterruptResolved())
+
+        return result
+
     async def finalize(self) -> str:
         """Stop the stream and finalize the message. Returns accumulated message body."""
         # Remark: The (no response) message is posted if no ChatMessage segments exist,
@@ -167,6 +234,10 @@ class AgentMessageHarness(Widget):
 
     async def cancel(self) -> str:
         """Cancel the current turn. Returns accumulated body (may be empty)."""
+        # Clean up any pending interrupt widget
+        if self._interrupt_widget is not None:
+            self._interrupt_widget.cancel()
+            self._interrupt_widget = None
         return await self._finalize(empty_chat_message="*(cancelled)*")
 
     async def _finalize(self, empty_chat_message: str | None = None) -> str:

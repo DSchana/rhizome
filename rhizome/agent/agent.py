@@ -1,6 +1,7 @@
 """Agent session: owns the LangChain conversation history and agent graph."""
 
-from collections.abc import AsyncIterator, Callable
+import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents import create_agent
@@ -8,6 +9,8 @@ from langchain.chat_models import init_chat_model
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command, interrupt
 
 from rhizome.agent.config import get_api_key, get_model_name
 from rhizome.logs import get_logger
@@ -17,7 +20,7 @@ from rhizome.agent.middleware.disable_parallel_tools import DisableParallelToolC
 from rhizome.agent.tools import get_all_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.tui.options import Options
-    
+
 
 SYSTEM_PROMPT = """
 You are acting right now as an agent attached to a 'knowledge database management' app. You're a general purpose knowledge
@@ -264,6 +267,7 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
             tools=get_all_tools(),
             context_schema=AgentContext,
             middleware=middleware,
+            checkpointer=InMemorySaver(),
         )
         return model, agent
     else:
@@ -284,6 +288,7 @@ class AgentSession:
             agent_kwargs: dict[str, Any] | None = None,
             on_token_usage_changed: Callable[[], Any] | None = None,
             on_rebuild_agent: Callable[[str, str], Any] | None = None,
+            thread_id: str | None = None,
         ):
         self._session_factory = session_factory
         self._app = app
@@ -291,6 +296,7 @@ class AgentSession:
         self._provider = provider
         self._model_name = model_name
         self._agent_kwargs = agent_kwargs or {}
+        self.thread_id = thread_id or str(uuid.uuid4())
 
         # Build the initial agent graph.
         self._model, self._agent = _build_agent(self._provider, self._model_name, **self._agent_kwargs)
@@ -335,17 +341,34 @@ class AgentSession:
         # as human messages with a [System] prefix.
         self._history.append(HumanMessage(content=f"[System] {text}"))
 
-    async def stream(self, *, mode: str = "idle", topic_name: str = "") -> AsyncIterator[tuple[str, Any]]:
-        """Stream agent output, internally capturing AIMessages and ToolMessages into history.
+    async def stream(
+        self,
+        *,
+        mode: str = "idle",
+        topic_name: str = "",
+        on_message: Callable[[str, Any], Awaitable[None]] | None = None,
+        on_update: Callable[[str, Any], Awaitable[None]] | None = None,
+        on_interrupt: Callable[[Any], Awaitable[Any]] | None = None,
+        post_chunk_handler: Callable[[], Any] | None = None,
+    ) -> None:
+        """Stream agent output using callbacks, with interrupt/resume support.
 
         Token usage is tracked automatically: ``total_tokens`` is updated from
         ``usage_metadata`` on message chunks, and ``overhead_tokens`` is computed
         after the stream completes.  The ``on_token_usage_changed`` callback fires
         whenever these values change.
 
-        Yields ``(kind, payload)`` tuples with ``kind`` being ``"messages"`` or ``"updates"``.
+        Callbacks:
+            on_message(kind, payload) — called for each ``"messages"`` chunk
+            on_update(kind, payload) — called for each ``"updates"`` chunk
+            on_interrupt(interrupt_value) — called when the graph interrupts;
+                must return the resume value to continue the graph
+            post_chunk_handler() — called after every chunk (e.g. for scrolling)
         """
         self._session_logger.debug("Stream started (mode=%s, topic=%s)", mode, topic_name)
+        config = {"configurable": {"thread_id": self.thread_id}}
+        next_input: dict | Command = {"messages": self._history}
+
         try:
             async with self._session_factory() as session:
                 user_settings = {
@@ -357,57 +380,125 @@ class AgentSession:
                     chat_pane=self._chat_pane,
                     user_settings=user_settings,
                 )
-                async for update in self._agent.astream(
-                    {"messages": self._history},
-                    context=context,
-                    stream_mode=["updates", "messages"],
-                ):
-                    kind, payload = update
-                    if kind == "updates":
-                        for node_output in payload.values():
-                            for msg in node_output.get("messages", []):
-                                if isinstance(msg, BaseMessage):
+
+                while True:
+                    interrupted = False
+
+                    async for update in self._agent.astream(
+                        next_input,
+                        config=config,
+                        context=context,
+                        stream_mode=["updates", "messages"],
+                    ):
+                        kind, payload = update
+
+                        if kind == "updates":
+
+                            # First, inspect the payload for any completed messages and
+                            # append them to the internal message history.
+                            for node_output in payload.values():
+                                
+                                # Remark: when an interrupt occurs, that registers as a node_output consisting
+                                # of a tuple (Interrupt,). I don't think there's anything we need to do
+                                # with that though?
+                                if not isinstance(node_output, dict):
+                                    continue
+
+                                for msg in node_output.get("messages", []):
+                                    if not isinstance(msg, BaseMessage):
+                                        continue
                                     self._history.append(msg)
+
+                                    # Notify token usage to recompute token breakdowns into
+                                    # system/tool tokens.
                                     self._notify_token_usage()
-                    elif kind == "messages":
-                        chunk, _metadata = payload
 
-                        if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
-                            if chunk.usage_metadata.get("total_tokens"):
-                                self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
+                            # Check for interrupt
+                            if (
+                                on_interrupt and \
+                                "__interrupt__" in payload and \
+                                payload["__interrupt__"]
+                            ):
+                                interrupt_value = payload["__interrupt__"]
 
-                            # Extract cache usage from input_token_details
-                            details = chunk.usage_metadata.get("input_token_details", {})
-                            cache_read = details.get("cache_read")
-                            cache_create = details.get("cache_creation")
+                                # Extract the value from the interrupt info
+                                if isinstance(interrupt_value, (list, tuple)) and len(interrupt_value) > 0:
+                                    interrupt_value = interrupt_value[0]
+                                value = getattr(interrupt_value, "value", interrupt_value)
 
-                            if not cache_read and not cache_create:
-                                # Fallback to response_metadata on full messages
-                                resp_meta = getattr(chunk, "response_metadata", {})
-                                usage = resp_meta.get("usage", {})
+                                # Pass to interrupt handler
+                                resume = await on_interrupt(value)
 
-                                cache_read = usage.get("cache_read_input_tokens")
-                                cache_create = usage.get("cache_creation_input_tokens")
+                                # Construct the Command break, restarting the stream with
+                                # Command(resume) as the next input.
+                                if isinstance(resume, Command):
+                                    next_input = resume
+                                else:
+                                    next_input = Command(resume=resume)
+                                interrupted = True
+                                break
 
-                            if cache_read or cache_create:
-                                self._token_usage.cache_read_tokens = cache_read
-                                self._token_usage.cache_creation_tokens = cache_create
+                            # Pass to update handler
+                            if on_update:
+                                await on_update(kind, payload)
 
-                            self._notify_token_usage()
+                        elif kind == "messages":
+                            chunk, _metadata = payload
 
-                    yield kind, payload
+                            # Extract token/cache usage metadata and notify a
+                            # token usage update.
+                            self._extract_usage_metadata(chunk)
+
+                            # Pass to message handler
+                            if on_message:
+                                await on_message(kind, payload)
+
+                        if post_chunk_handler:
+                            result = post_chunk_handler()
+                            if result is not None and hasattr(result, "__await__"):
+                                await result
+
+                    if not interrupted:
+                        # astream completed without interrupt → done
+                        break
+                    # otherwise loop continues with Command(resume=...) as next_input
+
                 await session.commit()
+
         except Exception as exc:
             self._session_logger.error("Stream error: %s", exc)
             raise
-        finally:
-            # Compute overhead tokens after the stream completes (or errors).
+        else:
             self._session_logger.debug(
                 f"Stream complete (tokens={self._token_usage.total_tokens}, "
                 f"cache_read={self._token_usage.cache_read_tokens}, "
                 f"cache_create={self._token_usage.cache_creation_tokens})"
             )
+        finally:
             self._notify_token_usage()
+
+    def _extract_usage_metadata(self, chunk):
+        if not (hasattr(chunk, "usage_metadata") and chunk.usage_metadata):
+            return
+        
+        if chunk.usage_metadata.get("total_tokens"):
+            self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
+
+        details = chunk.usage_metadata.get("input_token_details", {})
+        cache_read = details.get("cache_read")
+        cache_create = details.get("cache_creation")
+
+        if not cache_read and not cache_create:
+            resp_meta = getattr(chunk, "response_metadata", {})
+            usage = resp_meta.get("usage", {})
+            cache_read = usage.get("cache_read_input_tokens")
+            cache_create = usage.get("cache_creation_input_tokens")
+
+        if cache_read or cache_create:
+            self._token_usage.cache_read_tokens = cache_read
+            self._token_usage.cache_creation_tokens = cache_create
+
+        self._notify_token_usage()
 
     def _notify_token_usage(self) -> None:
         self._compute_overhead_tokens()
@@ -416,18 +507,43 @@ class AgentSession:
 
     def _compute_overhead_tokens(self) -> None:
         """Estimate overhead tokens (system prompt + tool messages) and update token usage."""
-        system_msgs = [
-            m for m in self._history 
-            if isinstance(m, SystemMessage) or \
-               (isinstance(m, HumanMessage) and m.content.startswith("[System]"))
-        ]
-        tool_msgs = [m for m in self._history if isinstance(m, ToolMessage)]
+        system_msgs = [m for m in self._history if self._is_system_message(m)]
+        tool_msgs = [m for m in self._history if self._is_tool_message(m)]
 
         system_overhead = count_tokens_approximately(system_msgs)
         tool_overhead = count_tokens_approximately(tool_msgs)
 
         self._token_usage.breakdown[TokenUsageData.BreakdownCategory.SYSTEM] = system_overhead
         self._token_usage.breakdown[TokenUsageData.BreakdownCategory.TOOL_MESSAGES] = tool_overhead
+
+    def _is_system_message(self, msg) -> bool:
+        if isinstance(msg, SystemMessage):
+            return True
+        
+        if isinstance(msg, HumanMessage):
+            content = msg.content
+            if isinstance(content, str):
+                if content.startswith("[System]"):
+                    return True
+            elif isinstance(content, (list, tuple)):
+                if len(content) != 1:
+                    # TODO: might need to refactor the way we grab system messages for token counts
+                    # to account for this?
+                    return False 
+                content = content[0]
+                if isinstance(content, str) and content.startswith("[System]"):
+                    return True
+                if (
+                    isinstance(content, dict) and
+                    content.get("type") == "text" and
+                    content.get("text", "").startswith("[System]")
+                ):
+                    return True
+            
+        return False
+
+    def _is_tool_message(self, msg) -> bool:
+        return isinstance(msg, ToolMessage)
 
     @property
     def model(self):
