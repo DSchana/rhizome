@@ -51,21 +51,34 @@ class InterruptChoices(Widget, can_focus=True):
     def compose(self) -> ComposeResult:
         yield Label(self._prompt, classes="interrupt-prompt")
         yield Static(id="interrupt-options")
+        yield Static("  (ctrl+c to cancel)", id="interrupt-hint")
 
     def on_mount(self) -> None:
         self._render_options()
+        self.query_one("#interrupt-hint", Static).styles.color = "rgb(100,100,100)"
         self.focus()
 
     def watch_cursor(self) -> None:
         self._render_options()
 
+    def on_focus(self) -> None:
+        if not self._future.done():
+            self._render_options()
+
+    def on_blur(self) -> None:
+        if not self._future.done():
+            self._render_options()
+
     def _render_options(self) -> None:
+        focused = self.has_focus
         text = Text()
         for i, option in enumerate(self._options):
             if i > 0:
                 text.append("\n")
             label = f"  {i + 1}. {option}"
-            if i == self.cursor:
+            if not focused:
+                text.append(label, style="rgb(100,100,100)")
+            elif i == self.cursor:
                 text.append(label, style="bold white")
             else:
                 text.append(label, style="rgb(100,100,100)")
@@ -88,6 +101,7 @@ class InterruptChoices(Widget, can_focus=True):
             display = Text()
             display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
             self.query_one("#interrupt-options", Static).update(display)
+            self.query_one("#interrupt-hint", Static).update("")
             event.prevent_default()
             event.stop()
 
