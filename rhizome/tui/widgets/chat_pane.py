@@ -49,6 +49,7 @@ class ChatPane(Widget):
         Binding("ctrl+t", "toggle_last_agent_message", "Toggle agent msg", show=False, priority=True),
         Binding("ctrl+o", "toggle_last_tool_call", "Toggle tool call", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
+        Binding("ctrl+b", "cycle_verbosity", "Cycle verbosity", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -271,6 +272,15 @@ class ChatPane(Widget):
     async def action_cycle_mode(self) -> None:
         cycle = {Mode.IDLE: Mode.LEARN, Mode.LEARN: Mode.REVIEW, Mode.REVIEW: Mode.IDLE}
         await self._set_mode(cycle[self.session_mode], silent=True)
+
+    async def action_cycle_verbosity(self) -> None:
+        choices = Options.Agent.AnswerVerbosity.choices
+        current = self.options.get(Options.Agent.AnswerVerbosity)
+        idx = choices.index(current) if current in choices else 0
+        new_value = choices[(idx + 1) % len(choices)]
+        await self.options.set(Options.Agent.AnswerVerbosity, new_value)
+        await self.options.post_update()
+        self.update_status_bar()
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         self._hide_palette()
@@ -697,6 +707,9 @@ class ChatPane(Widget):
 
     def _on_agent_rebuilt(self, old_model: str, new_model: str) -> None:
         """Called when the agent is rebuilt due to a model option change."""
+        if new_model == old_model:
+            return
+        
         self._log.info("Agent rebuilt: %s → %s", old_model, new_model)
         self.append_message(ChatMessageData(
             role=Role.SYSTEM,
@@ -732,6 +745,8 @@ class ChatPane(Widget):
         if self._agent_session is not None:
             bar.token_usage = self._agent_session.token_usage
             bar.model_name = self._agent_session._model_name or ""
+        if self.options is not None:
+            bar.verbosity = self.options.get(Options.Agent.AnswerVerbosity)
         bar.mutate_reactive(StatusBar.token_usage)
 
     def append_message(self, msg: ChatMessageData) -> None:

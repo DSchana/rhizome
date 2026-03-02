@@ -178,7 +178,7 @@ class AgentSession:
         try:
             async with self._session_factory() as session:
                 user_settings = {
-                    "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "dynamic"),
+                    "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "auto"),
                 }
                 context = AgentContext(
                     session=session,

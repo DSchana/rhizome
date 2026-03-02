@@ -16,6 +16,14 @@ _MODE_COLORS: dict[str, str] = {
     "review": _compact_rgb(Colors.REVIEW_SYSTEM_TEXT),
 }
 
+_VERBOSITY_COLORS: dict[str, str] = {
+    "terse": "rgb(120,120,120)",
+    "standard": "rgb(255,255,255)",
+    "verbose": "rgb(255,80,80)",
+    "expository": "rgb(90,210,190)",
+    "auto": "rgb(255,80,255)",
+}
+
 
 class StatusBar(Static):
     """Displays the current mode and active curriculum/topic context."""
@@ -24,6 +32,7 @@ class StatusBar(Static):
     topic_path: reactive[list[str]] = reactive(list)
     token_usage: reactive[TokenUsageData] = reactive(TokenUsageData)
     model_name: reactive[str] = reactive("")
+    verbosity: reactive[str] = reactive("auto")
 
     # Max characters for the rendered topic path (excluding the "topic: " prefix).
     TOPIC_PATH_MAX = 60
@@ -107,8 +116,13 @@ class StatusBar(Static):
 
         self._right_align(mode_line, token_text)
 
-        # -- line 3: cache usage (right-aligned) --
+        # -- line 3: verbosity (left), cache usage (right) --
         cache_line = Text()
+        cache_line.append("verbosity: ", style=_label)
+        verbosity_color = _VERBOSITY_COLORS.get(self.verbosity)
+        cache_line.append(self.verbosity, style=verbosity_color or "")
+        cache_line.append("  (ctrl+b to cycle)", style="rgb(100,100,100)")
+
         cache_read = self.token_usage.cache_read_tokens
         cache_create = self.token_usage.cache_creation_tokens
         if cache_read is not None or cache_create is not None:
