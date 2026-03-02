@@ -392,7 +392,10 @@ class ChatPane(Widget):
                 os.unlink(tmp_path)
             return
 
-        # Inline widget mode
+        # Inline widget mode — dismiss any existing editor first
+        for ed in self.query(OptionsEditor):
+            await ed.remove()
+
         area = self.query_one("#message-area")
         editor_widget = OptionsEditor(target, id="options-editor")
         await area.mount(editor_widget)
