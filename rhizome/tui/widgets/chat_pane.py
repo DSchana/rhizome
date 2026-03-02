@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import traceback
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 import rich_click as click
@@ -601,56 +602,62 @@ class ChatPane(Widget):
 
     def _handle_chat(self, text: str) -> None:
         self._log.debug("Chat submitted (%d chars)", len(text))
+
         # Post the user's message to the message history
         self.append_message(ChatMessageData(role=Role.USER, content=text))
 
-        # Construct an AgentMessageHarness for capturing the View aspects of the agent stream.
-        message_area = self.query_one("#message-area", VerticalScroll)
+        # Start the agent to have it respond
+        self._start_agent()
+
+    def _start_agent(self):
+        # Create a harness, and run the agent. This sets _agent_busy = True internally
+        # as well, until the worker finishes or is cancelled.
         harness = AgentMessageHarness()
+        self._agent_worker = self.run_worker(partial(self._run_agent, harness))
+    
+    async def _run_agent(self, harness: AgentMessageHarness) -> None:
+        message_area = self.query_one("#message-area", VerticalScroll)
         message_area.mount(harness)
+        message_area.scroll_end(animate=False)
 
-        agent_session = self._agent_session
-        assert agent_session is not None
+        try:
+            assert self._agent_session is not None
+            assert not self._agent_busy
 
-        async def _run_agent() -> None:
+            self._agent_busy = True
             await harness.start_thinking()
             message_area.scroll_end(animate=False)
 
-            try:
-                await agent_session.stream(
-                    mode=self.session_mode.value,
-                    topic_name=self.active_topic.name if self.active_topic else "",
-                    on_message=harness.on_message,
-                    on_update=harness.on_update,
-                    on_interrupt=harness.on_interrupt,
-                    post_chunk_handler=lambda: message_area.scroll_end(animate=False),
-                )
-                body = await harness.finalize()
-                if body:
-                    self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+            await self._agent_session.stream(
+                mode=self.session_mode.value,
+                topic_name=self.active_topic.name if self.active_topic else "",
+                on_message=harness.on_message,
+                on_update=harness.on_update,
+                on_interrupt=harness.on_interrupt,
+                post_chunk_handler=lambda: message_area.scroll_end(animate=False),
+            )
+            body = await harness.finalize()
+            if body:
+                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
 
-            except asyncio.CancelledError:
-                self._log.info("User cancelled agent stream.")
-                body = await harness.cancel()
-                if body:
-                    self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
-                self.append_message(
-                    ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
-                )
+        except asyncio.CancelledError:
+            self._log.info("User cancelled agent stream.")
+            body = await harness.cancel()
+            if body:
+                self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+            self.append_message(
+                ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
+            )
 
-            except Exception as exc:
-                self._log.error("Agent error: %s", exc)
-                await harness.cancel()
-                self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
-                # raise
+        except Exception as exc:
+            self._log.error("Agent error: %s", exc)
+            await harness.cancel()
+            self.append_message(ChatMessageData(role=Role.ERROR, content=str(exc)))
+            # raise
 
-            finally:
-                self._agent_busy = False
-                self._agent_worker = None
-
-        # Start the agent, setting _agent_busy to True until the worker completes.
-        self._agent_busy = True
-        self._agent_worker = self.run_worker(_run_agent())
+        finally:
+            self._agent_busy = False
+            self._agent_worker = None
 
     def _on_agent_rebuilt(self, old_model: str, new_model: str) -> None:
         """Called when the agent is rebuilt due to a model option change."""
