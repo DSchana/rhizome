@@ -225,7 +225,6 @@ class AnthropicCacheAwareSettingsMiddleware(AgentMiddleware, Generic[ContextT]):
             last_block["cache_control"] = self._cache_control
             content[-1] = last_block
 
-        # Update the content in-place
-        # TODO: seems potentially fragile?
-        msg.content = content
-        return msg
+        return msg.__class__(content=content, **{
+            k: v for k, v in msg.__dict__.items() if k != "content"
+        })
