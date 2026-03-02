@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from textual.message import Message
+
 from rhizome.agent.utils import TokenUsageData
 
 
@@ -21,6 +23,15 @@ class Role(Enum):
     AGENT = "agent"
     SYSTEM = "system"
     ERROR = "error"
+
+
+class UserFeedback(Message):
+    """Screen-level message requesting that a tab pane display feedback to the user."""
+
+    def __init__(self, text: str, severity: str = "information") -> None:
+        super().__init__()
+        self.text = text
+        self.severity = severity
 
 
 @dataclass

@@ -14,7 +14,7 @@ from textual.screen import Screen
 from textual.widgets import TabbedContent, TabPane
 
 from rhizome.tui.options import Options
-from rhizome.tui.types import ChatMessageData, Mode, Role
+from rhizome.tui.types import ChatMessageData, Mode, Role, UserFeedback
 from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
 from rhizome.tui.widgets.chat_pane import ChatPane
 from rhizome.tui.widgets.logging_pane import LoggingPane
@@ -41,6 +41,9 @@ class LogTabPane(TabPane):
         tabbed_content = self.screen.query_one("#tabs", TabbedContent)
         tab_widget = tabbed_content.get_tab(self.id)
         tab_widget.label = self._truncated_label()
+
+    def on_user_feedback(self, event: UserFeedback) -> None:
+        self.notify(event.text, severity=event.severity)
 
     def compose(self) -> ComposeResult:
         yield LoggingPane()
@@ -75,6 +78,10 @@ class ChatTabPane(TabPane):
         tabbed_content = self.screen.query_one("#tabs", TabbedContent)
         tab_widget = tabbed_content.get_tab(self.id)
         tab_widget.label = self._truncated_label()
+
+    def on_user_feedback(self, event: UserFeedback) -> None:
+        chat_pane = self.query_one(ChatPane)
+        chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content=event.text))
 
     def compose(self) -> ComposeResult:
         yield ChatPane(show_welcome=self._show_welcome)
@@ -150,9 +157,19 @@ class ChatScreen(Screen):
         await tabs.add_pane(pane)
         tabs.active = tab_id
 
-    # Stubbed out for potential future use
-    # def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
-    #     pass
+    @property
+    def active_pane(self) -> TabPane | None:
+        """Return the currently active TabPane (any type)."""
+        tabs = self.query_one("#tabs", TabbedContent)
+        return tabs.active_pane
+
+    def post_feedback(self, text: str, severity: str = "information") -> None:
+        """Post a UserFeedback message to the active tab pane."""
+        pane = self.active_pane
+        if pane is not None:
+            pane.post_message(UserFeedback(text, severity))
+        else:
+            self.notify(text, severity=severity)
 
     def action_cancel_agent(self) -> None:
         self.app.active_chat_pane.cancel_agent()  # type: ignore[attr-defined]
@@ -162,9 +179,7 @@ class ChatScreen(Screen):
         tabs = self.query_one("#tabs", TabbedContent)
         pane_count = len(list(tabs.query(TabPane)))
         if pane_count <= 1:
-            self.app.active_chat_pane.append_message(  # type: ignore[attr-defined]
-                ChatMessageData(role=Role.SYSTEM, content="Cannot close the last session tab.")
-            )
+            self.post_feedback("Cannot close the last tab. (Use ctrl+q to quit)", severity="warning")
             return
         active_id = tabs.active
         if active_id:
