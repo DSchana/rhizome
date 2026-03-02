@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import traceback
 from collections import deque
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -71,4 +72,8 @@ class TUILogHandler(logging.Handler):
         level = record.levelname
         name = record.name
         msg = record.getMessage()
+        if record.exc_info and record.exc_info[1] is not None:
+            msg = f"{msg}\n{''.join(traceback.format_exception(*record.exc_info))}"
+        if record.stack_info:
+            msg = f"{msg}\n{record.stack_info}"
         return f"[dim]{ts}[/dim] [{level_style}]{level:<8}[/{level_style}] [dim]{name}[/dim] {msg}"

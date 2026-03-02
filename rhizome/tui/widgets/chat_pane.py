@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -283,8 +284,15 @@ class ChatPane(Widget):
             except KeyError:
                 self.notify(f"Unknown command: /{name}", severity="error")
             except Exception as e:
-                self._log.exception("Error executing command: /%s %s", name, args)
-                self.notify(str(e), severity="error")
+                self._log.exception("Error executing command: /%s %s", name, args, exc_info=e, stack_info=True)
+                self.append_message(
+                    ChatMessageData(
+                        role=Role.ERROR, 
+                        content=(
+                            f"Error executing command /{name} {args}: {traceback.format_exc()}"
+                        )
+                    )
+                )
 
         self.run_worker(_run())
 
