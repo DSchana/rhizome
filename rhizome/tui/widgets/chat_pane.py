@@ -146,6 +146,7 @@ class ChatPane(Widget):
             on_token_usage_changed=self.update_status_bar,
             on_rebuild_agent=self._on_agent_rebuilt,
         )
+        self.update_status_bar() # Call to trigger model name display
 
         # Subscribe to post-update so agent rebuilds when options change
         self.options.subscribe_post_update(self._agent_session.on_options_post_update)
@@ -643,6 +644,7 @@ class ChatPane(Widget):
                 f"Profile: `{self._agent_session.model.profile}`"
             ),
         ))
+        self.update_status_bar() # Model name changed.
 
     def on_agent_message_harness_interrupt_pending(
         self, event: AgentMessageHarness.InterruptPending
@@ -668,6 +670,7 @@ class ChatPane(Widget):
         bar.topic_path = list(self._topic_path)
         if self._agent_session is not None:
             bar.token_usage = self._agent_session.token_usage
+            bar.model_name = self._agent_session._model_name or ""
         bar.mutate_reactive(StatusBar.token_usage)
 
     def append_message(self, msg: ChatMessageData) -> None:

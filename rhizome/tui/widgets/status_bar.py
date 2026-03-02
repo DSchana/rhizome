@@ -23,13 +23,22 @@ class StatusBar(Static):
     mode: reactive[str] = reactive("idle")
     topic_path: reactive[list[str]] = reactive(list)
     token_usage: reactive[TokenUsageData] = reactive(TokenUsageData)
+    model_name: reactive[str] = reactive("")
 
     # Max characters for the rendered topic path (excluding the "topic: " prefix).
     TOPIC_PATH_MAX = 60
 
+    def _right_align(self, left: Text, right: Text) -> Text:
+        """Append *right* to *left* with gap-padding to right-align."""
+        gap = max(self.size.width - len(left.plain) - len(right.plain), 2)
+        left.append(" " * gap)
+        left.append(right)
+        return left
+
     def render(self) -> Text:
-        # -- line 1: topic path --
         _label = "rgb(140,140,140)"
+
+        # -- line 1: topic path (left), model name (right) --
         topic_line = Text()
         topic_line.append("topic: ", style=_label)
         if self.topic_path:
@@ -38,7 +47,6 @@ class StatusBar(Static):
             if len(full) <= self.TOPIC_PATH_MAX:
                 topic_line.append(full)
             else:
-                # Truncate from the left, keeping as many trailing segments as fit.
                 parts = list(self.topic_path)
                 while len(parts) > 1 and len(sep.join(parts)) + len("... > ") > self.TOPIC_PATH_MAX:
                     parts.pop(0)
@@ -46,30 +54,22 @@ class StatusBar(Static):
         else:
             topic_line.append("none", style="rgb(100,100,100)")
 
-        # Right-align cache usage on the topic line
-        cache_text = Text()
-        cache_read = self.token_usage.cache_read_tokens
-        cache_create = self.token_usage.cache_creation_tokens
-        if cache_read is not None or cache_create is not None:
-            cache_text.append(
-                f"cache read: {cache_read:,}  create: {cache_create:,}",
-                style="rgb(90,90,90)",
-            )
-            gap = max(self.size.width - len(topic_line.plain) - len(cache_text.plain), 2)
-            topic_line.append(" " * gap)
-            topic_line.append(cache_text)
+        model_text = Text()
+        if self.model_name:
+            model_text.append(self.model_name, style="rgb(90,90,90)")
+        self._right_align(topic_line, model_text)
 
-        # -- line 2: mode + token usage --
-        left = Text()
-        left.append("mode: ", style=_label)
+        # -- line 2: mode (left), token usage (right) --
+        mode_line = Text()
+        mode_line.append("mode: ", style=_label)
         mode_color = _MODE_COLORS.get(self.mode)
         if mode_color:
-            left.append(self.mode, style=mode_color)
+            mode_line.append(self.mode, style=mode_color)
         else:
-            left.append(self.mode)
-        left.append("  (shift+tab to cycle)", style="rgb(100,100,100)")
+            mode_line.append(self.mode)
+        mode_line.append("  (shift+tab to cycle)", style="rgb(100,100,100)")
 
-        right = Text()
+        token_text = Text()
         if self.token_usage.total_tokens:
             total = self.token_usage.total_tokens
 
@@ -89,24 +89,34 @@ class StatusBar(Static):
                         "rgb(220,160,80)",
                     ))
 
-                right.append(f"tokens: {total:,}")
-                right.append(" (", style="rgb(100,100,100)")
+                token_text.append(f"tokens: {total:,}")
+                token_text.append(" (", style="rgb(100,100,100)")
 
                 for i, (part, color) in enumerate(overhead_parts):
-                    right.append(f"{part}", style=color)
+                    token_text.append(f"{part}", style=color)
                     if i < len(overhead_parts) - 1:
-                        right.append(", ", style="rgb(100,100,100)")
+                        token_text.append(", ", style="rgb(100,100,100)")
 
-                right.append(")", style="rgb(100,100,100)")
+                token_text.append(")", style="rgb(100,100,100)")
             else:
-                right.append(f"tokens: {total:,}")
+                token_text.append(f"tokens: {total:,}")
 
             pct = self.token_usage.usage_percent
             if pct is not None:
-                right.append(f"  context usage: {pct:.1f}%")
+                token_text.append(f"  context usage: {pct:.1f}%")
 
-        gap = max(self.size.width - len(left.plain) - len(right.plain), 2)
-        left.append(" " * gap)
-        left.append(right)
+        self._right_align(mode_line, token_text)
 
-        return Text.assemble(topic_line, "\n", left)
+        # -- line 3: cache usage (right-aligned) --
+        cache_line = Text()
+        cache_read = self.token_usage.cache_read_tokens
+        cache_create = self.token_usage.cache_creation_tokens
+        if cache_read is not None or cache_create is not None:
+            cache_text = Text()
+            cache_text.append(
+                f"cache read: {cache_read:,}  create: {cache_create:,}",
+                style="rgb(90,90,90)",
+            )
+            self._right_align(cache_line, cache_text)
+
+        return Text.assemble(topic_line, "\n", mode_line, "\n", cache_line)
