@@ -267,10 +267,6 @@ class ChatPane(Widget):
     _log = get_logger("tui.chat_pane")
 
     def _handle_command(self, name: str, args: str) -> None:
-        if name == "quit":
-            self.app.exit()
-            return
-
         self._log.debug("command dispatched: /%s %s", name, args)
 
         async def _run() -> None:
@@ -562,6 +558,10 @@ class ChatPane(Widget):
         @click.argument("command_name", default="", required=False)
         async def help_cmd(command_name: str):
             await self._cmd_help(command_name)
+
+        @registry.command(name="quit", help="Quit the application")
+        async def quit_cmd():
+            self.app.exit()
 
         @registry.command(name="clear", help="Clear chat messages")
         async def clear():
