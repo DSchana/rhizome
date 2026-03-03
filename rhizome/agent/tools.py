@@ -10,10 +10,29 @@ the underlying ``AsyncSession`` is never used from two coroutines at
 once.
 """
 
+from enum import IntEnum
+
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import interrupt
 
 from rhizome.agent.context import AgentContext
+
+
+class ToolVisibility(IntEnum):
+    LOW = 0       # Housekeeping tools (set_mode, rename_tab) — only visible at max verbosity
+    DEFAULT = 1   # Most tools — visible at normal verbosity
+    HIGH = 2      # Important tools — always visible
+
+TOOL_VISIBILITY: dict[str, ToolVisibility] = {}
+
+
+def tool_visibility(level: ToolVisibility):
+    """Decorator that registers a tool's visibility level."""
+    def decorator(func):
+        name = getattr(func, 'name', None) or func.__name__
+        TOOL_VISIBILITY[name] = level
+        return func
+    return decorator
 from rhizome.tools import (
     create_entry,
     create_topic,
@@ -211,6 +230,7 @@ async def tag_knowledge_entry(entry_id: int, tag_name: str, runtime: ToolRuntime
 # ---------------------------------------------------------------------------
 
 @tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
+@tool_visibility(ToolVisibility.LOW)
 async def set_mode_tool(
     mode: str,
     runtime: ToolRuntime[AgentContext]
@@ -226,6 +246,7 @@ async def set_mode_tool(
 
 
 @tool("rename_tab", description="Rename the active chat session tab.")
+@tool_visibility(ToolVisibility.LOW)
 async def rename_tab(name: str, runtime: ToolRuntime[AgentContext]) -> str:
     pane = runtime.context.chat_pane
     await pane._cmd_rename(name)
@@ -240,6 +261,7 @@ async def rename_tab(name: str, runtime: ToolRuntime[AgentContext]) -> str:
     "Present a multiple-choice prompt to the user and wait for their selection. "
     "Use this when you need the user to choose between options before proceeding."
 ))
+@tool_visibility(ToolVisibility.LOW)
 async def ask_user_input(
     message: str,
     choices: list[str],

@@ -373,6 +373,14 @@ class Options(metaclass=OptionsMeta):
         max=50,
     )
 
+    ToolUseVisibility = ChoicesOptionSpec(
+        name="tool_use_visibility",
+        scope=OptionScope.Session,
+        default="debug",
+        help="Minimum visibility level for tool calls to appear in the UI",
+        choices=["debug", "default", "essential_only"],
+    )
+
     class Agent(OptionNamespace):
         name = "agent"
 

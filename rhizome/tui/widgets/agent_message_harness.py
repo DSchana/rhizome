@@ -10,6 +10,7 @@ from textual.widgets.markdown import Markdown, MarkdownStream
 
 from langchain.messages import AIMessageChunk, ToolMessage
 
+from rhizome.agent.tools import TOOL_VISIBILITY, ToolVisibility
 from rhizome.tui.types import Mode, Role
 from rhizome.tui.widgets.interrupt_choices import InterruptChoices
 from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
@@ -20,6 +21,12 @@ from rhizome.tui.widgets.tool_call_list import ToolCallList
 class AgentMessageHarness(Widget):
     """Manages ThinkingIndicator → interleaved ChatMessage/ToolCallList segments for one agent turn."""
 
+    _VISIBILITY_MAP: dict[str, ToolVisibility] = {
+        "debug": ToolVisibility.LOW,
+        "default": ToolVisibility.DEFAULT,
+        "essential_only": ToolVisibility.HIGH,
+    }
+
     DEFAULT_CSS = """
     AgentMessageHarness {
         height: auto;
@@ -27,8 +34,11 @@ class AgentMessageHarness(Widget):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, tool_use_visibility: str = "default", **kwargs) -> None:
         super().__init__(**kwargs)
+        self._display_threshold = self._VISIBILITY_MAP.get(
+            tool_use_visibility, ToolVisibility.DEFAULT
+        )
         self._thinking: ThinkingIndicator | None = None
         self._segments: list[ChatMessage | ToolCallList | InterruptChoices] = []
         self._active_stream: MarkdownStream | None = None
@@ -147,6 +157,9 @@ class AgentMessageHarness(Widget):
                     if isinstance(block, dict) and block.get("type") == "tool_use":
                         name = block.get("name")
                         if name:
+                            level = TOOL_VISIBILITY.get(name, ToolVisibility.DEFAULT)
+                            if level < self._display_threshold:
+                                continue
                             # If the last segment isn't a ToolCallList, close the
                             # active stream and start a new tool list segment.
                             if not self._segments or not isinstance(self._segments[-1], ToolCallList):

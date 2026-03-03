@@ -221,7 +221,9 @@ class ChatPane(Widget):
     def _start_agent(self):
         # Create a harness, and run the agent. This sets _agent_busy = True internally
         # as well, until the worker finishes or is cancelled.
-        harness = AgentMessageHarness()
+        harness = AgentMessageHarness(
+            tool_use_visibility=self.options.get(Options.ToolUseVisibility),
+        )
         self._agent_worker = self.run_worker(partial(self._run_agent, harness))
 
     async def _run_agent(self, harness: AgentMessageHarness) -> None:
