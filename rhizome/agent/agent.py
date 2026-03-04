@@ -19,7 +19,7 @@ from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.disable_parallel_tools import DisableParallelToolCallsMiddleware
 from rhizome.agent.middleware.inject_user_settings import InjectUserSettingsMiddleware
 from rhizome.agent.middleware.penultimate_cache import AnthropicPenultimateCacheMiddleware
-from rhizome.agent.tools import get_all_tools
+from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.tui.options import Options
 
@@ -40,7 +40,7 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
 _logger = get_logger("agent")
 
 
-def _build_agent(provider: str = "anthropic", model_name: str | None = None, **agent_kwargs):
+def _build_agent(tools: list, provider: str = "anthropic", model_name: str | None = None, **agent_kwargs):
     """Build the model + compiled graph."""
     _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
     if provider == "anthropic":
@@ -70,7 +70,7 @@ def _build_agent(provider: str = "anthropic", model_name: str | None = None, **a
 
         agent = create_agent(
             model=model,
-            tools=get_all_tools(),
+            tools=tools,
             context_schema=AgentContext,
             middleware=middleware,
             checkpointer=InMemorySaver(),
@@ -96,16 +96,14 @@ class AgentSession:
             on_rebuild_agent: Callable[[str, str], Any] | None = None,
             thread_id: str | None = None,
         ):
-        self._session_factory = session_factory
-        self._app = app
-        self._chat_pane = chat_pane
         self._provider = provider
         self._model_name = model_name
         self._agent_kwargs = agent_kwargs or {}
         self.thread_id = thread_id or str(uuid.uuid4())
 
-        # Build the initial agent graph.
-        self._model, self._agent = _build_agent(self._provider, self._model_name, **self._agent_kwargs)
+        # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
+        self._tools = build_tools(session_factory, chat_pane=chat_pane)
+        self._model, self._agent = _build_agent(self._tools, self._provider, self._model_name, **self._agent_kwargs)
 
         # Initialize message history with the system prompt, and set up token usage tracking.
         self._session_logger = get_logger("agent.session")
@@ -125,7 +123,7 @@ class AgentSession:
         self._model_name = model_name
         if agent_kwargs is not None:
             self._agent_kwargs = agent_kwargs
-        self._model, self._agent = _build_agent(provider, model_name, **self._agent_kwargs)
+        self._model, self._agent = _build_agent(self._tools, provider, model_name, **self._agent_kwargs)
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         if self.on_rebuild_agent is not None:
             self.on_rebuild_agent(old_model, model_name)
@@ -176,105 +174,97 @@ class AgentSession:
         next_input: dict | Command = {"messages": self._history}
 
         try:
-            async with self._session_factory() as session:
-                user_settings = {
-                    "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "auto"),
-                }
-                context = AgentContext(
-                    session=session,
-                    app=self._app,
-                    chat_pane=self._chat_pane,
-                    user_settings=user_settings,
-                )
+            user_settings = {
+                "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "auto"),
+            }
+            context = AgentContext(user_settings=user_settings)
 
-                while True:
-                    interrupted = False
+            while True:
+                interrupted = False
 
-                    try:
-                        async for update in self._agent.astream(
-                            next_input,
-                            config=config,
-                            context=context,
-                            stream_mode=["updates", "messages"],
-                        ):
-                            kind, payload = update
+                try:
+                    async for update in self._agent.astream(
+                        next_input,
+                        config=config,
+                        context=context,
+                        stream_mode=["updates", "messages"],
+                    ):
+                        kind, payload = update
 
-                            if kind == "updates":
+                        if kind == "updates":
 
-                                # First, inspect the payload for any completed messages and
-                                # append them to the internal message history.
-                                for node_output in payload.values():
+                            # First, inspect the payload for any completed messages and
+                            # append them to the internal message history.
+                            for node_output in payload.values():
 
-                                    # Remark: when an interrupt occurs, that registers as a node_output consisting
-                                    # of a tuple (Interrupt,). I don't think there's anything we need to do
-                                    # with that though?
-                                    if not isinstance(node_output, dict):
+                                # Remark: when an interrupt occurs, that registers as a node_output consisting
+                                # of a tuple (Interrupt,). I don't think there's anything we need to do
+                                # with that though?
+                                if not isinstance(node_output, dict):
+                                    continue
+
+                                for msg in node_output.get("messages", []):
+                                    if not isinstance(msg, BaseMessage):
                                         continue
+                                    self._history.append(msg)
 
-                                    for msg in node_output.get("messages", []):
-                                        if not isinstance(msg, BaseMessage):
-                                            continue
-                                        self._history.append(msg)
+                                    # Notify token usage to recompute token breakdowns into
+                                    # system/tool tokens.
+                                    self._notify_token_usage()
 
-                                        # Notify token usage to recompute token breakdowns into
-                                        # system/tool tokens.
-                                        self._notify_token_usage()
+                            # Check for interrupt
+                            if (
+                                on_interrupt and \
+                                "__interrupt__" in payload and \
+                                payload["__interrupt__"]
+                            ):
+                                interrupt_value = payload["__interrupt__"]
 
-                                # Check for interrupt
-                                if (
-                                    on_interrupt and \
-                                    "__interrupt__" in payload and \
-                                    payload["__interrupt__"]
-                                ):
-                                    interrupt_value = payload["__interrupt__"]
+                                # Extract the value from the interrupt info
+                                if isinstance(interrupt_value, (list, tuple)) and len(interrupt_value) > 0:
+                                    interrupt_value = interrupt_value[0]
+                                value = getattr(interrupt_value, "value", interrupt_value)
 
-                                    # Extract the value from the interrupt info
-                                    if isinstance(interrupt_value, (list, tuple)) and len(interrupt_value) > 0:
-                                        interrupt_value = interrupt_value[0]
-                                    value = getattr(interrupt_value, "value", interrupt_value)
+                                # Pass to interrupt handler
+                                resume = await on_interrupt(value)
 
-                                    # Pass to interrupt handler
-                                    resume = await on_interrupt(value)
+                                # Construct the Command break, restarting the stream with
+                                # Command(resume) as the next input.
+                                if isinstance(resume, Command):
+                                    next_input = resume
+                                else:
+                                    next_input = Command(resume=resume)
+                                interrupted = True
+                                break
 
-                                    # Construct the Command break, restarting the stream with
-                                    # Command(resume) as the next input.
-                                    if isinstance(resume, Command):
-                                        next_input = resume
-                                    else:
-                                        next_input = Command(resume=resume)
-                                    interrupted = True
-                                    break
+                            # Pass to update handler
+                            if on_update:
+                                await on_update(kind, payload)
 
-                                # Pass to update handler
-                                if on_update:
-                                    await on_update(kind, payload)
+                        elif kind == "messages":
+                            chunk, _metadata = payload
 
-                            elif kind == "messages":
-                                chunk, _metadata = payload
+                            # Extract token/cache usage metadata and notify a
+                            # token usage update.
+                            self._extract_usage_metadata(chunk)
 
-                                # Extract token/cache usage metadata and notify a
-                                # token usage update.
-                                self._extract_usage_metadata(chunk)
+                            # Pass to message handler
+                            if on_message:
+                                await on_message(kind, payload)
 
-                                # Pass to message handler
-                                if on_message:
-                                    await on_message(kind, payload)
+                        if post_chunk_handler:
+                            result = post_chunk_handler()
+                            if result is not None and hasattr(result, "__await__"):
+                                await result
 
-                            if post_chunk_handler:
-                                result = post_chunk_handler()
-                                if result is not None and hasattr(result, "__await__"):
-                                    await result
+                except asyncio.CancelledError:
+                    self._patch_orphaned_tool_calls()
+                    raise
 
-                    except asyncio.CancelledError:
-                        self._patch_orphaned_tool_calls()
-                        raise
-
-                    if not interrupted:
-                        # astream completed without interrupt → done
-                        break
-                    # otherwise loop continues with Command(resume=...) as next_input
-
-                await session.commit()
+                if not interrupted:
+                    # astream completed without interrupt → done
+                    break
+                # otherwise loop continues with Command(resume=...) as next_input
 
         except Exception as exc:
             self._session_logger.error("Stream error: %s", exc)

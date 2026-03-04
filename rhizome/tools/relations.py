@@ -49,6 +49,9 @@ async def add_relation(
 
     Raises CycleError if the new edge would create a cycle.
     """
+    # TODO: TOCTOU race — the cycle check and insert are not atomic. Concurrent
+    # calls could both pass the check and create a cycle. Mitigate with
+    # with_for_update() or a DB-level constraint.
     if await _would_create_cycle(session, source_entry_id, target_entry_id):
         _logger.warning("Cycle detected: %d → %d", source_entry_id, target_entry_id)
         raise CycleError(

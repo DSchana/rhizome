@@ -38,6 +38,9 @@ async def tag_entry(
     """Tag an entry. Creates the tag if it doesn't already exist."""
     tag_name = tag_name.lower()
 
+    # TODO: TOCTOU race — the get-or-create pattern is not atomic. Concurrent
+    # calls could create duplicate tags. Mitigate with a UNIQUE constraint +
+    # INSERT OR IGNORE.
     # Get or create the tag.
     result = await session.execute(select(Tag).where(Tag.name == tag_name))
     tag = result.scalar_one_or_none()
