@@ -857,12 +857,20 @@ class ChatPane(Widget):
     # ------------------------------------------------------------------
 
     def enter_commit_mode(self) -> None:
-        """Activate commit mode: decorate learn-mode agent messages for selection."""
+        """Activate commit mode: decorate selectable messages for selection."""
 
-        # First, find all the learn-mode agent messages in the current message area.
-        selectable = list(self.query("ChatMessage.agent-message.learn-mode"))
+        # Determine which messages are selectable based on the commit_selectable option.
+        level = self.options.get(Options.CommitSelectable) if self.options else "learn_only"
+        if level == "all_agent":
+            selector = "ChatMessage.agent-message"
+        elif level == "all":
+            selector = "ChatMessage.user-message, ChatMessage.agent-message"
+        else:
+            selector = "ChatMessage.agent-message.learn-mode"
+
+        selectable = list(self.query(selector))
         if not selectable:
-            self.append_message(ChatMessageData(role=Role.SYSTEM, content="No learn-mode messages to commit."))
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content="No selectable messages to commit."))
             return
 
         self._commit_mode = True

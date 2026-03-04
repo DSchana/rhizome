@@ -61,16 +61,16 @@ class ChatMessage(Widget):
         border: round {Colors.REVIEW_AGENT_BORDER};
         margin: 0 2;
     }}
-    ChatMessage.agent-message.--commit-selectable {{
+    ChatMessage.--commit-selectable {{
         border: round {Colors.COMMIT_SELECTABLE};
     }}
-    ChatMessage.agent-message.--commit-cursor {{
+    ChatMessage.--commit-cursor {{
         border: round {Colors.COMMIT_CURSOR};
     }}
-    ChatMessage.agent-message.--commit-selected {{
+    ChatMessage.--commit-selected {{
         border: round {Colors.COMMIT_SELECTED};
     }}
-    ChatMessage.agent-message.--commit-selected.--commit-cursor {{
+    ChatMessage.--commit-selected.--commit-cursor {{
         border: round {Colors.COMMIT_SELECTED_CURSOR};
     }}
     ChatMessage .commit-checkbox {{

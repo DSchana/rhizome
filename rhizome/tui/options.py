@@ -373,6 +373,14 @@ class Options(metaclass=OptionsMeta):
         max=50,
     )
 
+    CommitSelectable = ChoicesOptionSpec(
+        name="commit_selectable",
+        scope=OptionScope.Session,
+        default="learn_only",
+        help="Which messages can be selected in commit mode",
+        choices=["learn_only", "all_agent", "all"],
+    )
+
     ToolUseVisibility = ChoicesOptionSpec(
         name="tool_use_visibility",
         scope=OptionScope.Session,
