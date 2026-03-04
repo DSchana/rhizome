@@ -1,4 +1,4 @@
-"""Agent graph builder: constructs model + compiled LangGraph agent."""
+"""Agent graph builder — provider-agnostic wrapper around create_agent/init_chat_model."""
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
@@ -24,6 +24,10 @@ def build_agent(
     **agent_kwargs,
 ):
     """Build the model + compiled graph.
+
+    This exists primarily to encapsulate provider-specific setup (API keys,
+    middleware selection, model defaults) so that callers can construct agents
+    without caring which provider is in use.
 
     Returns a ``(model, agent)`` tuple where *model* is the underlying
     ``BaseChatModel`` and *agent* is the compiled LangGraph state graph.
