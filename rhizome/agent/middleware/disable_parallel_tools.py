@@ -1,19 +1,15 @@
 """Middleware that disables parallel tool calls.
 
-LangGraph's ``ToolNode`` dispatches multiple tool calls via
-``asyncio.gather``, but the agent shares a single ``AsyncSession``
-across all tools.  SQLAlchemy's async session is **not** safe for
-concurrent use, so parallel tool execution causes
-``InvalidRequestError`` and double-flush races.
-
-This middleware injects ``parallel_tool_calls=False`` into
-``model_settings`` so that ``bind_tools`` tells the provider to emit
-only one tool call per response.
+Each tool creates its own DB session, so parallel execution is safe
+by default.  This middleware exists as a debugging option: it injects
+``parallel_tool_calls=False`` into ``model_settings`` so that
+``bind_tools`` tells the provider to emit only one tool call per
+response.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Callable
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,

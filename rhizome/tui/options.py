@@ -439,7 +439,7 @@ class Options(metaclass=OptionsMeta):
             default="enabled",
             help=(
                 "Allow the LLM to issue multiple tool calls per response. "
-                "Database tools are always serialised via a session lock regardless of this setting."
+                "All tools are designed to run concurrently, so this rarely needs to be disabled."
             ),
         )
 
