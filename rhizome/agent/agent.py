@@ -16,9 +16,11 @@ from rhizome.agent.config import get_api_key, get_model_name
 from rhizome.agent.system_prompt import SYSTEM_PROMPT
 from rhizome.logs import get_logger
 from rhizome.agent.context import AgentContext
-from rhizome.agent.middleware.disable_parallel_tools import DisableParallelToolCallsMiddleware
-from rhizome.agent.middleware.inject_user_settings import InjectUserSettingsMiddleware
-from rhizome.agent.middleware.penultimate_cache import AnthropicPenultimateCacheMiddleware
+from rhizome.agent.middleware import (
+    DisableParallelToolCallsMiddleware,
+    InjectUserSettingsMiddleware,
+    AnthropicPenultimateCacheMiddleware,
+)
 from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.tui.options import Options
