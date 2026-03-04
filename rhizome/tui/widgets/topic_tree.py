@@ -8,7 +8,7 @@ from textual.widgets import Button, Static, Tree
 from textual.widgets._tree import TreeNode
 
 from rhizome.db import Topic
-from rhizome.tools import list_children, list_root_topics
+from rhizome.db.operations import list_children, list_root_topics
 
 
 class _InnerTree(Tree[Topic]):

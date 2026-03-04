@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rhizome.db import get_session_factory, init_db
 from rhizome.db.models import EntryType
-from rhizome.tools import (
+from rhizome.db.operations import (
     CycleError,
     add_relation,
     add_topic_to_curriculum,

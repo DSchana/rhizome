@@ -1,4 +1,4 @@
-"""LangChain @tool wrappers around rhizome.tools.
+"""LangChain @tool wrappers around rhizome.db.operations.
 
 Each tool receives its own DB session via a closure over `session_factory`,
 eliminating the need for a shared session lock. Tools needing TUI access
@@ -10,7 +10,7 @@ from enum import IntEnum
 from langchain.tools import tool
 from langgraph.types import interrupt
 
-from rhizome.tools import (
+from rhizome.db.operations import (
     create_entry,
     create_topic,
     get_entries_by_tag,

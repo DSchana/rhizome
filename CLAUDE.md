@@ -45,7 +45,7 @@ Each directory under `rhizome/` contains a `CONTEXT.md` describing its contents,
   - `RelatedKnowledgeEntries` — directed graph edges between entries (acyclic, enforced via recursive CTE)
 - **engine.py** — Async engine factory (`get_engine`), session factory (`get_session_factory`), and `init_db()` for table creation
 
-### Tool Functions (`rhizome/tools/`)
+### Database Operations (`rhizome/db/operations/`)
 Pure async functions that accept `AsyncSession` as their first argument. Each module maps to a domain:
 - **curricula.py** — CRUD for Curriculum + curriculum-topic membership (`add_topic_to_curriculum`, `remove_topic_from_curriculum`, `reorder_topic_in_curriculum`, `list_topics_in_curriculum`)
 - **topics.py** — CRUD for Topic tree (`create_topic` with optional `parent_id`, `list_root_topics`, `list_children`, `get_subtree`)

@@ -1,4 +1,4 @@
-# rhizome/tools/
+# rhizome/db/operations/
 
 Async tool functions for the agent/TUI to interact with the database. Every public function takes an `AsyncSession` as its first argument and uses keyword-only args for parameters. Functions call `session.flush()` but never `session.commit()` — the caller controls transaction boundaries.
 
@@ -22,4 +22,4 @@ Async tool functions for the agent/TUI to interact with the database. Every publ
 
 ## `__init__.py` exports
 
-All public functions and `CycleError`. Import from `rhizome.tools` directly.
+All public functions and `CycleError`. Import from `rhizome.db.operations` directly.

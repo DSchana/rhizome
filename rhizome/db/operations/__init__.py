@@ -1,4 +1,4 @@
-"""Database tool functions for the curriculum agent."""
+"""Database operations for the curriculum knowledge base."""
 
 from .curricula import (
     add_topic_to_curriculum,
