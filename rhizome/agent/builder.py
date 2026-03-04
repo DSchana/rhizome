@@ -20,6 +20,7 @@ def build_agent(
     tools: list,
     provider: str,
     model_name: str,
+    response_format: type | None = None,
     **agent_kwargs,
 ):
     """Build the model + compiled graph.
@@ -56,6 +57,7 @@ def build_agent(
             tools=tools,
             context_schema=AgentContext,
             middleware=middleware,
+            response_format=response_format,
             checkpointer=InMemorySaver(),
         )
         return model, agent

@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -10,7 +10,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from rhizome.agent.builder import build_agent
 from rhizome.agent.tools import build_tools
+from rhizome.logs import get_logger
 from rhizome.utils.async_map import AsyncMap
+
+_logger = get_logger("agent.subagent")
 
 
 @dataclass
@@ -103,6 +106,57 @@ class Subagent:
             self._conversation_id = None
             return
         self._conversation_id = conversation_id or str(uuid.uuid4())
+
+
+# Type alias — any callable that accepts **kwargs (dataclass, Pydantic model, etc.)
+ResponseSchema = type
+
+
+@dataclass
+class StructuredSubagent(Subagent):
+    """A subagent that parses structured output from the agent's response.
+
+    The agent is expected to return JSON in its final message content.
+    ``postinvoke_hook`` parses this JSON and instantiates ``response_schema``
+    with the parsed data, storing the result in the ``response`` property.
+
+    Parameters
+    ----------
+    response_schema:
+        A callable (dataclass, Pydantic model, etc.) that accepts ``**kwargs``
+        from the parsed JSON.  Required — raises ``ValueError`` if ``None``.
+    """
+
+    response_schema: ResponseSchema | None = None
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.response_schema is None:
+            raise ValueError("StructuredSubagent requires a response_schema")
+        self._response: Any = None
+
+    @property
+    def response(self) -> Any:
+        """The most recent parsed structured response, or ``None`` if parsing failed."""
+        return self._response
+
+    def postinvoke_hook(self, response: AIMessage) -> AIMessage:
+        if self.response_schema is not None:
+            try:
+                # Remark: As of writing (2026-03-04) the langchain documentation says we're supposed to be able to
+                # retrieve the structured output from a "structured_response" key [1], however I haven't been able to
+                # replicate this. Instead, it seems like the structured response, even with ProviderStrategy, is still
+                # returned as just a string in the content field, making it potentially flimsy to decode.
+                #
+                # [1] - https://docs.langchain.com/oss/python/langchain/structured-output
+                #
+                # For now, just make sure to include a strict message about the return format in the system prompt.
+                parsed = json.loads(response.content)
+                self._response = self.response_schema(**parsed)
+            except Exception as e:
+                _logger.warning("Failed to parse structured response: %s", e)
+                self._response = None
+        return response
 
 
 def build_subagent_tools(

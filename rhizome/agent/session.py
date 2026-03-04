@@ -11,11 +11,13 @@ from langgraph.types import Command
 
 from rhizome.agent.builder import build_agent
 from rhizome.agent.context import AgentContext
+from rhizome.agent.subagent import Subagent
 from rhizome.agent.system_prompt import SYSTEM_PROMPT
 from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.logs import get_logger
 from rhizome.tui.options import Options
+from rhizome.utils.async_map import AsyncMap
 
 
 def get_agent_kwargs(options: Options) -> dict[str, Any]:
@@ -67,6 +69,9 @@ class AgentSession:
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         self.on_token_usage_changed = on_token_usage_changed
         self.on_rebuild_agent = on_rebuild_agent
+
+        # Subagent registry — shared across all tools in this session.
+        self._subagents: AsyncMap[str, Subagent] = AsyncMap()
 
     def rebuild_agent(self, provider: str, model_name: str, agent_kwargs: dict[str, Any] | None = None) -> None:
         """Rebuild the agent graph with the given provider and model."""
@@ -349,3 +354,7 @@ class AgentSession:
     @property
     def token_usage(self) -> TokenUsageData:
         return self._token_usage
+
+    @property
+    def subagents(self) -> AsyncMap[str, Subagent]:
+        return self._subagents
