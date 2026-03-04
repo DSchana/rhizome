@@ -25,6 +25,7 @@ from rhizome.db.operations import (
     search_entries,
     tag_entry,
 )
+from rhizome.tui.types import Mode
 
 
 class ToolVisibility(IntEnum):
@@ -217,7 +218,6 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
     @tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
     @tool_visibility(ToolVisibility.LOW)
     async def set_mode_tool(mode: str) -> str:
-        from rhizome.tui.types import Mode
         try:
             target = Mode(mode)
         except ValueError:

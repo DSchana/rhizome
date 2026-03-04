@@ -4,8 +4,8 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Static
 
+from rhizome.agent.utils import TokenUsageData
 from rhizome.tui.colors import Colors
-from rhizome.tui.types import TokenUsageData
 
 def _compact_rgb(s: str) -> str:
     """Strip spaces from RGB strings so Rich can parse them."""

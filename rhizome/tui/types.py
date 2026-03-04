@@ -5,8 +5,6 @@ from enum import Enum
 
 from textual.message import Message
 
-from rhizome.agent.utils import TokenUsageData
-
 
 class Mode(Enum):
     """Top-level application mode."""
