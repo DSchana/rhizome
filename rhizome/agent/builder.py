@@ -1,0 +1,63 @@
+"""Agent graph builder: constructs model + compiled LangGraph agent."""
+
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
+from langgraph.checkpoint.memory import InMemorySaver
+
+from rhizome.agent.config import get_api_key
+from rhizome.agent.context import AgentContext
+from rhizome.agent.middleware import (
+    AnthropicPenultimateCacheMiddleware,
+    DisableParallelToolCallsMiddleware,
+    InjectUserSettingsMiddleware,
+)
+from rhizome.logs import get_logger
+
+_logger = get_logger("agent")
+
+
+def build_agent(
+    tools: list,
+    provider: str,
+    model_name: str,
+    **agent_kwargs,
+):
+    """Build the model + compiled graph.
+
+    Returns a ``(model, agent)`` tuple where *model* is the underlying
+    ``BaseChatModel`` and *agent* is the compiled LangGraph state graph.
+    """
+    _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
+
+    if provider == "anthropic":
+        temperature = agent_kwargs.get("temperature", 0.3)
+        model = init_chat_model(
+            model_name,
+            api_key=get_api_key(),
+            temperature=temperature,
+        )
+
+        middleware = []
+
+        if not agent_kwargs.get("parallel_tool_calling", True):
+            middleware.append(DisableParallelToolCallsMiddleware())
+
+        middleware.append(InjectUserSettingsMiddleware(
+            settings_attribute="user_settings",
+            include_system_prompt=True,
+        ))
+
+        if agent_kwargs.get("prompt_cache", True):
+            ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
+            middleware.append(AnthropicPenultimateCacheMiddleware(ttl=ttl))
+
+        agent = create_agent(
+            model=model,
+            tools=tools,
+            context_schema=AgentContext,
+            middleware=middleware,
+            checkpointer=InMemorySaver(),
+        )
+        return model, agent
+    else:
+        raise ValueError(f"Unsupported provider: {provider}")

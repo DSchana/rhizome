@@ -11,8 +11,3 @@ def get_api_key() -> str:
             "ANTHROPIC_API_KEY is not set. Export it before launching the app."
         )
     return key
-
-
-def get_model_name() -> str:
-    """Read the model name, defaulting to claude-sonnet-4-20250514."""
-    return os.environ.get("CURRICULUM_AGENT_MODEL", "claude-sonnet-4-20250514")

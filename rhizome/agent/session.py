@@ -5,81 +5,33 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from rhizome.agent.config import get_api_key, get_model_name
-from rhizome.agent.system_prompt import SYSTEM_PROMPT
-from rhizome.logs import get_logger
+from rhizome.agent.builder import build_agent
 from rhizome.agent.context import AgentContext
-from rhizome.agent.middleware import (
-    DisableParallelToolCallsMiddleware,
-    InjectUserSettingsMiddleware,
-    AnthropicPenultimateCacheMiddleware,
-)
+from rhizome.agent.system_prompt import SYSTEM_PROMPT
 from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
+from rhizome.logs import get_logger
 from rhizome.tui.options import Options
 
 
 def get_agent_kwargs(options: Options) -> dict[str, Any]:
     """Build provider-specific kwargs from the current options."""
     provider = options.get(Options.Agent.Provider)
+
     kwargs: dict[str, Any] = {}
     kwargs["parallel_tool_calling"] = options.get(Options.Agent.ParallelToolCalling) == "enabled"
     kwargs["temperature"] = options.get(Options.Agent.Temperature)
     kwargs["answer_verbosity"] = options.get(Options.Agent.AnswerVerbosity)
+
     if provider == "anthropic":
         kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
         kwargs["prompt_cache_ttl"] = options.get(Options.Agent.Anthropic.PromptCacheTTL)
+
     return kwargs
-
-
-_logger = get_logger("agent")
-
-
-def _build_agent(tools: list, provider: str = "anthropic", model_name: str | None = None, **agent_kwargs):
-    """Build the model + compiled graph."""
-    _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
-    if provider == "anthropic":
-        if model_name is None:
-            model_name = get_model_name()
-
-        temperature = agent_kwargs.get("temperature", 0.3)
-        model = init_chat_model(
-            model_name,
-            api_key=get_api_key(),
-            temperature=temperature,
-        )
-
-        middleware = []
-
-        if not agent_kwargs.get("parallel_tool_calling", True):
-            middleware.append(DisableParallelToolCallsMiddleware())
-
-        middleware.append(InjectUserSettingsMiddleware(
-            settings_attribute="user_settings",
-            include_system_prompt=True,
-        ))
-
-        if agent_kwargs.get("prompt_cache", True):
-            ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
-            middleware.append(AnthropicPenultimateCacheMiddleware(ttl=ttl))
-
-        agent = create_agent(
-            model=model,
-            tools=tools,
-            context_schema=AgentContext,
-            middleware=middleware,
-            checkpointer=InMemorySaver(),
-        )
-        return model, agent
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
 
 
 class AgentSession:
@@ -89,7 +41,6 @@ class AgentSession:
             self,
             session_factory,
             *,
-            app=None,
             chat_pane=None,
             provider: str = "anthropic",
             model_name: str | None = None,
@@ -105,7 +56,7 @@ class AgentSession:
 
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
-        self._model, self._agent = _build_agent(self._tools, self._provider, self._model_name, **self._agent_kwargs)
+        self._model, self._agent = build_agent(self._tools, self._provider, self._model_name, **self._agent_kwargs)
 
         # Initialize message history with the system prompt, and set up token usage tracking.
         self._session_logger = get_logger("agent.session")
@@ -125,7 +76,7 @@ class AgentSession:
         self._model_name = model_name
         if agent_kwargs is not None:
             self._agent_kwargs = agent_kwargs
-        self._model, self._agent = _build_agent(self._tools, provider, model_name, **self._agent_kwargs)
+        self._model, self._agent = build_agent(self._tools, provider, model_name, **self._agent_kwargs)
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         if self.on_rebuild_agent is not None:
             self.on_rebuild_agent(old_model, model_name)

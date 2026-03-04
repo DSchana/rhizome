@@ -24,7 +24,7 @@ from textual.widgets import Static, TabbedContent
 from textual.worker import Worker
 
 from rhizome.agent import AgentSession
-from rhizome.agent.agent import get_agent_kwargs
+from rhizome.agent.session import get_agent_kwargs
 from rhizome.config import get_log_dir
 from rhizome.db import Topic
 from rhizome.tui.commands import CommandRegistry, parse_input
@@ -158,7 +158,6 @@ class ChatPane(Widget):
         agent_kwargs = get_agent_kwargs(self.options)
         self._agent_session = AgentSession(
             self.app.session_factory,  # type: ignore[attr-defined]
-            app=self.app,
             chat_pane=self,
             provider=provider,
             model_name=model_name,
