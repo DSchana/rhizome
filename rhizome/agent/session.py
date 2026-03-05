@@ -1,4 +1,4 @@
-"""Agent session: owns the LangChain conversation history and agent graph."""
+"""Agent session: owns the LangGraph agent and message queue."""
 
 import asyncio
 import uuid
@@ -38,7 +38,13 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
 
 
 class AgentSession:
-    """Encapsulates a single conversation's agent graph and message history."""
+    """Encapsulates a single conversation's agent graph and message queue.
+
+    Messages are queued via ``add_human_message`` / ``add_system_notification``
+    and drained into the graph on each ``stream()`` call.  The graph's
+    checkpointer (``InMemorySaver``) maintains the full conversation history;
+    this class never passes the full history itself.
+    """
 
     def __init__(
             self,
@@ -70,11 +76,14 @@ class AgentSession:
 
         self._model, self._agent = build_agent(self._tools, self._provider, self._model_name, **self._agent_kwargs)
 
-        # Initialize message history with the system prompt, and set up token usage tracking.
         self._session_logger = get_logger("agent.session")
         self._session_logger.info("Session created (provider=%s, model=%s)", provider, model_name)
 
-        self._history: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
+        # Message queue: messages added here are drained into the graph on the
+        # next stream() call.  The system prompt is seeded as the first message
+        # so the graph's first invocation receives it.
+        self._message_queue: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
+
         self._token_usage = TokenUsageData()
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         self.on_token_usage_changed = on_token_usage_changed
@@ -107,12 +116,27 @@ class AgentSession:
             self.rebuild_agent(provider, model_name, agent_kwargs=new_kwargs)
 
     def add_human_message(self, text: str) -> None:
-        self._history.append(HumanMessage(content=text))
+        self._message_queue.append(HumanMessage(content=text))
 
     def add_system_notification(self, text: str) -> None:
         # Remark: certain providers only allow a single SystemPrompt at the beginning of the conversation, so we represent these
         # as human messages with a [System] prefix.
-        self._history.append(HumanMessage(content=f"[System] {text}"))
+        self._message_queue.append(HumanMessage(content=f"[System] {text}"))
+
+    def _drain_queue(self) -> list[BaseMessage]:
+        """Return all queued messages and clear the queue."""
+        messages = list(self._message_queue)
+        self._message_queue.clear()
+        return messages
+
+    def _get_graph_messages(self) -> list[BaseMessage]:
+        """Read the full message history from the graph's checkpointed state."""
+        config = {"configurable": {"thread_id": self.thread_id}}
+        try:
+            state = self._agent.get_state(config)
+            return list(state.values.get("messages", []))
+        except Exception:
+            return []
 
     async def stream(
         self,
@@ -140,7 +164,12 @@ class AgentSession:
         """
         self._session_logger.debug("Stream started (mode=%s, topic=%s)", mode, topic_name)
         config = {"configurable": {"thread_id": self.thread_id}}
-        next_input: dict | Command = {"messages": self._history}
+
+        # Drain queued messages — only these (not the full history) are sent to
+        # the graph.  The checkpointer restores previous state and the
+        # add_messages reducer appends these new messages.
+        queued = self._drain_queue()
+        next_input: dict | Command = {"messages": queued}
 
         try:
             user_settings = {
@@ -160,25 +189,6 @@ class AgentSession:
                     kind, payload = update
 
                     if kind == "updates":
-
-                        # First, inspect the payload for any completed messages and
-                        # append them to the internal message history.
-                        for node_output in payload.values():
-
-                            # Remark: when an interrupt occurs, that registers as a node_output consisting
-                            # of a tuple (Interrupt,). I don't think there's anything we need to do
-                            # with that though?
-                            if not isinstance(node_output, dict):
-                                continue
-
-                            for msg in node_output.get("messages", []):
-                                if not isinstance(msg, BaseMessage):
-                                    continue
-                                self._history.append(msg)
-
-                                # Notify token usage to recompute token breakdowns into
-                                # system/tool tokens.
-                                self._notify_token_usage()
 
                         # Check for interrupt
                         if (
@@ -251,7 +261,7 @@ class AgentSession:
     def _extract_usage_metadata(self, chunk):
         if not (hasattr(chunk, "usage_metadata") and chunk.usage_metadata):
             return
-        
+
         if chunk.usage_metadata.get("total_tokens"):
             self._token_usage.total_tokens = chunk.usage_metadata["total_tokens"]
 
@@ -275,21 +285,22 @@ class AgentSession:
         """Inject synthetic ToolMessages for any tool_use blocks without results.
 
         When a stream is interrupted mid-tool-call, the AIMessage with
-        ``tool_use`` content may already be in the history but the
+        ``tool_use`` content may already be in the graph state but the
         corresponding ``ToolMessage`` was never appended.  The Anthropic
         API rejects conversations where a ``tool_use`` has no matching
-        ``tool_result``, so we scan backwards and patch the gap.
+        ``tool_result``, so we scan the graph state and queue patches.
         """
+        graph_messages = self._get_graph_messages()
+
         # Collect tool_call IDs that already have a ToolMessage.
         answered: set[str] = set()
-        for msg in self._history:
+        for msg in graph_messages:
             if isinstance(msg, ToolMessage) and msg.tool_call_id:
                 answered.add(msg.tool_call_id)
 
         # Walk backwards to find the most recent AIMessage with tool calls.
-        # In normal operation this is the last (or second-to-last) message.
         orphaned_ids: list[str] = []
-        for msg in reversed(self._history):
+        for msg in reversed(graph_messages):
             if isinstance(msg, AIMessage) and msg.tool_calls:
                 for tc in msg.tool_calls:
                     if tc["id"] not in answered:
@@ -304,7 +315,7 @@ class AgentSession:
             len(orphaned_ids), orphaned_ids,
         )
         for tc_id in orphaned_ids:
-            self._history.append(ToolMessage(
+            self._message_queue.append(ToolMessage(
                 content=message,
                 tool_call_id=tc_id,
             ))
@@ -315,9 +326,11 @@ class AgentSession:
             self.on_token_usage_changed()
 
     def _compute_overhead_tokens(self) -> None:
-        """Estimate overhead tokens (system prompt + tool messages) and update token usage."""
-        system_msgs = [m for m in self._history if self._is_system_message(m)]
-        tool_msgs = [m for m in self._history if self._is_tool_message(m)]
+        """Estimate overhead tokens (system prompt + tool messages) from graph state."""
+        graph_messages = self._get_graph_messages()
+
+        system_msgs = [m for m in graph_messages if self._is_system_message(m)]
+        tool_msgs = [m for m in graph_messages if self._is_tool_message(m)]
 
         system_overhead = count_tokens_approximately(system_msgs)
         tool_overhead = count_tokens_approximately(tool_msgs)
@@ -328,7 +341,7 @@ class AgentSession:
     def _is_system_message(self, msg) -> bool:
         if isinstance(msg, SystemMessage):
             return True
-        
+
         if isinstance(msg, HumanMessage):
             content = msg.content
             if isinstance(content, str):
@@ -338,7 +351,7 @@ class AgentSession:
                 if len(content) != 1:
                     # TODO: might need to refactor the way we grab system messages for token counts
                     # to account for this?
-                    return False 
+                    return False
                 content = content[0]
                 if isinstance(content, str) and content.startswith("[System]"):
                     return True
@@ -348,7 +361,7 @@ class AgentSession:
                     content.get("text", "").startswith("[System]")
                 ):
                     return True
-            
+
         return False
 
     def _is_tool_message(self, msg) -> bool:
@@ -359,8 +372,9 @@ class AgentSession:
         return self._model
 
     @property
-    def history(self) -> list[BaseMessage]:
-        return self._history
+    def message_history(self) -> list[BaseMessage]:
+        """Full conversation history from the graph's checkpointed state."""
+        return self._get_graph_messages()
 
     @property
     def token_usage(self) -> TokenUsageData:
