@@ -9,24 +9,30 @@
     - seems like it might just take a few back-and-forths to kick in? keep an eye on this though
 - Bug: ctrl+q while an interrupt widget is open seems to crash the program ("no nodes match msg-collapse" error?)
 - Bug: ctrl+l input while focused on a tab seems to get eaten - can't return to the chat input area
+- Bug: ctrl+pagedown _into_ a tab where an interrupt is occurring sometimes doesn't work (flashes for a frame, then goes back)
+    - Or might have to do something with the type of pane you're starting in - logs pane being fine, but chat pane no?
 
+- TO INVESTIGATE:
+    - The commit subagent seems a little unreliable, specifically when the structured response schema is a dataclass and not a pydantic model.
+    - When just dataclasses, the agent repeatedly responded with '{"entries": []}'
+
+- agent should say at least a little something when it begins a conversation with a subagent, so the user isn't left hanging
 - agent needs a "select_topic" tool
-- commands that need to import the MainScreen object should just use message passing
 - AgentSession.stream should probably just be called .respond now, since it doesn't yield anything anymore
-- _patch_orphaned_tool_calls needs to occur on _all_ errors
-    - eliminates the need for the double try/except scope in stream
 - get_entry_details needs to accept multiple IDs
 - agent seems hesitant to rename the tab - e.g. "I want to learn about the gcloud CLI" doesn't automatically trigger a rename
+- agent needs to be able to access webpages
+    - maybe add a "research_eagerness" setting?
+- a note on the auto-commit tool
+    - should be used cautiously to avoid committing hallucinations
+    - perhaps roll in _batches_ - use user guidance from the conversation to determine what's true and what's not, only commit with a certain confidence?
+- commit subagent tools that modify the selectables also modify the payload, forcing a rewrite of the conversation
+- commit payload should contain the user message directly above by default? Otherwise the subagent might struggle with context
 
+
+- CSS issues now with the commit-selected borders
+- command input shouldn't necessarily be blocked while the agent is thinking (e.g. /logs - no reason to wait)
 - interrupts don't scroll message area to the end
-
-- move the /tools submodule -> /db/interface
-
-- commit_selectable needs to be configurable by the user:
-    - learn_only
-    - agent_only
-    - all
-    - This way if the user desires they can add other agent messages or their own messages to the commit payload - no need to restrict them here 
 
 - /clear should reset the status bar as well (refresh token usage, topic, mode)
     - need to think this through
