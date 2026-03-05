@@ -90,6 +90,8 @@ class Subagent:
             self._history = messages
 
         messages = self.preinvoke_hook(messages)
+
+        _logger.debug("Invoking subagent with messages:\n\n%s", "\n\n".join(m.content for m in messages))
         response = await self.agent.ainvoke({"messages": messages}, config=self.config)
 
         ai_message = response["messages"][-1]
@@ -133,12 +135,12 @@ class StructuredSubagent(Subagent):
         super().__post_init__()
         if self.response_schema is None:
             raise ValueError("StructuredSubagent requires a response_schema")
-        self._response: Any = None
+        self._structured_response: Any = None
 
     @property
-    def response(self) -> Any:
+    def structured_response(self) -> Any:
         """The most recent parsed structured response, or ``None`` if parsing failed."""
-        return self._response
+        return self._structured_response
 
     def postinvoke_hook(self, response: AIMessage) -> AIMessage:
         if self.response_schema is not None:
@@ -151,11 +153,29 @@ class StructuredSubagent(Subagent):
                 # [1] - https://docs.langchain.com/oss/python/langchain/structured-output
                 #
                 # For now, just make sure to include a strict message about the return format in the system prompt.
-                parsed = json.loads(response.content)
-                self._response = self.response_schema(**parsed)
+
+                # Some more failsafes for different return formats, thanks LangChain...
+                content = response.content
+                if isinstance(content, list):
+                    content = content[-1]
+                
+                if isinstance(content, dict):
+                    if content.get("type") == "text":
+                        parsed = json.loads(content["text"])
+                    else:
+                        parsed = content
+                elif isinstance(content, str):
+                    parsed = json.loads(content)
+                else:
+                    raise ValueError(f"Unexpected response content type: {type(content)}")
+                self._structured_response = self.response_schema(**parsed)
             except Exception as e:
                 _logger.warning("Failed to parse structured response: %s", e)
-                self._response = None
+                _logger.warning(
+                    "Full response:\n\n" +
+                    response.model_dump_json(indent=2)
+                )
+                self._structured_response = None
         return response
 
 

@@ -10,6 +10,7 @@ from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command
 
 from rhizome.agent.builder import build_agent
+from rhizome.agent.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
 from rhizome.agent.context import AgentContext
 from rhizome.agent.subagent import Subagent
 from rhizome.agent.system_prompt import SYSTEM_PROMPT
@@ -58,6 +59,15 @@ class AgentSession:
 
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
+
+        # Build the commit subagent and add its tools to the root agent's tool list.
+        commit_subagent = build_commit_subagent(
+            session_factory, chat_pane, **dict(self._agent_kwargs)
+        )
+        self._tools.extend(
+            build_commit_subagent_tools(session_factory, chat_pane, commit_subagent)
+        )
+
         self._model, self._agent = build_agent(self._tools, self._provider, self._model_name, **self._agent_kwargs)
 
         # Initialize message history with the system prompt, and set up token usage tracking.
@@ -72,6 +82,7 @@ class AgentSession:
 
         # Subagent registry — shared across all tools in this session.
         self._subagents: AsyncMap[str, Subagent] = AsyncMap()
+        self._subagents._data[COMMIT] = commit_subagent
 
     def rebuild_agent(self, provider: str, model_name: str, agent_kwargs: dict[str, Any] | None = None) -> None:
         """Rebuild the agent graph with the given provider and model."""

@@ -21,6 +21,7 @@ def build_agent(
     provider: str,
     model_name: str,
     response_format: type | None = None,
+    skip_middleware: list[str] | None = None,
     **agent_kwargs,
 ):
     """Build the model + compiled graph.
@@ -42,15 +43,17 @@ def build_agent(
             temperature=temperature,
         )
 
+        skip = set(skip_middleware or [])
         middleware = []
 
         if not agent_kwargs.get("parallel_tool_calling", True):
             middleware.append(DisableParallelToolCallsMiddleware())
 
-        middleware.append(InjectUserSettingsMiddleware(
-            settings_attribute="user_settings",
-            include_system_prompt=True,
-        ))
+        if "InjectUserSettingsMiddleware" not in skip:
+            middleware.append(InjectUserSettingsMiddleware(
+                settings_attribute="user_settings",
+                include_system_prompt=True,
+            ))
 
         if agent_kwargs.get("prompt_cache", True):
             ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
