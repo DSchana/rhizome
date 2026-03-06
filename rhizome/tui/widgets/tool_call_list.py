@@ -1,6 +1,8 @@
-"""ToolCallList — renders a collapsible tree of tool call names with box-drawing characters."""
+"""ToolCallList — renders a collapsible tree of tool calls with box-drawing characters."""
 
 from __future__ import annotations
+
+from typing import Any
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -11,7 +13,7 @@ from rhizome.tui.colors import Colors
 
 
 class ToolCallList(Widget, can_focus=True):
-    """Displays an ordered list of tool call names using Unicode box-drawing."""
+    """Displays an ordered list of tool calls with args using Unicode box-drawing."""
 
     BINDINGS = [
         Binding("enter", "toggle_collapse", "Toggle collapse", show=False),
@@ -40,7 +42,7 @@ class ToolCallList(Widget, can_focus=True):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._tools: list[str] = []
+        self._tools: list[tuple[str, dict[str, Any]]] = []
         self._collapsed = False
 
     def compose(self) -> ComposeResult:
@@ -59,16 +61,44 @@ class ToolCallList(Widget, can_focus=True):
     def _update_title(self) -> None:
         self.query_one("#tool-title", Static).update(self._title_text())
 
-    def add_tool(self, name: str) -> None:
-        """Append a tool name and re-render."""
-        self._tools.append(name)
+    def _max_arg_width(self) -> int:
+        """30% of terminal width, minimum 20 chars."""
+        try:
+            terminal_width = self.app.size.width
+        except Exception:
+            terminal_width = 80
+        return max(int(terminal_width * 0.3), 20)
+
+    def add_tool(self, name: str, args: dict[str, Any] | None = None) -> None:
+        """Append a tool call and re-render."""
+        self._tools.append((name, args or {}))
         self._render_list()
+
+    def _format_arg_value(self, value: Any, max_width: int) -> str:
+        """Format a single arg value, clipping if too long."""
+        text = repr(value)
+        if len(text) > max_width:
+            return text[:max_width] + "... (clipped)"
+        return text
 
     def _render_list(self) -> None:
         lines = []
-        for i, name in enumerate(self._tools):
-            prefix = "└── " if i == len(self._tools) - 1 else "├── "
-            lines.append(f"{prefix}{name}")
+        max_width = self._max_arg_width()
+        for i, (name, args) in enumerate(self._tools):
+            is_last_tool = i == len(self._tools) - 1
+            tool_prefix = "└── " if is_last_tool else "├── "
+            lines.append(f"{tool_prefix}{name}")
+
+            if args:
+                arg_items = list(args.items())
+                for j, (arg_name, arg_value) in enumerate(arg_items):
+                    is_last_arg = j == len(arg_items) - 1
+                    # Use continuation line from parent branch
+                    branch = "    " if is_last_tool else "│   "
+                    arg_prefix = "└── " if is_last_arg else "├── "
+                    formatted = self._format_arg_value(arg_value, max_width)
+                    lines.append(f"{branch}{arg_prefix}{arg_name}={formatted}")
+
         self.query_one("#tool-content", Static).update("\n".join(lines))
 
     def action_toggle_collapse(self) -> None:

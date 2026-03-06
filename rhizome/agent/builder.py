@@ -10,6 +10,7 @@ from rhizome.agent.middleware import (
     AnthropicPenultimateCacheMiddleware,
     DisableParallelToolCallsMiddleware,
     InjectUserSettingsMiddleware,
+    LogToolCallsMiddleware,
 )
 from rhizome.logs import get_logger
 
@@ -45,6 +46,8 @@ def build_agent(
 
         skip = set(skip_middleware or [])
         middleware = []
+
+        middleware.append(LogToolCallsMiddleware())
 
         if not agent_kwargs.get("parallel_tool_calling", True):
             middleware.append(DisableParallelToolCallsMiddleware())

@@ -11,7 +11,10 @@ from textual.widgets.markdown import Markdown, MarkdownStream
 from langchain.messages import AIMessageChunk, ToolMessage
 
 from rhizome.agent.tools import TOOL_VISIBILITY, ToolVisibility
+from rhizome.logs import get_logger
 from rhizome.tui.types import Mode, Role
+
+_logger = get_logger("tui.agent_message_harness")
 from rhizome.tui.widgets.interrupt_choices import InterruptChoices
 from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
@@ -155,6 +158,7 @@ class AgentMessageHarness(Widget):
                     continue
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
+                        _logger.debug("tool_use block: %r", block)
                         name = block.get("name")
                         if name:
                             level = TOOL_VISIBILITY.get(name, ToolVisibility.DEFAULT)
@@ -169,7 +173,14 @@ class AgentMessageHarness(Widget):
                                 await self.mount(tool_list)
                             last = self._segments[-1]
                             assert isinstance(last, ToolCallList)
-                            last.add_tool(name)
+                            args = block.get("input") or {}
+                            if not args and block.get("partial_json"):
+                                import json
+                                try:
+                                    args = json.loads(block["partial_json"])
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            last.add_tool(name, args)
 
     async def _close_active_stream(self) -> None:
         """Stop the active MarkdownStream if one is open."""
