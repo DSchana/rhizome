@@ -15,6 +15,7 @@ from textual.widgets import Button, Input, Label, Rule, Select, Static
 from rhizome.tui.options import (
     ChoicesOptionSpec,
     ConditionalChoicesOptionSpec,
+    ConditionalIntRangeOptionSpec,
     IntRangeOptionSpec,
     OptionNamespaceNode,
     OptionScope,
@@ -38,6 +39,12 @@ WIDGET_BUILDERS: dict[type[OptionSpec], Any] = {
     ),
     IntRangeOptionSpec: lambda spec, val, wid, **kw: Input(
         str(val), placeholder=f"{spec.min}-{spec.max}", id=wid, type="integer"
+    ),
+    ConditionalIntRangeOptionSpec: lambda spec, val, wid, **kw: Input(
+        str(val),
+        placeholder="{}-{}".format(*spec.range_for(kw["condition_value"])) if "condition_value" in kw else "",
+        id=wid,
+        type="integer",
     ),
     ToggleOptionSpec: lambda spec, val, wid, **kw: Select(
         [(str(c), c) for c in spec.choices], value=val, id=wid
@@ -63,7 +70,7 @@ def _build_widget(
     builder = WIDGET_BUILDERS.get(type(spec))
     if builder is not None:
         kwargs: dict[str, Any] = {}
-        if isinstance(spec, ConditionalChoicesOptionSpec) and options is not None:
+        if isinstance(spec, (ConditionalChoicesOptionSpec, ConditionalIntRangeOptionSpec)) and options is not None:
             kwargs["condition_value"] = options.get(spec.condition)
         return builder(spec, value, widget_id, **kwargs)
     return Input(str(value), id=widget_id)
@@ -220,26 +227,41 @@ class OptionsEditor(Widget):
     def on_mount(self) -> None:
         """Subscribe to condition specs so dependent widgets update in-place."""
         for spec in Options.spec():
-            if not isinstance(spec, ConditionalChoicesOptionSpec):
-                continue
+            if isinstance(spec, ConditionalChoicesOptionSpec):
 
-            async def _update_dependent(
-                old: Any, new: Any, dep: ConditionalChoicesOptionSpec = spec
-            ) -> None:
-                wid = _sanitize_id(dep.resolved_name)
-                try:
-                    select = self.query_one(f"#{wid}", Select)
-                except Exception:
-                    return
-                choices = dep.choices_for(new)
-                select.set_options([(str(c), c) for c in choices])
-                new_val = self._options.get(dep)
-                if new_val in choices:
-                    select.value = new_val
-                else:
-                    select.value = choices[0] if choices else Select.BLANK
+                async def _update_dependent(
+                    old: Any, new: Any, dep: ConditionalChoicesOptionSpec = spec
+                ) -> None:
+                    wid = _sanitize_id(dep.resolved_name)
+                    try:
+                        select = self.query_one(f"#{wid}", Select)
+                    except Exception:
+                        return
+                    choices = dep.choices_for(new)
+                    select.set_options([(str(c), c) for c in choices])
+                    new_val = self._options.get(dep)
+                    if new_val in choices:
+                        select.value = new_val
+                    else:
+                        select.value = choices[0] if choices else Select.BLANK
 
-            self._options.subscribe(spec.condition, _update_dependent)
+                self._options.subscribe(spec.condition, _update_dependent)
+
+            elif isinstance(spec, ConditionalIntRangeOptionSpec):
+
+                async def _update_range_dependent(
+                    old: Any, new: Any, dep: ConditionalIntRangeOptionSpec = spec
+                ) -> None:
+                    wid = _sanitize_id(dep.resolved_name)
+                    try:
+                        inp = self.query_one(f"#{wid}", Input)
+                    except Exception:
+                        return
+                    lo, hi = dep.range_for(new)
+                    inp.placeholder = f"{lo}-{hi}"
+                    inp.value = str(self._options.get(dep))
+
+                self._options.subscribe(spec.condition, _update_range_dependent)
 
     def _spec_for_widget(self, widget_id: str | None) -> OptionSpec | None:
         """Look up the OptionSpec associated with a widget, if any."""
@@ -290,7 +312,7 @@ class OptionsEditor(Widget):
     def _flush_inputs(self) -> None:
         """Apply any pending Input values that haven't been submitted via Enter."""
         for widget_id, spec in self._widget_specs.items():
-            if not isinstance(spec, IntRangeOptionSpec):
+            if not isinstance(spec, (IntRangeOptionSpec, ConditionalIntRangeOptionSpec)):
                 continue
             try:
                 inp = self.query_one(f"#{widget_id}", Input)

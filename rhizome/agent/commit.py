@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from langchain.agents.structured_output import ProviderStrategy
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from langchain.tools import tool
 from langgraph.types import interrupt
 
@@ -66,6 +66,13 @@ class CommitProposalResponseSchema(BaseModel):
     entries: list[KnowledgeEntryProposalSchema]
 
 
+class _ProposalRef:
+    """Mutable container for the current commit proposal, shared across commit tools."""
+    __slots__ = ("value",)
+    def __init__(self) -> None:
+        self.value: CommitProposalResponseSchema | None = None
+
+
 def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> StructuredSubagent:
     """Build the commit StructuredSubagent with filtered DB tools."""
     tools = build_tools(session_factory, chat_pane=chat_pane, included=ToolGroups.DATABASE)
@@ -95,15 +102,35 @@ def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Structu
 def build_commit_subagent_tools(session_factory, chat_pane, subagent: StructuredSubagent) -> list:
     """Build the tools the root agent sees for the commit workflow.
 
-    These tools allow the root agent to invoke the commit subagent,
-    present proposals to the user, and write approved entries to the DB.
+    These tools allow the root agent to invoke the commit subagent or
+    propose entries directly, present proposals to the user, and write
+    approved entries to the DB.  All tools share a ``_ProposalRef`` so
+    that ``present_commit_proposal`` and ``accept_commit_proposal`` work
+    identically regardless of which path produced the proposal.
     """
     assert isinstance(subagent, StructuredSubagent), "Expected a StructuredSubagent"
     assert subagent.response_schema is CommitProposalResponseSchema
 
+    proposal = _ProposalRef()
+
+    @tool("inspect_commit_payload", description=(
+        "Return the selected conversation messages that the user chose to commit. "
+        "Call this before create_commit_proposal so you can see the message contents "
+        "and propose appropriate knowledge entries."
+    ))
+    @tool_visibility(ToolVisibility.LOW)
+    async def inspect_commit_payload() -> str:
+        if chat_pane is None:
+            return json.dumps({"error": "Chat pane not available."})
+        payload = chat_pane._commit.commit_payload
+        if not payload:
+            return json.dumps({"error": "No commit payload available."})
+        return json.dumps({"messages": payload}, indent=2)
+
     @tool("invoke_commit_subagent", description=(
         "Send selected conversation messages to the commit subagent for knowledge extraction. "
         "The subagent will analyze the messages and propose structured knowledge entries. "
+        "Use this for larger or more complex selections that benefit from dedicated processing. "
         "Pass 'context' to include relevant parent conversation context (e.g. the current topic). "
         "Pass 'conversation_id' from a previous response to continue refining the proposal. "
         "Additional instructions are typically only necessary in follow-ups."
@@ -142,6 +169,7 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
             output["conversation_id"] = conv_id
 
         if subagent.structured_response is not None:
+            proposal.value = subagent.structured_response
             output["proposal"] = {
                 "entries": [
                     {
@@ -150,7 +178,7 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
                         "entry_type": e.entry_type,
                         "topic_id": e.topic_id,
                     }
-                    for e in subagent.structured_response.entries
+                    for e in proposal.value.entries
                 ]
             }
         else:
@@ -159,25 +187,55 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
 
         return json.dumps(output, indent=2, default=str)
 
+    @tool("create_commit_proposal", description=(
+        "Directly propose knowledge entries for commit without invoking the commit subagent. "
+        "Use this when the selected messages are short and simple enough that you can propose "
+        "entries yourself. Call inspect_commit_payload first to see the selected messages. "
+        "Each entry must have: title (str), content (str), entry_type ('fact'|'exposition'|'overview'), "
+        "and topic_id (int)."
+    ))
+    @tool_visibility(ToolVisibility.LOW)
+    async def create_commit_proposal(entries: list[dict]) -> str:
+        if not entries:
+            return json.dumps({"error": "No entries provided."})
+
+        try:
+            parsed = [KnowledgeEntryProposalSchema(**e) for e in entries]
+        except (ValidationError, TypeError) as exc:
+            return json.dumps({"error": f"Validation failed: {exc}"})
+
+        proposal.value = CommitProposalResponseSchema(entries=parsed)
+        return json.dumps({
+            "proposal": {
+                "entries": [
+                    {
+                        "title": e.title,
+                        "content": e.content,
+                        "entry_type": e.entry_type,
+                        "topic_id": e.topic_id,
+                    }
+                    for e in proposal.value.entries
+                ]
+            }
+        }, indent=2)
 
     @tool("present_commit_proposal", description=(
-        "Display the commit subagent's current proposal to the user for review. "
+        "Display the current commit proposal to the user for review. "
         "The user can choose to accept, reject, or request revisions."
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def present_commit_proposal() -> str:
-        if subagent.structured_response is None:
-            return json.dumps({"error": "No proposal available. Invoke the commit subagent first."})
+        if proposal.value is None:
+            return json.dumps({"error": "No proposal available. Create or invoke a proposal first."})
 
         lines = []
-        for i, e in enumerate(subagent.structured_response.entries, 1):
+        for i, e in enumerate(proposal.value.entries, 1):
             lines.append(f"{i}. **{e.title}** ({e.entry_type}, topic {e.topic_id})")
             lines.append(f"   {e.content[:120]}{'...' if len(e.content) > 120 else ''}")
 
         message = "## Proposed Knowledge Entries\n\n" + "\n".join(lines)
         result = interrupt({"message": message, "options": ["Approve All", "Edit", "Cancel"]})
         return f"User selected: {result}"
-
 
     @tool("accept_commit_proposal", description=(
         "Write the accepted commit proposal to the database. "
@@ -187,12 +245,12 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
     async def accept_commit_proposal() -> str:
         if chat_pane is None:
             return json.dumps({"error": "Chat pane not available for accessing selected messages."})
-        if subagent.structured_response is None:
+        if proposal.value is None:
             return json.dumps({"error": "No proposal to accept."})
 
         created = []
         async with session_factory() as session:
-            for e in subagent.structured_response.entries:
+            for e in proposal.value.entries:
                 entry_type = EntryType(e.entry_type) if e.entry_type else None
                 entry = await create_entry(
                     session,
@@ -204,12 +262,15 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
                 created.append({"id": entry.id, "title": entry.title})
             await session.commit()
 
+        proposal.value = None
         chat_pane.post_message(CommitApproved(count=len(created)))
 
         return json.dumps({"created": created}, indent=2)
 
     return [
-        invoke_commit_subagent, 
-        present_commit_proposal, 
-        accept_commit_proposal
+        inspect_commit_payload,
+        invoke_commit_subagent,
+        create_commit_proposal,
+        present_commit_proposal,
+        accept_commit_proposal,
     ]

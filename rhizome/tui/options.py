@@ -214,6 +214,66 @@ class FloatRangeOptionSpec(OptionSpec):
         return f"{self.help} ({self.min}-{self.max})"
 
 
+class ConditionalIntRangeOptionSpec(OptionSpec):
+    """Integer range option whose bounds depend on the current value of another option."""
+
+    def __init__(
+        self,
+        name: str,
+        scope: OptionScope,
+        help: str,
+        condition: OptionSpec,
+        ranges: dict[Any, tuple[int, int]],
+        defaults: dict[Any, int],
+    ) -> None:
+        self.condition = condition
+        self._ranges = ranges
+        self.defaults = defaults
+        default = defaults[condition.default]
+        super().__init__(name, scope, default, help)
+
+    def validate(self, value: Any, *, condition_value: Any = None) -> int:
+        """Validate *value* against the range for *condition_value*.
+
+        When *condition_value* is ``None`` (e.g. during JSONC load), accept any
+        value within the union of all branches' ranges.
+        """
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Expected integer, got {value!r}")
+
+        if condition_value is None:
+            all_min = min(r[0] for r in self._ranges.values())
+            all_max = max(r[1] for r in self._ranges.values())
+            if v < all_min or v > all_max:
+                raise ValueError(f"Must be between {all_min} and {all_max}")
+        else:
+            rng = self._ranges.get(condition_value)
+            if rng is None:
+                raise ValueError(f"Unknown condition value: {condition_value!r}")
+            if v < rng[0] or v > rng[1]:
+                raise ValueError(f"Must be between {rng[0]} and {rng[1]}")
+        return v
+
+    def range_for(self, condition_value: Any) -> tuple[int, int]:
+        """Return the ``(min, max)`` range for a given condition value."""
+        return self._ranges[condition_value]
+
+    def default_for(self, condition_value: Any) -> int:
+        """Return the default for a given condition value."""
+        return self.defaults[condition_value]
+
+    def from_string(self, raw: str) -> int:
+        return self.validate(raw.strip())
+
+    def jsonc_comment(self) -> str:
+        lines = [self.help]
+        for cond, (lo, hi) in self._ranges.items():
+            lines.append(f"// {cond}: {lo}-{hi}")
+        return "\n".join(lines)
+
+
 class ToggleOptionSpec(ChoicesOptionSpec):
     """Boolean-like option with ``"enabled"`` / ``"disabled"`` choices."""
 
@@ -469,6 +529,46 @@ class Options(metaclass=OptionsMeta):
                 choices=["5m", "1h"],
             )
 
+    class Subagents(OptionNamespace):
+        name = "subagents"
+
+        class Commit(OptionNamespace):
+            name = "commit"
+            description = "Options related to the construction, management, and routing of the commit subagent."
+
+            Enabled = ToggleOptionSpec(
+                name="enabled",
+                scope=OptionScope.Session,
+                default="enabled",
+                help=(
+                    "Whether the commit subagent is available for delegation, otherwise the "
+                    "root conversation agent handles drafting commit proposals, explicitly."
+                ),
+            )
+
+            RoutingCriterion = ChoicesOptionSpec(
+                name="routing_criterion",
+                scope=OptionScope.Session,
+                default="tokens",
+                help="Criterion used to decide when to delegate to the commit subagent",
+                choices=["tokens", "messages"],
+            )
+
+            RoutingThreshold = ConditionalIntRangeOptionSpec(
+                name="routing_threshold",
+                scope=OptionScope.Session,
+                help="Threshold above which the commit subagent is used",
+                condition=RoutingCriterion,
+                ranges={
+                    "tokens": (0, 10000),
+                    "messages": (0, 20),
+                },
+                defaults={
+                    "tokens": 2000,
+                    "messages": 10,
+                },
+            )
+
     # ---- Instance ----
 
     def __init__(self, scope: OptionScope, parent: Options | None = None) -> None:
@@ -484,7 +584,7 @@ class Options(metaclass=OptionsMeta):
         if parent is not None:
             parent._children.append(self)
 
-        # At the root scope, all options are initialized to their defaults. 
+        # At the root scope, all options are initialized to their defaults.
         # At child scopes, values are inherited from the parent unless explicitly overridden.
         if scope == OptionScope.Root:
             for s in self.spec():
@@ -503,6 +603,19 @@ class Options(metaclass=OptionsMeta):
                         await self.set(dep, dep.defaults[new], flush=True)
 
                 self.subscribe(s.condition, _on_condition_changed)
+
+            elif isinstance(s, ConditionalIntRangeOptionSpec):
+
+                async def _on_range_condition_changed(
+                    old: Any, new: Any, dep: ConditionalIntRangeOptionSpec = s
+                ) -> None:
+                    # Always reset to the branch default. Unlike discrete choices
+                    # where values from one branch are typically invalid in another,
+                    # integer ranges often overlap (e.g. 10 is valid in both 0-20
+                    # and 0-10000) — so checking out-of-range isn't sufficient.
+                    await self.set(dep, dep.defaults[new], flush=True)
+
+                self.subscribe(s.condition, _on_range_condition_changed)
 
     # -- Read --
 

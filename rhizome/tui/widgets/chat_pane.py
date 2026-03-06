@@ -927,10 +927,36 @@ class ChatPane(Widget):
             for idx in sorted(self._commit.selected)
         ]
 
-        self._agent_session.add_system_notification(
-            f"User approved commit of {len(self._commit.selected)} message(s). Run the commit subagent to "
-            "draft an initial proposal of knowledge entries, then display it to the user."
-        )
+        from langchain_core.messages import HumanMessage
+        from langchain_core.messages.utils import count_tokens_approximately
+
+        combined = "\n".join(entry["content"] for entry in self._commit.commit_payload)
+        approx_tokens = count_tokens_approximately([HumanMessage(content=combined)])
+        num_messages = len(self._commit.selected)
+
+        # Determine routing based on subagent commit options.
+        use_subagent = False
+        if self.options and self.options.get(Options.Subagents.Commit.Enabled) == "enabled":
+            criterion = self.options.get(Options.Subagents.Commit.RoutingCriterion)
+            threshold = self.options.get(Options.Subagents.Commit.RoutingThreshold)
+            if criterion == "tokens":
+                use_subagent = approx_tokens >= threshold
+            else:
+                use_subagent = num_messages >= threshold
+
+        if use_subagent:
+            self._agent_session.add_system_notification(
+                f"User approved commit of {num_messages} message(s) "
+                f"(~{approx_tokens} tokens). Use invoke_commit_subagent to delegate "
+                "knowledge entry extraction, then present the proposal to the user."
+            )
+        else:
+            self._agent_session.add_system_notification(
+                f"User approved commit of {num_messages} message(s) "
+                f"(~{approx_tokens} tokens). Use inspect_commit_payload and "
+                "create_commit_proposal to draft entries directly, then present "
+                "the proposal to the user."
+            )
         self._start_agent()
             
 
