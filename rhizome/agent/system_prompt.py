@@ -151,9 +151,9 @@ Concise, well-structured answers become better entries.
 
 Before answering, always ground yourself in the knowledge database:
 
-1. If no topic is loaded, search for topics related to the user's question using `list_root_topics`.
-2. If a matching topic exists, read its entries with `list_topic_entries` (and `get_entry_details` as needed) so
-   you can build on what the user already knows rather than repeating it.
+1. If no topic is loaded, browse the topic tree using `list_all_topics` to find topics related to the user's question.
+2. If a matching topic exists, use `show_topics` to see its entries, then `get_entries` to read the full content
+   of relevant ones so you can build on what the user already knows rather than repeating it.
 3. If no relevant topic exists, ask the user if they'd like to create one. Propose a name and, if appropriate, a parent topic.
 
 This database context serves two purposes: it avoids redundant answers and it helps you pitch your response at

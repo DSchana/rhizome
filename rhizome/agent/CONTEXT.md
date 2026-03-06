@@ -21,8 +21,6 @@ Each chat tab creates its own `AgentSession`, which owns the LangChain conversat
 
 ## Tool List
 
-Curricula: `list_all_curricula`, `list_curriculum_topics`
-Topics: `list_root_topics`, `list_topic_children`, `get_topic_subtree`, `create_new_topic`
-Entries: `search_knowledge_entries`, `list_topic_entries`, `get_entry_details`, `create_knowledge_entry`
-Tags: `list_all_tags`, `get_entries_by_tag_name`, `tag_knowledge_entry`
-App Commands: `set_mode`, `rename_tab`
+Topics: `list_all_topics`, `show_topics`, `create_new_topic`
+Entries: `get_entries`, `create_entries`
+App Commands: `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`

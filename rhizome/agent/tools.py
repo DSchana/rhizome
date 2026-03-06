@@ -9,21 +9,15 @@ from enum import IntEnum
 
 from langchain.tools import tool
 from langgraph.types import interrupt
+from sqlalchemy import func, select
 
+from rhizome.db.models import KnowledgeEntry, Topic
 from rhizome.db.operations import (
     create_entry,
     create_topic,
-    get_entries_by_tag,
     get_entry,
-    get_subtree,
-    list_children,
-    list_curricula,
+    get_topic,
     list_entries,
-    list_root_topics,
-    list_tags,
-    list_topics_in_curriculum,
-    search_entries,
-    tag_entry,
 )
 from rhizome.logs import get_logger
 from rhizome.tui.types import Mode
@@ -44,7 +38,6 @@ def tool_visibility(level: ToolVisibility):
         if name not in TOOL_VISIBILITY:
             TOOL_VISIBILITY[name] = level
         elif TOOL_VISIBILITY[name] != level:
-            # Not a huge deal, but log regardless
             _logger.info(
                 f"A new tool closure '{name}' has a different visibility level specified than a previous one. "
                 f"Previous: {TOOL_VISIBILITY[name]}, new: {level}."
@@ -55,12 +48,10 @@ def tool_visibility(level: ToolVisibility):
 
 class ToolGroups:
     """Named groups of tool names for selective inclusion via build_tools()."""
-    DB_CURRICULA = ["list_all_curricula", "list_curriculum_topics"]
-    DB_TOPICS = ["list_root_topics", "list_topic_children", "get_topic_subtree", "create_new_topic"]
-    DB_ENTRIES = ["search_knowledge_entries", "list_topic_entries", "get_entry_details", "create_knowledge_entry"]
-    DB_TAGS = ["list_all_tags", "get_entries_by_tag_name", "tag_knowledge_entry"]
-    DATABASE = DB_TOPICS + DB_ENTRIES + DB_TAGS
-    APP = ["set_mode", "rename_tab", "ask_user_input"]
+    DB_TOPICS = ["list_all_topics", "show_topics", "create_new_topic"]
+    DB_ENTRIES = ["get_entries", "create_entries"]
+    DATABASE = DB_TOPICS + DB_ENTRIES
+    APP = ["set_topic", "set_mode", "rename_tab", "ask_user_input"]
 
 
 def build_tools(session_factory, chat_pane=None, included: list[str] | None = None) -> list:
@@ -71,58 +62,72 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
     """
 
     # -----------------------------------------------------------------------
-    # Curricula
-    # -----------------------------------------------------------------------
-
-    @tool("list_all_curricula", description="List every curriculum in the database.")
-    async def list_all_curricula_tool() -> str:
-        async with session_factory() as session:
-            curricula = await list_curricula(session)
-        if not curricula:
-            return "No curricula found."
-        return "\n".join(
-            f"- [{c.id}] {c.name}" + (f": {c.description}" if c.description else "")
-            for c in curricula
-        )
-
-    @tool("list_curriculum_topics", description="List the topics belonging to a curriculum, in order.")
-    async def list_curriculum_topics_tool(curriculum_id: int) -> str:
-        async with session_factory() as session:
-            topics = await list_topics_in_curriculum(session, curriculum_id)
-        if not topics:
-            return "No topics in this curriculum."
-        return "\n".join(f"- [{t.id}] {t.name}" for t in topics)
-
-    # -----------------------------------------------------------------------
     # Topics
     # -----------------------------------------------------------------------
 
-    @tool("list_root_topics", description="List all top-level (root) topics.")
-    async def list_root_topics_tool() -> str:
+    @tool("list_all_topics", description=(
+        "List the entire topic tree with entry counts. "
+        "Returns a nested, indented view of all topics showing [id], name, "
+        "and how many knowledge entries each topic contains."
+    ))
+    async def list_all_topics_tool() -> str:
         async with session_factory() as session:
-            topics = await list_root_topics(session)
-        if not topics:
-            return "No root topics found."
-        return "\n".join(f"- [{t.id}] {t.name}" for t in topics)
+            # Fetch all topics and entry counts in two queries
+            all_topics = (await session.execute(
+                select(Topic).order_by(Topic.id)
+            )).scalars().all()
 
-    @tool("list_topic_children", description="List direct children of a topic.")
-    async def list_topic_children_tool(parent_id: int) -> str:
-        async with session_factory() as session:
-            children = await list_children(session, parent_id)
-        if not children:
-            return "No children found for this topic."
-        return "\n".join(f"- [{t.id}] {t.name}" for t in children)
+            counts = dict((await session.execute(
+                select(KnowledgeEntry.topic_id, func.count())
+                .group_by(KnowledgeEntry.topic_id)
+            )).all())
 
-    @tool("get_topic_subtree", description="Get the full subtree under a topic (all descendants).")
-    async def get_topic_subtree_tool(root_topic_id: int) -> str:
+        if not all_topics:
+            return "No topics found."
+
+        # Build tree structure
+        by_parent: dict[int | None, list[Topic]] = {}
+        for t in all_topics:
+            by_parent.setdefault(t.parent_id, []).append(t)
+
+        lines: list[str] = []
+        def walk(parent_id: int | None, depth: int) -> None:
+            for t in by_parent.get(parent_id, []):
+                count = counts.get(t.id, 0)
+                indent = "  " * depth
+                lines.append(f"{indent}- [{t.id}] {t.name} ({count} entries)")
+                walk(t.id, depth + 1)
+
+        walk(None, 0)
+        return "\n".join(lines)
+
+    @tool("show_topics", description=(
+        "Show one or more topics' details and list all their knowledge entries by title and ID. "
+        "Use get_entries to read the full content of specific entries."
+    ))
+    async def show_topics_tool(topic_ids: list[int]) -> str:
+        results: list[str] = []
         async with session_factory() as session:
-            nodes = await get_subtree(session, root_topic_id)
-        if not nodes:
-            return "No descendants found."
-        return "\n".join(
-            f"{'  ' * node['depth']}- [{node['topic'].id}] {node['topic'].name}"
-            for node in nodes
-        )
+            for topic_id in topic_ids:
+                topic = await get_topic(session, topic_id)
+                if topic is None:
+                    results.append(f"Topic {topic_id} not found.")
+                    continue
+                entries = await list_entries(session, topic_id)
+
+                lines = [f"Topic [{topic.id}]: {topic.name}"]
+                if topic.description:
+                    lines.append(f"Description: {topic.description}")
+                lines.append("")
+                if not entries:
+                    lines.append("No entries in this topic.")
+                else:
+                    lines.append(f"{len(entries)} entries:")
+                    for e in entries:
+                        type_str = f" ({e.entry_type.value})" if e.entry_type else ""
+                        lines.append(f"  - [{e.id}] {e.title}{type_str}")
+                results.append("\n".join(lines))
+        return "\n\n---\n\n".join(results)
 
     @tool("create_new_topic", description="Create a new topic, optionally under a parent topic.")
     async def create_new_topic_tool(
@@ -139,89 +144,81 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
     # Entries
     # -----------------------------------------------------------------------
 
-    @tool("search_knowledge_entries", description="Search knowledge entries by keyword in title or content.")
-    async def search_knowledge_entries_tool(
-        query: str,
-        topic_id: int | None = None,
-        curriculum_id: int | None = None,
-    ) -> str:
+    @tool("get_entries", description=(
+        "Get the full details of one or more knowledge entries by their IDs."
+    ))
+    async def get_entries_tool(entry_ids: list[int]) -> str:
+        results: list[str] = []
         async with session_factory() as session:
-            entries = await search_entries(session, query, topic_id=topic_id, curriculum_id=curriculum_id)
-        if not entries:
-            return "No entries matched the search."
-        return "\n".join(f"- [{e.id}] {e.title}" for e in entries)
+            for eid in entry_ids:
+                entry = await get_entry(session, eid)
+                if entry is None:
+                    results.append(f"[{eid}] Not found.")
+                    continue
+                lines = [
+                    f"[{entry.id}] {entry.title}",
+                    f"Type: {entry.entry_type.value if entry.entry_type else 'unset'}",
+                    f"Content: {entry.content}",
+                ]
+                if entry.additional_notes:
+                    lines.append(f"Notes: {entry.additional_notes}")
+                if entry.difficulty is not None:
+                    lines.append(f"Difficulty: {entry.difficulty}")
+                results.append("\n".join(lines))
+        return "\n\n---\n\n".join(results)
 
-    @tool("list_topic_entries", description="List all knowledge entries for a given topic.")
-    async def list_topic_entries_tool(topic_id: int) -> str:
-        async with session_factory() as session:
-            entries = await list_entries(session, topic_id)
-        if not entries:
-            return "No entries for this topic."
-        return "\n".join(f"- [{e.id}] {e.title}" for e in entries)
-
-    @tool("get_entry_details", description="Get the full details of a knowledge entry by its ID.")
-    async def get_entry_details_tool(entry_id: int) -> str:
-        async with session_factory() as session:
-            entry = await get_entry(session, entry_id)
-        if entry is None:
-            return f"Entry {entry_id} not found."
-        lines = [
-            f"Title: {entry.title}",
-            f"Type: {entry.entry_type}",
-            f"Content: {entry.content}",
-        ]
-        if entry.additional_notes:
-            lines.append(f"Notes: {entry.additional_notes}")
-        if entry.difficulty is not None:
-            lines.append(f"Difficulty: {entry.difficulty}")
-        return "\n".join(lines)
-
-    @tool("create_knowledge_entry", description="Create a new knowledge entry under a topic.")
-    async def create_knowledge_entry_tool(
-        topic_id: int,
-        title: str,
-        content: str,
-        entry_type: str | None = None,
-    ) -> str:
+    @tool("create_entries", description=(
+        "Create one or more knowledge entries. Each entry needs: "
+        "topic_id (int), title (str), content (str), and optionally "
+        "entry_type ('fact'|'exposition'|'overview')."
+    ))
+    async def create_entries_tool(entries: list[dict]) -> str:
         from rhizome.db.models import EntryType
-        parsed_type = EntryType(entry_type) if entry_type is not None else None
+        created: list[str] = []
         async with session_factory() as session:
-            entry = await create_entry(
-                session, topic_id=topic_id, title=title, content=content, entry_type=parsed_type,
-            )
+            for e in entries:
+                parsed_type = EntryType(e["entry_type"]) if e.get("entry_type") else None
+                entry = await create_entry(
+                    session,
+                    topic_id=e["topic_id"],
+                    title=e["title"],
+                    content=e["content"],
+                    entry_type=parsed_type,
+                )
+                created.append(f"[{entry.id}] {entry.title}")
             await session.commit()
-        return f"Created entry [{entry.id}] {entry.title}"
+        return f"Created {len(created)} entries:\n" + "\n".join(f"  - {c}" for c in created)
 
     # -----------------------------------------------------------------------
-    # Tags
+    # App commands (mode switching, tab renaming, topic selection)
     # -----------------------------------------------------------------------
 
-    @tool("list_all_tags", description="List every tag in the database.")
-    async def list_all_tags_tool() -> str:
+    @tool("set_topic", description=(
+        "Set the active topic for this chat session. "
+        "Updates the status bar and notifies the user. "
+        "Use this when the user begins learning about a specific topic."
+    ))
+    @tool_visibility(ToolVisibility.LOW)
+    async def set_topic_tool(topic_id: int) -> str:
+        if chat_pane is None:
+            return "Chat pane not available."
         async with session_factory() as session:
-            tags = await list_tags(session)
-        if not tags:
-            return "No tags found."
-        return "\n".join(f"- [{t.id}] {t.name}" for t in tags)
-
-    @tool("get_entries_by_tag_name", description="Get all knowledge entries with a given tag.")
-    async def get_entries_by_tag_name_tool(tag_name: str) -> str:
-        async with session_factory() as session:
-            entries = await get_entries_by_tag(session, tag_name)
-        if not entries:
-            return f"No entries tagged '{tag_name}'."
-        return "\n".join(f"- [{e.id}] {e.title}" for e in entries)
-
-    @tool("tag_knowledge_entry", description="Add a tag to a knowledge entry. Creates the tag if needed.")
-    async def tag_knowledge_entry_tool(entry_id: int, tag_name: str) -> str:
-        async with session_factory() as session:
-            await tag_entry(session, entry_id=entry_id, tag_name=tag_name)
-            await session.commit()
-        return f"Tagged entry {entry_id} with '{tag_name}'."
-
-    # -----------------------------------------------------------------------
-    # App commands (mode switching, tab renaming)
-    # -----------------------------------------------------------------------
+            topic = await get_topic(session, topic_id)
+            if topic is None:
+                return f"Topic {topic_id} not found."
+            # Walk up parents to build the path
+            path: list[str] = [topic.name]
+            current = topic
+            while current.parent_id is not None:
+                current = await get_topic(session, current.parent_id)
+                if current is None:
+                    break
+                path.append(current.name)
+            path.reverse()
+        chat_pane.active_topic = topic
+        chat_pane._topic_path = path
+        chat_pane.update_status_bar()
+        return f"Active topic set to: {topic.name}"
 
     @tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
     @tool_visibility(ToolVisibility.LOW)
@@ -253,19 +250,12 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
         return f"User selected: {result}"
 
     all_tools = {
-        "list_all_curricula": list_all_curricula_tool,
-        "list_curriculum_topics": list_curriculum_topics_tool,
-        "list_root_topics": list_root_topics_tool,
-        "list_topic_children": list_topic_children_tool,
-        "get_topic_subtree": get_topic_subtree_tool,
+        "list_all_topics": list_all_topics_tool,
+        "show_topics": show_topics_tool,
         "create_new_topic": create_new_topic_tool,
-        "search_knowledge_entries": search_knowledge_entries_tool,
-        "list_topic_entries": list_topic_entries_tool,
-        "get_entry_details": get_entry_details_tool,
-        "create_knowledge_entry": create_knowledge_entry_tool,
-        "list_all_tags": list_all_tags_tool,
-        "get_entries_by_tag_name": get_entries_by_tag_name_tool,
-        "tag_knowledge_entry": tag_knowledge_entry_tool,
+        "get_entries": get_entries_tool,
+        "create_entries": create_entries_tool,
+        "set_topic": set_topic_tool,
         "set_mode": set_mode_tool,
         "rename_tab": rename_tab_tool,
         "ask_user_input": ask_user_input_tool,
