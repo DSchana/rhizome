@@ -234,7 +234,7 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
             lines.append(f"   {e.content[:120]}{'...' if len(e.content) > 120 else ''}")
 
         message = "## Proposed Knowledge Entries\n\n" + "\n".join(lines)
-        result = interrupt({"message": message, "options": ["Approve All", "Edit", "Cancel"]})
+        result = interrupt({"type": "choices", "message": message, "options": ["Approve All", "Edit", "Cancel"]})
         return f"User selected: {result}"
 
     @tool("accept_commit_proposal", description=(

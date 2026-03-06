@@ -13,12 +13,13 @@ from langchain.messages import AIMessageChunk, ToolMessage
 from rhizome.agent.tools import TOOL_VISIBILITY, ToolVisibility
 from rhizome.logs import get_logger
 from rhizome.tui.types import Mode, Role
-
-_logger = get_logger("tui.agent_message_harness")
+from rhizome.tui.widgets.interrupt_base import InterruptWidget
 from rhizome.tui.widgets.interrupt_choices import InterruptChoices
 from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
 from rhizome.tui.widgets.tool_call_list import ToolCallList
+
+_logger = get_logger("tui.agent_message_harness")
 
 
 class AgentMessageHarness(Widget):
@@ -43,9 +44,9 @@ class AgentMessageHarness(Widget):
             tool_use_visibility, ToolVisibility.DEFAULT
         )
         self._thinking: ThinkingIndicator | None = None
-        self._segments: list[ChatMessage | ToolCallList | InterruptChoices] = []
+        self._segments: list[ChatMessage | ToolCallList | Widget] = []
         self._active_stream: MarkdownStream | None = None
-        self._interrupt_widget: InterruptChoices | None = None
+        self._interrupt_widget: InterruptWidget | None = None
         self._finalized: bool = False
 
     @property
@@ -195,7 +196,7 @@ class AgentMessageHarness(Widget):
     class InterruptPending(Message):
         """Posted when an interrupt widget is mounted and needs user input."""
 
-        def __init__(self, widget: InterruptChoices) -> None:
+        def __init__(self, widget: Widget) -> None:
             super().__init__()
             self.widget = widget
 
@@ -220,23 +221,25 @@ class AgentMessageHarness(Widget):
     async def on_interrupt(self, interrupt_value: Any) -> Any:
         """Callback for graph interrupts. Blocks until the user responds.
 
-        Mounts an ``InterruptChoices`` widget, posts ``InterruptPending`` so
-        ``ChatPane`` can disable its input, and awaits the user's selection.
+        Dispatches to the appropriate interrupt widget based on the ``"type"``
+        key in the interrupt value dict, using the ``INTERRUPT_REGISTRY``.
         """
         await self.stop_thinking()
         await self._close_active_stream()
 
-        # Build options from the interrupt value
-        if isinstance(interrupt_value, dict):
-            prompt = interrupt_value.get("message", "The agent requires your input:")
-            options = interrupt_value.get("options", ["Continue", "Cancel"])
-        else:
-            prompt = str(interrupt_value) if interrupt_value else "The agent requires your input:"
-            options = ["Continue", "Cancel"]
+        if not isinstance(interrupt_value, dict):
+            raise ValueError(
+                f"Interrupt value must be a dict with a 'type' key, got {type(interrupt_value).__name__}"
+            )
 
-        self._interrupt_widget = InterruptChoices(prompt=prompt, options=options)
-        self._segments.append(self._interrupt_widget)
-        await self.mount(self._interrupt_widget)
+        itype = interrupt_value["type"]
+        if itype == "choices":
+            widget = InterruptChoices.from_interrupt(interrupt_value)
+        else:
+            raise ValueError(f"Unknown interrupt type: {itype!r}")
+        self._interrupt_widget = widget
+        self._segments.append(widget)
+        await self.mount(widget)
 
         # Tell ChatPane to disable its input and focus the choices widget
         self.post_message(self.InterruptPending(widget=self._interrupt_widget))

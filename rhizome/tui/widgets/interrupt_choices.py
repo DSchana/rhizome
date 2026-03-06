@@ -7,10 +7,10 @@ from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Label, Static
-
 
 class InterruptChoices(Widget, can_focus=True):
     """Displays an interrupt prompt with a navigable list of options.
@@ -22,6 +22,12 @@ class InterruptChoices(Widget, can_focus=True):
 
     Navigation: Up/Down to move highlight, Enter to select.
     """
+
+    BINDINGS = [
+        Binding("up", "cursor_up", "Move up", show=False),
+        Binding("down", "cursor_down", "Move down", show=False),
+        Binding("enter", "select", "Select", show=False),
+    ]
 
     DEFAULT_CSS = """
     InterruptChoices {
@@ -47,6 +53,14 @@ class InterruptChoices(Widget, can_focus=True):
         self._prompt = prompt
         self._options = options or ["Continue", "Cancel"]
         self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
+
+    @classmethod
+    def from_interrupt(cls, value: dict[str, Any]) -> InterruptChoices:
+        """Construct from an interrupt value dict."""
+        return cls(
+            prompt=value.get("message", "The agent requires your input:"),
+            options=value.get("options"),
+        )
 
     def compose(self) -> ComposeResult:
         yield Label(self._prompt, classes="interrupt-prompt")
@@ -84,26 +98,23 @@ class InterruptChoices(Widget, can_focus=True):
                 text.append(label, style="rgb(100,100,100)")
         self.query_one("#interrupt-options", Static).update(text)
 
-    def on_key(self, event) -> None:
+    def action_cursor_up(self) -> None:
+        if not self._future.done():
+            self.cursor = (self.cursor - 1) % len(self._options)
+
+    def action_cursor_down(self) -> None:
+        if not self._future.done():
+            self.cursor = (self.cursor + 1) % len(self._options)
+
+    def action_select(self) -> None:
         if self._future.done():
             return
-        if event.key == "up":
-            self.cursor = (self.cursor - 1) % len(self._options)
-            event.prevent_default()
-            event.stop()
-        elif event.key == "down":
-            self.cursor = (self.cursor + 1) % len(self._options)
-            event.prevent_default()
-            event.stop()
-        elif event.key == "enter":
-            selected = self._options[self.cursor]
-            self._future.set_result(selected)
-            display = Text()
-            display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
-            self.query_one("#interrupt-options", Static).update(display)
-            self.query_one("#interrupt-hint", Static).update("")
-            event.prevent_default()
-            event.stop()
+        selected = self._options[self.cursor]
+        self._future.set_result(selected)
+        display = Text()
+        display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
+        self.query_one("#interrupt-options", Static).update(display)
+        self.query_one("#interrupt-hint", Static).update("")
 
     async def wait_for_selection(self) -> Any:
         """Block until the user selects an option. Returns the selected value."""

@@ -246,7 +246,7 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def ask_user_input_tool(message: str, choices: list[str]) -> str:
-        result = interrupt({"message": message, "options": choices})
+        result = interrupt({"type": "choices", "message": message, "options": choices})
         return f"User selected: {result}"
 
     all_tools = {
