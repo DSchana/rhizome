@@ -501,6 +501,14 @@ class Options(metaclass=OptionsMeta):
             choices=["terse", "standard", "verbose", "expository", "auto"],
         )
 
+        PlanningVerbosity = ChoicesOptionSpec(
+            name="planning_verbosity",
+            scope=OptionScope.Session,
+            default="low",
+            help="Controls how much the agent narrates its tool-call plans",
+            choices=["low", "medium", "high"],
+        )
+
         ParallelToolCalling = ToggleOptionSpec(
             name="parallel_tool_calling",
             scope=OptionScope.Session,

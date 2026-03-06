@@ -29,6 +29,7 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
     kwargs["parallel_tool_calling"] = options.get(Options.Agent.ParallelToolCalling) == "enabled"
     kwargs["temperature"] = options.get(Options.Agent.Temperature)
     kwargs["answer_verbosity"] = options.get(Options.Agent.AnswerVerbosity)
+    kwargs["planning_verbosity"] = options.get(Options.Agent.PlanningVerbosity)
 
     if provider == "anthropic":
         kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
@@ -174,6 +175,7 @@ class AgentSession:
         try:
             user_settings = {
                 "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "auto"),
+                "planning_verbosity": self._agent_kwargs.get("planning_verbosity", "low"),
             }
             context = AgentContext(user_settings=user_settings)
 
