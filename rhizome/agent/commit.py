@@ -12,7 +12,7 @@ from rhizome.agent.builder import build_agent
 from rhizome.agent.subagent import StructuredSubagent
 from rhizome.agent.tools import build_tools, ToolGroups, tool_visibility, ToolVisibility
 from rhizome.db.models import EntryType
-from rhizome.db.operations import create_entry
+from rhizome.db.operations import create_entry, get_topic
 from rhizome.logs import get_logger
 from rhizome.tui.commit_state import CommitApproved
 
@@ -228,14 +228,49 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
         if proposal.value is None:
             return json.dumps({"error": "No proposal available. Create or invoke a proposal first."})
 
-        lines = []
-        for i, e in enumerate(proposal.value.entries, 1):
-            lines.append(f"{i}. **{e.title}** ({e.entry_type}, topic {e.topic_id})")
-            lines.append(f"   {e.content[:120]}{'...' if len(e.content) > 120 else ''}")
+        # Build topic name map for display
+        topic_ids = {e.topic_id for e in proposal.value.entries}
+        topic_map: dict[int, str] = {}
+        async with session_factory() as session:
+            for tid in topic_ids:
+                topic = await get_topic(session, tid)
+                if topic is not None:
+                    topic_map[tid] = topic.name
 
-        message = "## Proposed Knowledge Entries\n\n" + "\n".join(lines)
-        result = interrupt({"type": "choices", "message": message, "options": ["Approve All", "Edit", "Cancel"]})
-        return f"User selected: {result}"
+        entries = [
+            {
+                "title": e.title,
+                "content": e.content,
+                "entry_type": e.entry_type,
+                "topic_id": e.topic_id,
+            }
+            for e in proposal.value.entries
+        ]
+
+        result = interrupt({
+            "type": "commit_proposal",
+            "entries": entries,
+            "topic_map": topic_map,
+        })
+
+        # Result is a dict: {choice, entries, instructions?}
+        choice = result["choice"]
+        modified_entries = result.get("entries", [])
+
+        if choice == "Approve":
+            proposal.value = CommitProposalResponseSchema(
+                entries=[KnowledgeEntryProposalSchema(**e) for e in modified_entries]
+            )
+            return "User approved the proposal."
+        elif choice == "Edit":
+            proposal.value = CommitProposalResponseSchema(
+                entries=[KnowledgeEntryProposalSchema(**e) for e in modified_entries]
+            )
+            instructions = result.get("instructions", "")
+            return f"User requested edits: {instructions}"
+        else:
+            proposal.value = None
+            return "User cancelled the proposal."
 
     @tool("accept_commit_proposal", description=(
         "Write the accepted commit proposal to the database. "

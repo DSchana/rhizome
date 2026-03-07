@@ -13,6 +13,7 @@ from langchain.messages import AIMessageChunk, ToolMessage
 from rhizome.agent.tools import TOOL_VISIBILITY, ToolVisibility
 from rhizome.logs import get_logger
 from rhizome.tui.types import Mode, Role
+from rhizome.tui.widgets.commit_proposal import CommitProposalInterrupt
 from rhizome.tui.widgets.interrupt_base import InterruptWidget
 from rhizome.tui.widgets.interrupt_choices import InterruptChoices
 from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
@@ -235,6 +236,8 @@ class AgentMessageHarness(Widget):
         itype = interrupt_value["type"]
         if itype == "choices":
             widget = InterruptChoices.from_interrupt(interrupt_value)
+        elif itype == "commit_proposal":
+            widget = CommitProposalInterrupt.from_interrupt(interrupt_value)
         else:
             raise ValueError(f"Unknown interrupt type: {itype!r}")
         self._interrupt_widget = widget
