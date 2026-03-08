@@ -31,7 +31,11 @@ class ToolVisibility(IntEnum):
     DEFAULT = 1   # Most tools — visible at normal verbosity
     HIGH = 2      # Important tools — always visible
 
-TOOL_VISIBILITY: dict[str, ToolVisibility] = {}
+TOOL_VISIBILITY: dict[str, ToolVisibility] = {
+    # Anthropic server-side tools (registered here since they're dicts, not decorated functions)
+    "web_search": ToolVisibility.DEFAULT,
+    "web_fetch": ToolVisibility.DEFAULT,
+}
 
 def tool_visibility(level: ToolVisibility):
     """Decorator that registers a tool's visibility level."""

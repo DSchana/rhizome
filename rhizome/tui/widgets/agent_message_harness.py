@@ -153,37 +153,54 @@ class AgentMessageHarness(Widget):
         self._active_stream = Markdown.get_stream(chat.inner_markdown)
 
     async def post_update(self, chunk: dict) -> None:
-        """Handle a graph state update. Extracts tool call names from AIMessage content."""
+        """Handle a graph state update. Extracts tool call names from AIMessage content.
+
+        AIMessage content blocks come in several forms we need to handle:
+        - ``"tool_use"`` — local tool calls (our @tool-decorated functions).
+        - ``"server_tool_use"`` — Anthropic server-side tools (web_search, web_fetch).
+          Anthropic wraps some server tools in a ``code_execution`` block that
+          internally calls the real tool; we skip those to avoid duplicates.
+        - Other block types (``"text"``, ``"server_tool_result"``, etc.) are ignored.
+        """
         for update in chunk.values():
             for msg in update.get("messages", []):
                 content = getattr(msg, "content", None)
                 if not isinstance(content, list):
                     continue
                 for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        _logger.debug("tool_use block: %r", block)
-                        name = block.get("name")
-                        if name:
-                            level = TOOL_VISIBILITY.get(name, ToolVisibility.DEFAULT)
-                            if level < self._display_threshold:
-                                continue
-                            # If the last segment isn't a ToolCallList, close the
-                            # active stream and start a new tool list segment.
-                            if not self._segments or not isinstance(self._segments[-1], ToolCallList):
-                                await self._close_active_stream()
-                                tool_list = ToolCallList(classes=f"{self._session_mode.value}-mode")
-                                self._segments.append(tool_list)
-                                await self.mount(tool_list)
-                            last = self._segments[-1]
-                            assert isinstance(last, ToolCallList)
-                            args = block.get("input") or {}
-                            if not args and block.get("partial_json"):
-                                import json
-                                try:
-                                    args = json.loads(block["partial_json"])
-                                except (json.JSONDecodeError, TypeError):
-                                    pass
-                            last.add_tool(name, args)
+                    if not isinstance(block, dict):
+                        continue
+                    btype = block.get("type")
+                    # Skip Anthropic's internal code_execution wrapper — the
+                    # actual tool (web_fetch etc.) appears as its own block.
+                    if btype == "server_tool_use" and block.get("name") == "code_execution":
+                        continue
+                    if btype not in ("tool_use", "server_tool_use"):
+                        continue
+                    _logger.debug("%s block: %r", btype, block)
+                    name = block.get("name")
+                    if not name:
+                        continue
+                    level = TOOL_VISIBILITY.get(name, ToolVisibility.DEFAULT)
+                    if level < self._display_threshold:
+                        continue
+                    # If the last segment isn't a ToolCallList, close the
+                    # active stream and start a new tool list segment.
+                    if not self._segments or not isinstance(self._segments[-1], ToolCallList):
+                        await self._close_active_stream()
+                        tool_list = ToolCallList(classes=f"{self._session_mode.value}-mode")
+                        self._segments.append(tool_list)
+                        await self.mount(tool_list)
+                    last = self._segments[-1]
+                    assert isinstance(last, ToolCallList)
+                    args = block.get("input") or {}
+                    if not args and block.get("partial_json"):
+                        import json
+                        try:
+                            args = json.loads(block["partial_json"])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    last.add_tool(name, args)
 
     async def _close_active_stream(self) -> None:
         """Stop the active MarkdownStream if one is open."""

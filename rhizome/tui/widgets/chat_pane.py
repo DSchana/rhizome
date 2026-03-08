@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import subprocess
 import tempfile
 import traceback
-from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 
@@ -25,7 +23,6 @@ from textual.worker import Worker
 
 from rhizome.agent import AgentSession
 from rhizome.agent.session import get_agent_kwargs
-from rhizome.config import get_log_dir
 from rhizome.db import Topic
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
@@ -120,10 +117,6 @@ class ChatPane(Widget):
         self._agent_session: AgentSession | None = None
         self._agent_busy: bool = False
         self._agent_worker: Worker[None] | None = None
-        # TODO: move logging into the AgentSession.
-        self._agent_log: logging.Logger | None = None
-        self._agent_log_handler: logging.FileHandler | None = None
-
         # Commit mode state — see CommitState dataclass.
         self._commit = CommitState()
 
@@ -158,6 +151,7 @@ class ChatPane(Widget):
             agent_kwargs=agent_kwargs,
             on_token_usage_changed=self.update_status_bar,
             on_rebuild_agent=self._on_agent_rebuilt,
+            debug=getattr(self.app, "debug_logging", False),
         )
         self.update_status_bar() # Call to trigger model name display
 
@@ -172,20 +166,7 @@ class ChatPane(Widget):
         # Focus the chat input
         self.query_one("#chat-input", ChatInput).focus()
 
-        # TODO: move this logging setup into the AgentSession.
-        if self.app.debug_logging:  # type: ignore[attr-defined]
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%f")
-            logger_name = f"rhizome.agent_stream.{ts}"
-            self._agent_log = logging.getLogger(logger_name)
-            self._agent_log.setLevel(logging.DEBUG)
-            self._agent_log.propagate = False
-            log_path = get_log_dir() / f"agent_stream_{ts}.log"
-            self._agent_log_handler = logging.FileHandler(str(log_path), mode="w")
-            self._agent_log_handler.setFormatter(logging.Formatter("%(message)s"))
-            self._agent_log.addHandler(self._agent_log_handler)
-
     def on_unmount(self) -> None:
-        self._close_agent_log()
         if self.options is not None:
             self.options.detach()
 
@@ -195,17 +176,6 @@ class ChatPane(Widget):
     def _sync_registry_width(self) -> None:
         """Update the command registry's max_content_width from the pane's current width."""
         self._command_registry.max_content_width = max(self.size.width - 15, 40)
-
-    def _close_agent_log(self) -> None:
-        """Close and detach the agent stream file handler."""
-        if self._agent_log_handler is not None:
-            self._agent_log_handler.close()
-
-            if self._agent_log is not None:
-                self._agent_log.removeHandler(self._agent_log_handler)
-
-            self._agent_log_handler = None
-            self._agent_log = None
 
     # ------------------------------------------------------------------
     # Agent session

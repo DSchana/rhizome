@@ -537,6 +537,13 @@ class Options(metaclass=OptionsMeta):
                 choices=["5m", "1h"],
             )
 
+            WebTools = ToggleOptionSpec(
+                name="web_tools",
+                scope=OptionScope.Session,
+                default="disabled",
+                help="Enable Anthropic server-side web_search and web_fetch tools",
+            )
+
     class Subagents(OptionNamespace):
         name = "subagents"
 

@@ -62,9 +62,18 @@ def build_agent(
             ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
             middleware.append(AnthropicPenultimateCacheMiddleware(ttl=ttl))
 
+        # Anthropic server-side tools (executed by the API, not locally).
+        # These are passed as dicts — create_agent routes them to bind_tools
+        # but not to the ToolNode.
+        all_tools: list = list(tools)
+        if agent_kwargs.get("web_tools", False):
+            all_tools.append({"name": "web_search", "type": "web_search_20260209", "max_uses": 5})
+            all_tools.append({"name": "web_fetch", "type": "web_fetch_20260209", "max_uses": 5})
+            _logger.info("Web tools enabled (web_search, web_fetch)")
+
         agent = create_agent(
             model=model,
-            tools=tools,
+            tools=all_tools,
             context_schema=AgentContext,
             middleware=middleware,
             response_format=response_format,

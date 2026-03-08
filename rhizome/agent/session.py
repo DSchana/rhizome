@@ -1,8 +1,11 @@
 """Agent session: owns the LangGraph agent and message queue."""
 
 import asyncio
+import json
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -10,6 +13,7 @@ from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command
 
 from rhizome.agent.builder import build_agent
+from rhizome.config import get_log_dir
 from rhizome.agent.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
 from rhizome.agent.context import AgentContext
 from rhizome.agent.subagent import Subagent
@@ -34,6 +38,7 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
     if provider == "anthropic":
         kwargs["prompt_cache"] = options.get(Options.Agent.Anthropic.PromptCache) == "enabled"
         kwargs["prompt_cache_ttl"] = options.get(Options.Agent.Anthropic.PromptCacheTTL)
+        kwargs["web_tools"] = options.get(Options.Agent.Anthropic.WebTools) == "enabled"
 
     return kwargs
 
@@ -58,11 +63,18 @@ class AgentSession:
             on_token_usage_changed: Callable[[], Any] | None = None,
             on_rebuild_agent: Callable[[str, str], Any] | None = None,
             thread_id: str | None = None,
+            debug: bool = False,
         ):
         self._provider = provider
         self._model_name = model_name
         self._agent_kwargs = agent_kwargs or {}
         self.thread_id = thread_id or str(uuid.uuid4())
+        self._debug = debug
+        self._dump_dir: Path | None = None
+        if debug:
+            slug = self.thread_id[:8]
+            self._dump_dir = get_log_dir() / f"agent-stream-{slug}"
+            self._dump_dir.mkdir(parents=True, exist_ok=True)
 
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
@@ -259,6 +271,7 @@ class AgentSession:
             )
         finally:
             self._notify_token_usage()
+            self._dump_graph_state()
 
     def _extract_usage_metadata(self, chunk):
         if not (hasattr(chunk, "usage_metadata") and chunk.usage_metadata):
@@ -282,6 +295,29 @@ class AgentSession:
             self._token_usage.cache_creation_tokens = cache_create
 
         self._notify_token_usage()
+
+    def _dump_graph_state(self) -> None:
+        """Dump the full graph message state to a timestamped JSON file."""
+        if self._dump_dir is None:
+            return
+        try:
+            messages = self._get_graph_messages()
+            parts: list[str] = []
+            for i, msg in enumerate(messages):
+                if hasattr(msg, "model_dump"):
+                    body = json.dumps(msg.model_dump(), indent=2, default=str)
+                elif hasattr(msg, "dict"):
+                    body = json.dumps(msg.dict(), indent=2, default=str)
+                else:
+                    body = repr(msg)
+                header = f"{'=' * 60}\n  [{i}] {type(msg).__name__}\n{'=' * 60}"
+                parts.append(f"{header}\n{type(msg).__name__}({body})")
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%f")
+            path = self._dump_dir / f"{ts}.txt"
+            path.write_text("\n\n".join(parts) + "\n", encoding="utf-8")
+            self._session_logger.debug("Graph state dumped to %s", path)
+        except Exception as exc:
+            self._session_logger.warning("Failed to dump graph state: %s", exc)
 
     def _patch_orphaned_tool_calls(self, message: str) -> None:
         """Inject synthetic ToolMessages for any tool_use blocks without results.
