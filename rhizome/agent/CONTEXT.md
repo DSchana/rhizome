@@ -21,6 +21,6 @@ Each chat tab creates its own `AgentSession`, which owns the LangChain conversat
 
 ## Tool List
 
-Topics: `list_all_topics`, `show_topics`, `create_new_topic`
+Topics: `list_all_topics`, `show_topics`, `create_new_topic`, `delete_topics`
 Entries: `get_entries`, `create_entries`
 App Commands: `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`

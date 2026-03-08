@@ -15,7 +15,9 @@ from rhizome.db.models import KnowledgeEntry, Topic
 from rhizome.db.operations import (
     create_entry,
     create_topic,
+    delete_topic,
     get_entry,
+    get_subtree,
     get_topic,
     list_entries,
 )
@@ -48,7 +50,7 @@ def tool_visibility(level: ToolVisibility):
 
 class ToolGroups:
     """Named groups of tool names for selective inclusion via build_tools()."""
-    DB_TOPICS = ["list_all_topics", "show_topics", "create_new_topic"]
+    DB_TOPICS = ["list_all_topics", "show_topics", "create_new_topic", "delete_topics"]
     DB_ENTRIES = ["get_entries", "create_entries"]
     DATABASE = DB_TOPICS + DB_ENTRIES
     APP = ["set_topic", "set_mode", "rename_tab", "ask_user_input"]
@@ -139,6 +141,63 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
             topic = await create_topic(session, name=name, parent_id=parent_id, description=description)
             await session.commit()
         return f"Created topic [{topic.id}] {topic.name}"
+
+    @tool("delete_topics", description=(
+        "Delete one or more topics by ID. This is irreversible — all knowledge "
+        "entries under each topic will also be deleted. Subtrees (child topics) "
+        "are deleted bottom-up automatically. Requires user approval."
+    ))
+    async def delete_topics_tool(topic_ids: list[int]) -> str:
+        # Gather info for the warning message
+        topic_names: list[str] = []
+        async with session_factory() as session:
+            for tid in topic_ids:
+                topic = await get_topic(session, tid)
+                if topic is None:
+                    return f"Topic {tid} not found."
+                subtree = await get_subtree(session, tid)
+                entry_count = (await session.execute(
+                    select(func.count()).where(KnowledgeEntry.topic_id == tid)
+                )).scalar() or 0
+                child_count = len(subtree)
+                parts = [f"[{tid}] {topic.name}"]
+                if child_count:
+                    parts.append(f"{child_count} subtopic(s)")
+                if entry_count:
+                    parts.append(f"{entry_count} entry/entries")
+                topic_names.append(", ".join(parts))
+
+        summary = "; ".join(topic_names)
+        result = interrupt({
+            "type": "warning",
+            "message": (
+                f"WARNING: the agent has requested to delete topic(s): "
+                f"{summary}. This action is irreversible and will cascade to "
+                f"all entries and subtopics."
+            ),
+        })
+
+        if result != "Approve":
+            return f"User denied deletion: {result}"
+
+        # Perform deletion — subtrees must be deleted bottom-up
+        deleted: list[str] = []
+        async with session_factory() as session:
+            for tid in topic_ids:
+                topic = await get_topic(session, tid)
+                if topic is None:
+                    deleted.append(f"[{tid}] not found (skipped)")
+                    continue
+                # Delete subtree bottom-up (deepest first)
+                subtree = await get_subtree(session, tid)
+                for node in reversed(subtree):
+                    await delete_topic(session, node["topic"].id)
+                # Delete the root topic itself
+                name = topic.name
+                await delete_topic(session, tid)
+                deleted.append(f"[{tid}] {name}")
+            await session.commit()
+        return f"Deleted {len(deleted)} topic(s):\n" + "\n".join(f"  - {d}" for d in deleted)
 
     # -----------------------------------------------------------------------
     # Entries
@@ -253,6 +312,7 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
         "list_all_topics": list_all_topics_tool,
         "show_topics": show_topics_tool,
         "create_new_topic": create_new_topic_tool,
+        "delete_topics": delete_topics_tool,
         "get_entries": get_entries_tool,
         "create_entries": create_entries_tool,
         "set_topic": set_topic_tool,
