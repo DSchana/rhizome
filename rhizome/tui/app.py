@@ -23,7 +23,7 @@ class CurriculumApp(App):
     TITLE = "rhizome"
 
     CSS = """
-    Screen {
+    MainScreen {
         background: $surface;
     }
     """
