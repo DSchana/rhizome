@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.widget import Widget
@@ -26,7 +27,6 @@ class ToolCallList(Widget, can_focus=True):
         height: auto;
         width: auto;
         min-width: 20;
-        max-width: 60;
     }
     ToolCallList #tool-title {
         width: auto;
@@ -74,32 +74,32 @@ class ToolCallList(Widget, can_focus=True):
         self._tools.append((name, args or {}))
         self._render_list()
 
-    def _format_arg_value(self, value: Any, max_width: int) -> str:
-        """Format a single arg value, clipping if too long."""
-        text = repr(value)
-        if len(text) > max_width:
-            return text[:max_width] + "... (clipped)"
-        return text
-
     def _render_list(self) -> None:
-        lines = []
+        output = Text()
+        dim = "rgb(80,80,80)"
         max_width = self._max_arg_width()
         for i, (name, args) in enumerate(self._tools):
             is_last_tool = i == len(self._tools) - 1
             tool_prefix = "└── " if is_last_tool else "├── "
-            lines.append(f"{tool_prefix}{name}")
+            if i > 0:
+                output.append("\n")
+            output.append(f"{tool_prefix}{name}")
 
             if args:
                 arg_items = list(args.items())
                 for j, (arg_name, arg_value) in enumerate(arg_items):
                     is_last_arg = j == len(arg_items) - 1
-                    # Use continuation line from parent branch
                     branch = "    " if is_last_tool else "│   "
                     arg_prefix = "└── " if is_last_arg else "├── "
-                    formatted = self._format_arg_value(arg_value, max_width)
-                    lines.append(f"{branch}{arg_prefix}{arg_name}={formatted}")
+                    text = repr(arg_value)
+                    clipped = len(text) > max_width
+                    if clipped:
+                        text = text[:max_width - 3] + "…"
+                    output.append(f"\n{branch}{arg_prefix}{arg_name}={text}", style=dim)
+                    if clipped:
+                        output.append("  (clipped)", style=dim)
 
-        self.query_one("#tool-content", Static).update("\n".join(lines))
+        self.query_one("#tool-content", Static).update(output)
 
     def action_toggle_collapse(self) -> None:
         self._collapsed = not self._collapsed
