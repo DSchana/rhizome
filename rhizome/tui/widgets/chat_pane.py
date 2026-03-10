@@ -233,6 +233,7 @@ class ChatPane(Widget):
             body = await harness.cancel()
             if body:
                 self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+                self._agent_session.add_ai_message(body)
             self.append_message(
                 ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
             )

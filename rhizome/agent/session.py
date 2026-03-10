@@ -154,6 +154,10 @@ class AgentSession:
     def add_human_message(self, text: str) -> None:
         self._message_queue.append(HumanMessage(content=text))
 
+    def add_ai_message(self, text: str) -> None:
+        """Queue a synthetic AI message into the conversation history."""
+        self._message_queue.append(AIMessage(content=text))
+
     def add_system_notification(self, text: str) -> None:
         # Remark: certain providers only allow a single SystemPrompt at the beginning of the conversation, so we represent these
         # as human messages with a [System] prefix.
