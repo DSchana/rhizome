@@ -498,7 +498,7 @@ class Options(metaclass=OptionsMeta):
             scope=OptionScope.Session,
             default="auto",
             help="Controls response length and detail level",
-            choices=["terse", "standard", "verbose", "expository", "auto"],
+            choices=["terse", "standard", "verbose", "auto"],
         )
 
         PlanningVerbosity = ChoicesOptionSpec(

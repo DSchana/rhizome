@@ -6,6 +6,7 @@ import asyncio
 import os
 import subprocess
 import tempfile
+import time
 import traceback
 from functools import partial
 from pathlib import Path
@@ -17,6 +18,7 @@ from rhizome.logs import get_logger
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static, TabbedContent
 from textual.worker import Worker
@@ -36,6 +38,10 @@ from rhizome.tui.widgets.options_editor import OptionsEditor
 from rhizome.tui.widgets.welcome import WelcomeHeader
 from rhizome.tui.widgets.status_bar import StatusBar
 from rhizome.tui.widgets.topic_tree import TopicTree
+
+
+class HintHigherVerbosity(Message):
+    """Posted by the hint_higher_verbosity tool to suggest the user raise verbosity."""
 
 
 class ChatPane(Widget):
@@ -124,6 +130,11 @@ class ChatPane(Widget):
         self._command_registry = CommandRegistry()
         self._register_commands(self._command_registry)
 
+        # Verbosity-hint throttling: show the toast only on the first hint
+        # since the last answer-verbosity change, or if 10+ minutes have passed.
+        self._verbosity_hint_allowed = True
+        self._verbosity_hint_last_shown: float = 0.0
+
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
@@ -157,6 +168,7 @@ class ChatPane(Widget):
 
         # Subscribe to post-update so agent rebuilds when options change
         self.options.subscribe_post_update(self._agent_session.on_options_post_update)
+        self.options.subscribe_post_update(self._on_options_post_update)
 
         # Add the welcome header, assuming _show_welcome is True.
         area = self.query_one("#message-area", VerticalScroll)
@@ -472,6 +484,10 @@ class ChatPane(Widget):
         await self.options.set(Options.Agent.AnswerVerbosity, new_value)
         await self.options.post_update()
         self.update_status_bar()
+
+    async def _on_options_post_update(self, options: Options) -> None:
+        """Reset verbosity-hint throttle when answer verbosity changes."""
+        self._verbosity_hint_allowed = True
 
     # ------------------------------------------------------------------
     # Command registration & handlers
@@ -814,6 +830,18 @@ class ChatPane(Widget):
                 await self.options.post_update()
 
         self.run_worker(_notify())
+
+    def on_hint_higher_verbosity(self, event: HintHigherVerbosity) -> None:
+        now = time.monotonic()
+        elapsed = now - self._verbosity_hint_last_shown
+        if self._verbosity_hint_allowed or elapsed >= 600:
+            self.notify(
+                "Hint: the agent has indicated that a higher verbosity "
+                "may be required to properly answer your query.",
+                timeout=8
+            )
+            self._verbosity_hint_allowed = False
+            self._verbosity_hint_last_shown = now
 
     def on_commit_approved(self, event: CommitApproved) -> None:
         self.append_message(ChatMessageData(

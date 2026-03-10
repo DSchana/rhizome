@@ -57,7 +57,7 @@ class ToolGroups:
     DB_TOPICS = ["list_all_topics", "show_topics", "create_new_topic", "delete_topics"]
     DB_ENTRIES = ["get_entries", "create_entries"]
     DATABASE = DB_TOPICS + DB_ENTRIES
-    APP = ["set_topic", "set_mode", "rename_tab", "ask_user_input"]
+    APP = ["set_topic", "set_mode", "rename_tab", "ask_user_input", "hint_higher_verbosity"]
 
 
 def build_tools(session_factory, chat_pane=None, included: list[str] | None = None) -> list:
@@ -312,6 +312,18 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
         result = interrupt({"type": "choices", "message": message, "options": choices})
         return f"User selected: {result}"
 
+    @tool("hint_higher_verbosity", description=(
+        "Hint to the user that a higher verbosity setting may be needed to properly "
+        "answer their query. Use this ONLY in 'terse' verbosity mode when the question "
+        "warrants a longer answer. Do NOT use in 'standard', 'verbose', or 'auto' mode."
+    ))
+    @tool_visibility(ToolVisibility.LOW)
+    async def hint_higher_verbosity_tool() -> str:
+        if chat_pane is not None:
+            from rhizome.tui.widgets.chat_pane import HintHigherVerbosity
+            chat_pane.post_message(HintHigherVerbosity())
+        return "Hint sent."
+
     all_tools = {
         "list_all_topics": list_all_topics_tool,
         "show_topics": show_topics_tool,
@@ -323,6 +335,7 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
         "set_mode": set_mode_tool,
         "rename_tab": rename_tab_tool,
         "ask_user_input": ask_user_input_tool,
+        "hint_higher_verbosity": hint_higher_verbosity_tool,
     }
 
     if included is None:

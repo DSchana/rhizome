@@ -19,8 +19,7 @@ _MODE_COLORS: dict[str, str] = {
 _VERBOSITY_COLORS: dict[str, str] = {
     "terse": "rgb(120,120,120)",
     "standard": "rgb(255,255,255)",
-    "verbose": "rgb(255,80,80)",
-    "expository": "rgb(90,210,190)",
+    "verbose": "rgb(90,210,190)",
     "auto": "rgb(255,80,255)",
 }
 

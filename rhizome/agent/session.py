@@ -102,6 +102,9 @@ class AgentSession:
         self.on_token_usage_changed = on_token_usage_changed
         self.on_rebuild_agent = on_rebuild_agent
 
+        # User settings injection — persistent messages queued when settings change.
+        self._last_injected_settings: dict[str, Any] | None = None
+
         # Subagent registry — shared across all tools in this session.
         self._subagents: AsyncMap[str, Subagent] = AsyncMap()
         self._subagents._data[COMMIT] = commit_subagent
@@ -189,6 +192,16 @@ class AgentSession:
                 "answer_verbosity": self._agent_kwargs.get("answer_verbosity", "auto"),
                 "planning_verbosity": self._agent_kwargs.get("planning_verbosity", "low"),
             }
+
+            # Inject a persistent settings message when settings change.
+            if user_settings != self._last_injected_settings:
+                if user_settings:
+                    payload = json.dumps(user_settings, indent=2)
+                    queued.append(HumanMessage(
+                        content=f"[System] Respond with these user settings:\n```json\n{payload}\n```"
+                    ))
+                self._last_injected_settings = dict(user_settings)
+
             context = AgentContext(user_settings=user_settings)
 
             while True:

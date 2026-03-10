@@ -84,7 +84,6 @@ def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Structu
         tools,
         provider=provider,
         model_name=model_name,
-        skip_middleware=["InjectUserSettingsMiddleware"],
         response_format=ProviderStrategy(CommitProposalResponseSchema),
         **{**agent_kwargs, "temperature": 0.1},
     )
