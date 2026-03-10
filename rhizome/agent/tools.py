@@ -293,7 +293,10 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
         await chat_pane._set_mode(target, silent=True)
         return f"Mode is now: {chat_pane.session_mode.value}"
 
-    @tool("rename_tab", description="Rename the active chat session tab.")
+    @tool("rename_tab", description=(
+        "Rename the active chat session tab. Keep the name short — around 20 characters, "
+        "2-3 words. The default max tab width is 20 characters (the user can change this)."
+    ))
     @tool_visibility(ToolVisibility.LOW)
     async def rename_tab_tool(name: str) -> str:
         await chat_pane._cmd_rename(name)
