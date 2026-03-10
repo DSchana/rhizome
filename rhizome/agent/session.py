@@ -72,8 +72,15 @@ class AgentSession:
         self._debug = debug
         self._dump_dir: Path | None = None
         if debug:
-            slug = self.thread_id[:8]
-            self._dump_dir = get_log_dir() / f"agent-stream-{slug}"
+            log_dir = get_log_dir()
+            # Find the next sequential index for agent-stream directories.
+            max_idx = 0
+            for p in log_dir.glob("agent-stream-*"):
+                try:
+                    max_idx = max(max_idx, int(p.name.split("-")[-1]))
+                except ValueError:
+                    pass
+            self._dump_dir = log_dir / f"agent-stream-{max_idx + 1}"
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
@@ -110,9 +117,22 @@ class AgentSession:
         self._subagents._data[COMMIT] = commit_subagent
 
     def rebuild_agent(self, provider: str, model_name: str, agent_kwargs: dict[str, Any] | None = None) -> None:
-        """Rebuild the agent graph with the given provider and model."""
+        """Rebuild the agent graph with the given provider and model.
+
+        The previous graph's message history is preserved by draining it
+        into the message queue so the next ``stream()`` call seeds the
+        new graph with the full conversation.
+        """
         old_model = self._model_name or "(default)"
         self._session_logger.info("Agent rebuilt: %s → %s", old_model, model_name)
+
+        # Snapshot the full conversation from the old graph and prepend it
+        # to the message queue (ahead of any already-queued messages).
+        prior_messages = self._get_graph_messages()
+        if prior_messages:
+            pending = self._message_queue
+            self._message_queue = prior_messages + pending
+
         self._provider = provider
         self._model_name = model_name
         if agent_kwargs is not None:
