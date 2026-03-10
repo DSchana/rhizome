@@ -126,6 +126,8 @@ class ChatPane(Widget):
         # Commit mode state — see CommitState dataclass.
         self._commit = CommitState()
 
+        self._log = get_logger("tui.chat_pane")
+
         # Command registry
         self._command_registry = CommandRegistry()
         self._register_commands(self._command_registry)
@@ -339,24 +341,27 @@ class ChatPane(Widget):
     # Input handling & command palette
     # ------------------------------------------------------------------
 
-    _log = get_logger("tui.chat_pane")
+    # Commands that require the agent to be idle before executing.
+    _AGENT_GATED_COMMANDS = {"commit", "options"}
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         self._hide_palette()
 
-        if self._agent_busy:
-            self.notify("Agent is thinking, you can submit after it completes or interrupt with Ctrl+C")
-            return
-
         text = event.value.strip()
         if not text:
+            return
+
+        command = parse_input(text)
+        needs_idle = command is None or command.name in self._AGENT_GATED_COMMANDS
+
+        if needs_idle and self._agent_busy:
+            self.notify("Agent is thinking, you can submit after it completes or interrupt with Ctrl+C")
             return
 
         chat_input = self.query_one("#chat-input", ChatInput)
         chat_input.clear()
         chat_input.push_history(text)
 
-        command = parse_input(text)
         if command is not None:
             self._handle_command(command.name, command.args)
         else:
