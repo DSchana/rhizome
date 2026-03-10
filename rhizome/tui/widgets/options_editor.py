@@ -157,11 +157,22 @@ class OptionsEditor(Widget):
     class Done(Message):
         """Posted when the user clicks Done."""
 
+        def __init__(self, changes: dict[str, tuple[Any, Any]]) -> None:
+            super().__init__()
+            self.changes = changes
+            """Map of resolved_name → (old_value, new_value) for changed options."""
+
     def __init__(self, options: Options, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._options = options
         # Build a map from widget_id → spec for event handling
         self._widget_specs: dict[str, OptionSpec] = {}
+        # Snapshot initial values so we can report what changed on Done.
+        self._initial_specs = [s for s in Options.spec() if s.scope >= options._scope]
+        self._initial_values: dict[str, Any] = {
+            spec.resolved_name: options.get(spec)
+            for spec in self._initial_specs
+        }
 
     def compose(self) -> ComposeResult:
         scope_label = "root" if self._options._scope == OptionScope.Root else "session"
@@ -307,7 +318,13 @@ class OptionsEditor(Widget):
             self.post_message(self.Dismissed())
         elif event.button.id == "options-done":
             self._flush_inputs()
-            self.post_message(self.Done())
+            changes: dict[str, tuple[Any, Any]] = {}
+            for spec in self._initial_specs:
+                old = self._initial_values[spec.resolved_name]
+                new = self._options.get(spec)
+                if new != old:
+                    changes[spec.resolved_name] = (old, new)
+            self.post_message(self.Done(changes))
 
     def _flush_inputs(self) -> None:
         """Apply any pending Input values that haven't been submitted via Enter."""

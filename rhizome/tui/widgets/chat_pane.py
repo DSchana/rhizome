@@ -839,6 +839,12 @@ class ChatPane(Widget):
             ed.remove()
         self._restore_chat_input()
 
+        if event.changes:
+            lines = [f"  {name}: {old} → {new}" for name, (old, new) in event.changes.items()]
+            self.append_message(ChatMessageData(
+                role=Role.SYSTEM, content="Options changed:\n" + "\n".join(lines), rich=True
+            ))
+
         async def _notify() -> None:
             if self.options is not None:
                 await self.options.post_update()
