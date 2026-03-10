@@ -89,6 +89,7 @@ class MainScreen(Screen):
         Binding("ctrl+w", "close_tab", "Close tab", priority=True),
         Binding("ctrl+pagedown", "next_tab", "Next tab", show=False, priority=True),
         Binding("ctrl+pageup", "prev_tab", "Previous tab", show=False, priority=True),
+        Binding("ctrl+l", "refocus_input", "Refocus input", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -197,4 +198,11 @@ class MainScreen(Screen):
 
     def action_prev_tab(self) -> None:
         self._switch_tab(1)
+
+    def action_refocus_input(self) -> None:
+        """Focus the chat input in the active tab."""
+        tabs = self.query_one("#tabs", TabbedContent)
+        pane = tabs.active_pane
+        if isinstance(pane, ChatTabPane):
+            pane.query_one(ChatPane).query_one("#chat-input").focus()
 
