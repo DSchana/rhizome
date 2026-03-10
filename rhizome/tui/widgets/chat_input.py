@@ -1,5 +1,7 @@
 """Multiline chat input: Enter submits, Ctrl+Enter inserts a newline."""
 
+import time
+
 from textual.message import Message
 from textual.widgets import TextArea
 
@@ -43,6 +45,7 @@ class ChatInput(TextArea):
         self._history: list[str] = []
         self._history_index: int = -1
         self._draft: str = ""
+        self._last_escape: float = 0.0
 
     def push_history(self, text: str) -> None:
         """Record a submitted message in the history buffer."""
@@ -62,6 +65,15 @@ class ChatInput(TextArea):
             self.placeholder = "ctrl+l to return to the chat area"
 
     def _on_key(self, event) -> None:
+        if event.key == "escape":
+            now = time.monotonic()
+            if now - self._last_escape < 0.5 and self.text:
+                self.clear()
+                event.stop()
+                event.prevent_default()
+            self._last_escape = now
+            return
+
         if event.key == "enter":
             text = self.text.strip()
             if self.palette_active and not self._is_complete_command(text):
