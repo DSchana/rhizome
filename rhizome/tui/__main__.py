@@ -6,7 +6,7 @@ import rich_click as click
 
 from rhizome.config import get_default_db_path
 from rhizome.db import init_db
-from rhizome.tui.app import CurriculumApp
+from rhizome.tui.app import RhizomeApp
 
 
 @click.command()
@@ -21,7 +21,7 @@ def main(db: str | None, debug: bool) -> None:
     """Launch the rhizome TUI."""
     db_path = db or str(get_default_db_path())
     asyncio.run(init_db(db_path))
-    app = CurriculumApp(db_path=db_path, debug=debug)
+    app = RhizomeApp(db_path=db_path, debug=debug)
     app.run()
 
 

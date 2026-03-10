@@ -17,7 +17,7 @@ from rhizome.tui.screens.main import MainScreen, ChatTabPane, LogTabPane
 from rhizome.tui.widgets.chat_pane import ChatPane
 
 
-class CurriculumApp(App):
+class RhizomeApp(App):
     """Curriculum-app TUI — a chat-based interface for learning and review."""
 
     TITLE = "rhizome"

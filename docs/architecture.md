@@ -47,10 +47,10 @@ Textual `Screen` and `Widget` subclasses. Each Screen or Widget:
 
 State lives at the level of the component that needs it:
 
-### App-level state (`CurriculumApp`)
+### App-level state (`RhizomeApp`)
 
 ```python
-class CurriculumApp(App):
+class RhizomeApp(App):
     def on_mount(self) -> None:
         self.push_screen(MainScreen())
 ```
@@ -75,15 +75,15 @@ Widgets hold purely presentational state (e.g. a `StatusBar` with reactive `mode
 
 ## Commands
 
-Commands are async functions that take the `CurriculumApp` instance and an args string. This gives them access to the full View tree — they can read/write app-level state, query for screens, and call screen methods.
+Commands are async functions that take the `RhizomeApp` instance and an args string. This gives them access to the full View tree — they can read/write app-level state, query for screens, and call screen methods.
 
 ```python
-async def handle_help(app: CurriculumApp, args: str) -> None:
+async def handle_help(app: RhizomeApp, args: str) -> None:
     help_text = _build_help_text(args)
     chat = app.query_one(MainScreen)
     chat._append_message(ChatMessage(role="agent", content=help_text))
 
-async def handle_learn(app: CurriculumApp, args: str) -> None:
+async def handle_learn(app: RhizomeApp, args: str) -> None:
     app.mode = Mode.LEARN
     app.push_screen(LearnContextScreen())
 ```
@@ -91,7 +91,7 @@ async def handle_learn(app: CurriculumApp, args: str) -> None:
 Commands are full async functions, so they can perform multi-step interactions:
 
 ```python
-async def handle_complex_command(app: CurriculumApp, args: str) -> None:
+async def handle_complex_command(app: RhizomeApp, args: str) -> None:
     chat = app.query_one(MainScreen)
     chat.is_thinking = True
 
@@ -109,14 +109,14 @@ async def handle_complex_command(app: CurriculumApp, args: str) -> None:
 
 ### Agent compatibility
 
-The agent layer runs inside the Textual app and holds a reference to the `CurriculumApp` instance. It calls the same command handler functions as the TUI's slash-command system. From the command's perspective, it doesn't matter who invoked it.
+The agent layer runs inside the Textual app and holds a reference to the `RhizomeApp` instance. It calls the same command handler functions as the TUI's slash-command system. From the command's perspective, it doesn't matter who invoked it.
 
 ## Screen Switching / Navigation
 
 Screen switching uses Textual's built-in `push_screen` / `pop_screen` API directly. There is no routing abstraction — commands and event handlers call these methods on the `App` when they need to navigate.
 
 ```python
-async def handle_learn(app: CurriculumApp, args: str) -> None:
+async def handle_learn(app: RhizomeApp, args: str) -> None:
     app.mode = Mode.LEARN
     app.push_screen(LearnContextScreen())
 ```
@@ -142,7 +142,7 @@ For async operations (agent calls, DB queries):
 
 ### Step 0: Setup
 
-`CurriculumApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `MainScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, curriculum/topic).
+`RhizomeApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `MainScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, curriculum/topic).
 
 ### Step 1: Textual posts `ChatInput.Submitted`
 

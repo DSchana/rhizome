@@ -128,13 +128,13 @@ class ChatViewModel(BaseViewModel):
 The View tree mirrors this:
 
 ```
-CurriculumApp          subscribes to  AppViewModel
+RhizomeApp          subscribes to  AppViewModel
   └─ ChatScreen        subscribes to  AppViewModel.chat
        ├─ MessageArea                  (renders from chat.messages)
        └─ StatusBar                    (reads app.mode)
 ```
 
-Each View subscribes to the ViewModel at its level. `CurriculumApp` creates the `AppViewModel`, then passes `app.chat` to `ChatScreen` when it mounts it.
+Each View subscribes to the ViewModel at its level. `RhizomeApp` creates the `AppViewModel`, then passes `app.chat` to `ChatScreen` when it mounts it.
 
 **Child VMs should not reach up to their parent.** If `ChatViewModel` needs to trigger navigation, it emits an event via `_notify` and the parent — whoever subscribed — decides what to do. This keeps the tree composable and each VM testable in isolation.
 
@@ -177,11 +177,11 @@ async def handle_complex_command(app: AppViewModel, args: str) -> None:
 
 1. A command (or agent action) calls `app.navigate(Route.LEARN_CONTEXT_SELECT)`
 2. `AppViewModel.navigate` emits a `NavigationRequested` event via `_notify`
-3. `CurriculumApp` (the Textual `App`, subscribed to `AppViewModel`) handles it
-4. `CurriculumApp` creates the target screen's ViewModel (if needed), creates the screen, and pushes it
+3. `RhizomeApp` (the Textual `App`, subscribed to `AppViewModel`) handles it
+4. `RhizomeApp` creates the target screen's ViewModel (if needed), creates the screen, and pushes it
 
 ```python
-# View — CurriculumApp
+# View — RhizomeApp
 def _on_navigation_requested(self, event: NavigationRequested) -> None:
     match event.route:
         case Route.LEARN_CONTEXT_SELECT:
@@ -205,7 +205,7 @@ Traced step-by-step through every layer.
 
 ### Step 0: Setup
 
-`CurriculumApp` creates an `AppViewModel` (which owns a `ChatViewModel` as `app.chat`). When `ChatScreen` is mounted, it receives `app.chat` and subscribes to its events. The ViewModel holds the authoritative state (message list, mode, etc.). The View renders from that state.
+`RhizomeApp` creates an `AppViewModel` (which owns a `ChatViewModel` as `app.chat`). When `ChatScreen` is mounted, it receives `app.chat` and subscribes to its events. The ViewModel holds the authoritative state (message list, mode, etc.). The View renders from that state.
 
 ### Step 1: Textual posts `ChatInput.Submitted`
 

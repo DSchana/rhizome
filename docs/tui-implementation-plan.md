@@ -50,7 +50,7 @@ rhizome/
 Running Textual app with basic layout, navigation skeleton, and command infrastructure.
 
 **What was built:**
-- `tui/app.py` — `CurriculumApp(App)` creates shared `AppState`, pushes `ChatScreen` on mount.
+- `tui/app.py` — `RhizomeApp(App)` creates shared `AppState`, pushes `ChatScreen` on mount.
 - `tui/state.py` — `AppState` dataclass (`mode`, `active_curriculum`, `active_topic`, `chat_history`), `ChatMessage`, `Mode` enum.
 - `tui/commands.py` — `parse_input()` for slash-command detection; `Command(name, description, handler)` dataclass with `COMMANDS` dict registry. Stub handlers for `learn`, `review`, `options`.
 - `tui/screens/chat.py` — Main chat screen: scrollable message area, input box, status bar. Routes `/quit` directly (TUI-only), delegates other commands to their registry handlers via `run_worker`.
