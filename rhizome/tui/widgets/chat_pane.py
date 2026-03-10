@@ -486,8 +486,17 @@ class ChatPane(Widget):
         self.update_status_bar()
 
     async def _on_options_post_update(self, options: Options) -> None:
-        """Reset verbosity-hint throttle when answer verbosity changes."""
+        """React to option changes: reset verbosity hint, clear stale cache display."""
         self._verbosity_hint_allowed = True
+
+        if (
+            options.get(Options.Agent.Provider) == "anthropic"
+            and options.get(Options.Agent.Anthropic.PromptCache) != "enabled"
+        ):
+            if self._agent_session is not None:
+                self._agent_session.token_usage.cache_read_tokens = None
+                self._agent_session.token_usage.cache_creation_tokens = None
+                self.update_status_bar()
 
     # ------------------------------------------------------------------
     # Command registration & handlers
