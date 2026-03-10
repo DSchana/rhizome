@@ -113,6 +113,7 @@ class ChatMessage(Widget):
     }}
     ChatMessage .msg-content {{
         width: 1fr;
+        color: rgb(204, 204, 204);
     }}
     ChatMessage #msg-line-count {{
         display: none;
