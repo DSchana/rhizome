@@ -760,7 +760,8 @@ class ChatPane(Widget):
                 desc = desc.strip().split("\n")[0] if desc else ""
                 lines.append(f"  /{name} — {desc}")
             lines.append("")
-            lines.append("Type /help <command> for details, or /<command> --help.")
+            lines.append("Commands support standard CLI syntax (options, flags, --help).")
+            lines.append("e.g. /options --edit --global, /options set agent.temperature 0.5")
             text = "\n".join(lines)
 
         self.append_message(ChatMessageData(role=Role.SYSTEM, content=text, rich=True))
