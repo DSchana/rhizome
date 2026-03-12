@@ -12,12 +12,13 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command
 
-from rhizome.agent.builder import build_agent
+from rhizome.agent.builder import build_root_agent
 from rhizome.config import get_log_dir
 from rhizome.agent.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
 from rhizome.agent.context import AgentContext
+from rhizome.agent.middleware.agent_mode import SYSTEM_PROMPT_MESSAGE_ID
+from rhizome.agent.modes import MODE_REGISTRY, IdleAgentMode
 from rhizome.agent.subagent import Subagent
-from rhizome.agent.system_prompt import SYSTEM_PROMPT
 from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.logs import get_logger
@@ -83,6 +84,10 @@ class AgentSession:
             self._dump_dir = log_dir / f"agent-stream-{max_idx + 1}"
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
+        # Active agent mode — controls the system prompt and tool filtering
+        # via AgentModeMiddleware.
+        self.active_mode: AgentMode = IdleAgentMode()
+
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
 
@@ -94,15 +99,22 @@ class AgentSession:
             build_commit_subagent_tools(session_factory, chat_pane, commit_subagent)
         )
 
-        self._model, self._agent = build_agent(self._tools, self._provider, self._model_name, **self._agent_kwargs)
+        self._model, self._agent = build_root_agent(
+            self._tools, self._provider, self._model_name,
+            mode_accessor=lambda: self.active_mode,
+            **self._agent_kwargs,
+        )
 
         self._session_logger = get_logger("agent.session")
         self._session_logger.info("Session created (provider=%s, model=%s)", provider, model_name)
 
         # Message queue: messages added here are drained into the graph on the
-        # next stream() call.  The system prompt is seeded as the first message
-        # so the graph's first invocation receives it.
-        self._message_queue: list[BaseMessage] = [SystemMessage(SYSTEM_PROMPT)]
+        # next stream() call.  The system prompt is seeded here so it appears
+        # in the graph state (for debugging / log dumps).  AgentModeMiddleware
+        # keeps it in sync with the active mode on every model call.
+        self._message_queue: list[BaseMessage] = [
+            SystemMessage(content=self.active_mode.system_prompt, id=SYSTEM_PROMPT_MESSAGE_ID)
+        ]
 
         self._token_usage = TokenUsageData()
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
@@ -137,7 +149,11 @@ class AgentSession:
         self._model_name = model_name
         if agent_kwargs is not None:
             self._agent_kwargs = agent_kwargs
-        self._model, self._agent = build_agent(self._tools, provider, model_name, **self._agent_kwargs)
+        self._model, self._agent = build_agent(
+            self._tools, provider, model_name,
+            mode_accessor=lambda: self.active_mode,
+            **self._agent_kwargs,
+        )
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         if self.on_rebuild_agent is not None:
             self.on_rebuild_agent(old_model, model_name)
@@ -150,6 +166,25 @@ class AgentSession:
 
         if provider != self._provider or model_name != self._model_name or new_kwargs != self._agent_kwargs:
             self.rebuild_agent(provider, model_name, agent_kwargs=new_kwargs)
+
+    def _handle_mode_change(self, mode_name: str) -> None:
+        """Update the active agent mode.
+
+        Called by ``ChatPane._set_mode()`` whenever the mode changes (whether
+        via slash command, keybinding, or the agent's ``set_mode`` tool).
+
+        Updates ``active_mode`` so that ``AgentModeMiddleware.abefore_model``
+        will replace the system message in graph state on the next model call.
+        No manual system message queuing is needed — the middleware handles it
+        idempotently.
+        """
+        mode_cls = MODE_REGISTRY.get(mode_name)
+        if mode_cls is None:
+            self._session_logger.warning("Unknown mode %r — keeping current mode", mode_name)
+            return
+        old_name = self.active_mode.name
+        self.active_mode = mode_cls()
+        self._session_logger.info("Agent mode changed: %s -> %s", old_name, mode_name)
 
     def add_human_message(self, text: str) -> None:
         self._message_queue.append(HumanMessage(content=text))
@@ -298,7 +333,7 @@ class AgentSession:
             self._patch_orphaned_tool_calls(
                 f"An error has occurred during the stream request: {type(exc).__name__}"
             )
-            self._session_logger.error("Stream error: %s", exc)
+            self._session_logger.exception("Stream error: %s", exc, exc_info=exc, stack_info=True)
             raise
         else:
             self._session_logger.debug(

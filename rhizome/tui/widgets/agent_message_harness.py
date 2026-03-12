@@ -163,6 +163,8 @@ class AgentMessageHarness(Widget):
         - Other block types (``"text"``, ``"server_tool_result"``, etc.) are ignored.
         """
         for update in chunk.values():
+            if update is None:
+                continue
             for msg in update.get("messages", []):
                 content = getattr(msg, "content", None)
                 if not isinstance(content, list):
