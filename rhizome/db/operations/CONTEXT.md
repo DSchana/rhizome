@@ -14,6 +14,8 @@ Async tool functions for the agent/TUI to interact with the database. Every publ
 
 - **relations.py** — `add_relation`, `remove_relation`, `get_related_entries`, `get_dependency_chain`, plus `CycleError`. Manages directed edges in the knowledge graph. `add_relation` runs a recursive CTE to detect cycles before inserting. `get_dependency_chain` follows only "depends_on" edges transitively (depth-limited to 10).
 
+- **reviews.py** — `create_review_session` (with topic and entry IDs), `get_review_session`, `complete_review_session` (sets `completed_at`), `add_review_interaction` (with entry IDs, optional feedback/score, position for ordering), `list_review_interactions` (ordered by position), `get_review_session_entries` (returns entry IDs in the session pool).
+
 ## Conventions
 
 - Missing entities raise `ValueError` (for updates/deletes).

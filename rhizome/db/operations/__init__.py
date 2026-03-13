@@ -33,6 +33,14 @@ from .tags import (
     tag_entry,
     untag_entry,
 )
+from .reviews import (
+    add_review_interaction,
+    complete_review_session,
+    create_review_session,
+    get_review_session,
+    get_review_session_entries,
+    list_review_interactions,
+)
 from .topics import (
     create_topic,
     delete_topic,
@@ -81,4 +89,11 @@ __all__ = [
     "remove_relation",
     "get_related_entries",
     "get_dependency_chain",
+    # reviews
+    "create_review_session",
+    "get_review_session",
+    "complete_review_session",
+    "add_review_interaction",
+    "list_review_interactions",
+    "get_review_session_entries",
 ]

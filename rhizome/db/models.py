@@ -185,3 +185,97 @@ class RelatedKnowledgeEntries(Base):
             f"source={self.source_entry_id} -> target={self.target_entry_id} "
             f"type={self.relationship_type!r}>"
         )
+
+
+class ReviewSession(Base):
+    __tablename__ = "review_session"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    started_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    session_topics: Mapped[list["ReviewSessionTopic"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+    session_entries: Mapped[list["ReviewSessionEntry"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+    interactions: Mapped[list["ReviewInteraction"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReviewSession id={self.id} started_at={self.started_at}>"
+
+
+class ReviewSessionTopic(Base):
+    __tablename__ = "review_session_topic"
+    __table_args__ = (UniqueConstraint("session_id", "topic_id"),)
+
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("review_session.id"), primary_key=True
+    )
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic.id"), primary_key=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReviewSessionTopic session={self.session_id} topic={self.topic_id}>"
+
+
+class ReviewSessionEntry(Base):
+    __tablename__ = "review_session_entry"
+    __table_args__ = (UniqueConstraint("session_id", "entry_id"),)
+
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("review_session.id"), primary_key=True
+    )
+    entry_id: Mapped[int] = mapped_column(
+        ForeignKey("knowledge_entry.id"), primary_key=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReviewSessionEntry session={self.session_id} entry={self.entry_id}>"
+
+
+class ReviewInteraction(Base):
+    __tablename__ = "review_interaction"
+    __table_args__ = (
+        CheckConstraint("score >= 0 AND score <= 5", name="score_range"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("review_session.id"), nullable=False, index=True
+    )
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    user_response: Mapped[str] = mapped_column(Text, nullable=False)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    session: Mapped["ReviewSession"] = relationship(back_populates="interactions")
+    interaction_entries: Mapped[list["ReviewInteractionEntry"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ReviewInteraction id={self.id} session={self.session_id} "
+            f"pos={self.position} score={self.score}>"
+        )
+
+
+class ReviewInteractionEntry(Base):
+    __tablename__ = "review_interaction_entry"
+    __table_args__ = (UniqueConstraint("interaction_id", "entry_id"),)
+
+    interaction_id: Mapped[int] = mapped_column(
+        ForeignKey("review_interaction.id"), primary_key=True
+    )
+    entry_id: Mapped[int] = mapped_column(
+        ForeignKey("knowledge_entry.id"), primary_key=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<ReviewInteractionEntry interaction={self.interaction_id} entry={self.entry_id}>"
