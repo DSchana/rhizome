@@ -177,10 +177,6 @@ class TopicTreeViewer(Vertical):
     }
     TopicTreeViewer.--show-entries #topic-tree-left {
         width: 30%;
-        height: 100%;
-    }
-    TopicTreeViewer.--show-entries #topic-tree-scroll {
-        height: 1fr;
     }
     TopicTreeViewer.--show-entries #topic-entry-viewer {
         display: block;
