@@ -10,6 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from rhizome.agent.system_prompt import (
+    DEBUG_SECTION,
     IDLE_MODE_SECTION,
     LEARN_MODE_SECTION,
     REVIEW_MODE_SECTION,
@@ -66,6 +67,9 @@ def _compose_prompt(*sections: str) -> str:
 class AgentMode(ABC):
     """Defines the system prompt and tool allowlist for an agent operating mode."""
 
+    def __init__(self, *, debug: bool = False) -> None:
+        self._debug = debug
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -99,6 +103,7 @@ class IdleAgentMode(AgentMode):
         return _compose_prompt(
             SHARED_PREAMBLE, SHARED_APP_OVERVIEW,
             IDLE_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
+            *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
@@ -118,6 +123,7 @@ class LearnAgentMode(AgentMode):
         return _compose_prompt(
             SHARED_PREAMBLE, SHARED_APP_OVERVIEW,
             LEARN_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
+            *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
@@ -137,6 +143,7 @@ class ReviewAgentMode(AgentMode):
         return _compose_prompt(
             SHARED_PREAMBLE, SHARED_APP_OVERVIEW,
             REVIEW_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
+            *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property

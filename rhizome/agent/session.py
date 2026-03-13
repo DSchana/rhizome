@@ -86,7 +86,7 @@ class AgentSession:
 
         # Active agent mode — controls the system prompt and tool filtering
         # via AgentModeMiddleware.
-        self.active_mode: AgentMode = IdleAgentMode()
+        self.active_mode: AgentMode = IdleAgentMode(debug=debug)
 
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
@@ -183,7 +183,7 @@ class AgentSession:
             self._session_logger.warning("Unknown mode %r — keeping current mode", mode_name)
             return
         old_name = self.active_mode.name
-        self.active_mode = mode_cls()
+        self.active_mode = mode_cls(debug=self._debug)
         self._session_logger.info("Agent mode changed: %s -> %s", old_name, mode_name)
 
     def add_human_message(self, text: str) -> None:
