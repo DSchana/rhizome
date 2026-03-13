@@ -1,75 +1,118 @@
-"""Agent graph builder — provider-agnostic wrapper around create_agent/init_chat_model."""
+"""Agent graph builder — provider-agnostic wrapper around create_agent/init_chat_model.
+
+Two entry points:
+
+- ``build_agent`` — generic builder for subagents and simple use cases.
+- ``build_root_agent`` — extends ``build_agent`` with mode middleware, prompt
+  caching, web tools, and other root-agent-specific features.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
 
 from rhizome.agent.config import get_api_key
-from rhizome.agent.context import AgentContext
-from rhizome.agent.middleware import (
-    AnthropicPenultimateCacheMiddleware,
-    DisableParallelToolCallsMiddleware,
-    LogToolCallsMiddleware,
-)
+from rhizome.agent.middleware import LogToolCallsMiddleware
 from rhizome.logs import get_logger
 
+if TYPE_CHECKING:
+    from rhizome.agent.modes import AgentMode
+
 _logger = get_logger("agent")
+
+
+def _init_model(provider: str, model_name: str, temperature: float = 0.3):
+    """Create a ``BaseChatModel`` for the given provider."""
+    if provider == "anthropic":
+        return init_chat_model(model_name, api_key=get_api_key(), temperature=temperature)
+    raise ValueError(f"Unsupported provider: {provider}")
 
 
 def build_agent(
     tools: list,
     provider: str,
     model_name: str,
-    response_format: type | None = None,
-    **agent_kwargs,
+    *,
+    response_format=None,
+    middleware: list | None = None,
+    context_schema=None,
+    **kwargs,
 ):
-    """Build the model + compiled graph.
+    """Build a model + compiled agent graph.
 
-    This exists primarily to encapsulate provider-specific setup (API keys,
-    middleware selection, model defaults) so that callers can construct agents
-    without caring which provider is in use.
+    This is the generic builder used by subagents and any other lightweight
+    agent.  ``LogToolCallsMiddleware`` is always prepended to the middleware
+    chain.
 
-    Returns a ``(model, agent)`` tuple where *model* is the underlying
-    ``BaseChatModel`` and *agent* is the compiled LangGraph state graph.
+    Returns a ``(model, agent)`` tuple.
     """
     _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
 
-    if provider == "anthropic":
-        temperature = agent_kwargs.get("temperature", 0.3)
-        model = init_chat_model(
-            model_name,
-            api_key=get_api_key(),
-            temperature=temperature,
-        )
+    model = _init_model(provider, model_name, temperature=kwargs.get("temperature", 0.3))
 
-        middleware = []
+    all_middleware = [LogToolCallsMiddleware()]
+    if middleware:
+        all_middleware.extend(middleware)
 
-        middleware.append(LogToolCallsMiddleware())
+    agent = create_agent(
+        model=model,
+        tools=list(tools),
+        middleware=all_middleware,
+        response_format=response_format,
+        context_schema=context_schema,
+        checkpointer=InMemorySaver(),
+    )
+    return model, agent
 
-        if not agent_kwargs.get("parallel_tool_calling", True):
-            middleware.append(DisableParallelToolCallsMiddleware())
 
-        if agent_kwargs.get("prompt_cache", True):
-            ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
-            middleware.append(AnthropicPenultimateCacheMiddleware(ttl=ttl))
+def build_root_agent(
+    tools: list,
+    provider: str,
+    model_name: str,
+    mode_accessor: Callable[[], AgentMode],
+    **agent_kwargs,
+):
+    """Build the root agent with mode switching, prompt caching, and web tools.
 
-        # Anthropic server-side tools (executed by the API, not locally).
-        # These are passed as dicts — create_agent routes them to bind_tools
-        # but not to the ToolNode.
-        all_tools: list = list(tools)
-        if agent_kwargs.get("web_tools", False):
-            all_tools.append({"name": "web_search", "type": "web_search_20260209", "max_uses": 5})
-            all_tools.append({"name": "web_fetch", "type": "web_fetch_20260209", "max_uses": 5})
-            _logger.info("Web tools enabled (web_search, web_fetch)")
+    Assembles root-specific middleware and tools, then delegates to
+    ``build_agent``.
 
-        agent = create_agent(
-            model=model,
-            tools=all_tools,
-            context_schema=AgentContext,
-            middleware=middleware,
-            response_format=response_format,
-            checkpointer=InMemorySaver(),
-        )
-        return model, agent
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
+    Returns a ``(model, agent)`` tuple.
+    """
+    from rhizome.agent.context import AgentContext
+    from rhizome.agent.middleware import (
+        AgentModeMiddleware,
+        AnthropicPenultimateCacheMiddleware,
+        DisableParallelToolCallsMiddleware,
+    )
+
+    _logger.info("Building root agent (provider=%s, model=%s)", provider, model_name)
+
+    middleware = [AgentModeMiddleware(mode_accessor)]
+
+    if not agent_kwargs.get("parallel_tool_calling", True):
+        middleware.append(DisableParallelToolCallsMiddleware())
+
+    if agent_kwargs.get("prompt_cache", True):
+        ttl = agent_kwargs.get("prompt_cache_ttl", "5m")
+        middleware.append(AnthropicPenultimateCacheMiddleware(ttl=ttl))
+
+    all_tools: list = list(tools)
+    if agent_kwargs.get("web_tools", False):
+        all_tools.append({"name": "web_search", "type": "web_search_20260209", "max_uses": 5})
+        all_tools.append({"name": "web_fetch", "type": "web_fetch_20260209", "max_uses": 5})
+        _logger.info("Web tools enabled (web_search, web_fetch)")
+
+    return build_agent(
+        all_tools,
+        provider,
+        model_name,
+        middleware=middleware,
+        context_schema=AgentContext,
+        temperature=agent_kwargs.get("temperature", 0.3),
+    )

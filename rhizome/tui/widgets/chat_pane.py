@@ -595,6 +595,10 @@ class ChatPane(Widget):
     async def _set_mode(self, mode: Mode, *, silent: bool = False) -> None:
         """Set the session mode.
 
+        Updates both the TUI-level ``session_mode`` and the agent session's
+        ``active_mode`` (which controls the system prompt and tool visibility
+        via ``AgentModeMiddleware``).
+
         When *silent* is ``True`` the system message is suppressed (useful
         when the agent switches modes programmatically).
         """
@@ -605,6 +609,8 @@ class ChatPane(Widget):
                 )
             return
         self.session_mode = mode
+        if self._agent_session is not None:
+            self._agent_session._handle_mode_change(mode.value)
         if not silent:
             label = "Returned to idle mode." if mode == Mode.IDLE else f"Entered {mode.value} mode."
             self.append_message(ChatMessageData(role=Role.SYSTEM, content=label))
