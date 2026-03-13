@@ -9,6 +9,7 @@ from enum import IntEnum
 
 from langchain.tools import tool
 from langgraph.types import interrupt
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from rhizome.db.models import KnowledgeEntry, Topic
@@ -25,6 +26,15 @@ from rhizome.logs import get_logger
 from rhizome.tui.types import Mode
 
 _logger = get_logger("agent.tools")
+
+
+class Question(BaseModel):
+    """A single multiple-choice question presented to the user."""
+
+    name: str = Field(description="Short tab label (1-2 words)")
+    prompt: str = Field(description="Full question text shown to the user")
+    options: list[str] = Field(description="List of option strings to choose from")
+
 
 class ToolVisibility(IntEnum):
     LOW = 0       # Housekeeping tools (set_mode, rename_tab) — only visible at max verbosity
@@ -307,13 +317,35 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
     # -----------------------------------------------------------------------
 
     @tool("ask_user_input", description=(
-        "Present a multiple-choice prompt to the user and wait for their selection. "
-        "Use this when you need the user to choose between options before proceeding."
+        "Present one or more multiple-choice questions to the user and wait for "
+        "their selections. Use this when you need the user to choose between "
+        "options before proceeding.\n\n"
+        "Each question has a short tab name (1-2 words), a full prompt, and a "
+        "list of options. If only one question is provided, a simple choice "
+        "widget is shown. Multiple questions are presented as a tabbed widget "
+        "where the user answers each in turn."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def ask_user_input_tool(message: str, choices: list[str]) -> str:
-        result = interrupt({"type": "choices", "message": message, "options": choices})
-        return f"User selected: {result}"
+    async def ask_user_input_tool(
+        questions: list[Question],
+    ) -> str:
+        if len(questions) == 1:
+            q = questions[0]
+            result = interrupt({
+                "type": "choices",
+                "message": q.prompt,
+                "options": q.options,
+            })
+            return f"User selected: {result}"
+        else:
+            qs = [q.model_dump() for q in questions]
+            result = interrupt({
+                "type": "multiple_choice",
+                "questions": qs,
+            })
+            # result is dict[str, str] mapping question names to answers
+            lines = [f"{name}: {answer}" for name, answer in result.items()]
+            return "User selections:\n" + "\n".join(lines)
 
     @tool("hint_higher_verbosity", description=(
         "Hint to the user that a higher verbosity setting may be needed to properly "

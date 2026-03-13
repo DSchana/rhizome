@@ -16,6 +16,7 @@ from rhizome.tui.types import Mode, Role
 from rhizome.tui.widgets.commit_proposal import CommitProposalInterrupt
 from rhizome.tui.widgets.interrupt_base import InterruptWidget
 from rhizome.tui.widgets.interrupt_choices import InterruptChoices
+from rhizome.tui.widgets.interrupt_multiple_choice import InterruptMultipleChoice
 from rhizome.tui.widgets.interrupt_warning import InterruptWarning
 from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
 from rhizome.tui.widgets.thinking import ThinkingIndicator
@@ -258,6 +259,8 @@ class AgentMessageHarness(Widget):
             widget = InterruptChoices.from_interrupt(interrupt_value)
         elif itype == "warning":
             widget = InterruptWarning.from_interrupt(interrupt_value)
+        elif itype == "multiple_choice":
+            widget = InterruptMultipleChoice.from_interrupt(interrupt_value)
         elif itype == "commit_proposal":
             widget = CommitProposalInterrupt.from_interrupt(interrupt_value)
         else:
