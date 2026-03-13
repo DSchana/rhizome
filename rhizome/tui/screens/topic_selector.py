@@ -7,7 +7,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static, Tree
 
-from rhizome.tui.widgets.topic_tree import _InnerTree
+from rhizome.tui.widgets import TopicTree
 
 
 class TopicSelectorScreen(ModalScreen[tuple[int, str] | None]):
@@ -41,7 +41,7 @@ class TopicSelectorScreen(ModalScreen[tuple[int, str] | None]):
     def compose(self):
         with Vertical():
             yield Static("Select a topic  (arrows navigate, enter select, esc cancel)")
-            yield _InnerTree()
+            yield TopicTree()
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         if event.node.data is not None:

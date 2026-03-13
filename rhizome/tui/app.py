@@ -14,7 +14,7 @@ from rhizome.tui.log_handler import TUILogHandler
 from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
 from rhizome.tui.screens.main import MainScreen, ChatTabPane, LogTabPane
-from rhizome.tui.widgets.chat_pane import ChatPane
+from rhizome.tui.widgets import ChatPane
 
 
 class RhizomeApp(App):

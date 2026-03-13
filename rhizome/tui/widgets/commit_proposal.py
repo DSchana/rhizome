@@ -1,4 +1,4 @@
-"""CommitProposalInterrupt — interrupt widget for reviewing and editing commit proposals."""
+"""CommitProposal — interrupt widget for reviewing and editing commit proposals."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class _EditInstructions(TextArea):
             super()._on_key(event)
 
 
-class CommitProposalInterrupt(Widget, can_focus=True):
+class CommitProposal(Widget, can_focus=True):
     """Displays a commit proposal for review with inline editing.
 
     The entry list and choice list share a single cursor. Position 0 is
@@ -87,42 +87,42 @@ class CommitProposalInterrupt(Widget, can_focus=True):
     ]
 
     DEFAULT_CSS = """
-    CommitProposalInterrupt {
+    CommitProposal {
         height: auto;
         layout: vertical;
         padding: 1 2;
         margin: 1 0;
     }
-    CommitProposalInterrupt #proposal-header {
+    CommitProposal #proposal-header {
         margin-bottom: 0;
     }
-    CommitProposalInterrupt #proposal-hints {
+    CommitProposal #proposal-hints {
         color: rgb(80,80,80);
         margin-bottom: 1;
     }
-    CommitProposalInterrupt #detail-panel {
+    CommitProposal #detail-panel {
         border: solid $surface-lighten-2;
         margin: 1 0;
         padding: 1 2 1 2;
         height: auto;
     }
-    CommitProposalInterrupt #detail-title {
+    CommitProposal #detail-title {
         background: transparent;
         border: none;
         height: 1;
         padding: 0;
         margin: 0;
     }
-    CommitProposalInterrupt #detail-title:focus {
+    CommitProposal #detail-title:focus {
         border: solid $accent;
         height: 3;
     }
-    CommitProposalInterrupt #detail-meta {
+    CommitProposal #detail-meta {
         color: rgb(100,100,100);
         margin: 0 0 1 0;
         padding: 0;
     }
-    CommitProposalInterrupt #detail-content {
+    CommitProposal #detail-content {
         background: transparent;
         border: none;
         height: auto;
@@ -131,13 +131,13 @@ class CommitProposalInterrupt(Widget, can_focus=True):
         margin: 0;
         padding: 0 1;
     }
-    CommitProposalInterrupt #detail-content:focus {
+    CommitProposal #detail-content:focus {
         border: solid $accent;
     }
-    CommitProposalInterrupt #proposal-choices {
+    CommitProposal #proposal-choices {
         margin-top: 1;
     }
-    CommitProposalInterrupt #edit-instructions {
+    CommitProposal #edit-instructions {
         background: transparent;
         border: solid $surface-lighten-2;
         margin: 1 0 0 0;
@@ -167,7 +167,7 @@ class CommitProposalInterrupt(Widget, can_focus=True):
         self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
-    def from_interrupt(cls, value: dict[str, Any]) -> CommitProposalInterrupt:
+    def from_interrupt(cls, value: dict[str, Any]) -> CommitProposal:
         return cls(
             entries=value["entries"],
             topic_map=value.get("topic_map", {}),

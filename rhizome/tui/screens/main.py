@@ -9,8 +9,7 @@ from textual.widgets import TabbedContent, TabPane
 
 from rhizome.tui.options import Options
 from rhizome.tui.types import ChatMessageData, Role, UserFeedback
-from rhizome.tui.widgets.chat_pane import ChatPane
-from rhizome.tui.widgets.logging_pane import LoggingPane
+from rhizome.tui.widgets import ChatPane, LoggingPane
 
 
 class LogTabPane(TabPane):

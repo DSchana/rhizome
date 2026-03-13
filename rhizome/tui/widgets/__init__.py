@@ -1,5 +1,41 @@
-from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
-from rhizome.tui.widgets.chat_pane import ChatPane
-from rhizome.tui.widgets.tool_call_list import ToolCallList
+from .agent_message_harness import AgentMessageHarness
+from .chat_input import ChatInput
+from .chat_pane import ChatPane, HintHigherVerbosity
+from .command_palette import CommandPalette
+from .commit_proposal import CommitProposal
+from .interrupt import InterruptWidget
+from .choices import Choices
+from .multiple_choices import MultipleChoices
+from .warning import WarningChoices
+from .logging_pane import LoggingPane
+from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
+from .options_editor import OptionsEditor
+from .status_bar import StatusBar
+from .thinking import ThinkingIndicator
+from .tool_call_list import ToolCallList
+from .topic_tree import TopicTree, TopicTreeViewer
+from .welcome import WelcomeHeader
 
-__all__ = ["AgentMessageHarness", "ChatPane", "ToolCallList"]
+__all__ = [
+    "AgentMessageHarness",
+    "ChatInput",
+    "ChatMessage",
+    "ChatPane",
+    "Choices",
+    "CommandPalette",
+    "CommitProposal",
+    "HintHigherVerbosity",
+    "InterruptWidget",
+    "LoggingPane",
+    "MarkdownChatMessage",
+    "MultipleChoices",
+    "OptionsEditor",
+    "RichChatMessage",
+    "StatusBar",
+    "ThinkingIndicator",
+    "ToolCallList",
+    "TopicTree",
+    "TopicTreeViewer",
+    "WarningChoices",
+    "WelcomeHeader",
+]

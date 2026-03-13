@@ -11,9 +11,10 @@ import traceback
 from functools import partial
 from pathlib import Path
 
-import rich_click as click
+from langchain_core.messages import HumanMessage
+from langchain_core.messages.utils import count_tokens_approximately
 
-from rhizome.logs import get_logger
+import rich_click as click
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -26,18 +27,20 @@ from textual.worker import Worker
 from rhizome.agent import AgentSession
 from rhizome.agent.session import get_agent_kwargs
 from rhizome.db import Topic
+from rhizome.logs import get_logger
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
 from rhizome.tui.options import Options, OptionScope, build_jsonc_snapshot, parse_jsonc
 from rhizome.tui.types import ChatMessageData, Mode, Role
-from rhizome.tui.widgets.chat_input import ChatInput
-from rhizome.tui.widgets.command_palette import CommandPalette
-from rhizome.tui.widgets.agent_message_harness import AgentMessageHarness
-from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage, RichChatMessage
-from rhizome.tui.widgets.options_editor import OptionsEditor
-from rhizome.tui.widgets.welcome import WelcomeHeader
-from rhizome.tui.widgets.status_bar import StatusBar
-from rhizome.tui.widgets.topic_tree import TopicTree
+
+from .chat_input import ChatInput
+from .command_palette import CommandPalette
+from .agent_message_harness import AgentMessageHarness
+from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
+from .options_editor import OptionsEditor
+from .welcome import WelcomeHeader
+from .status_bar import StatusBar
+from .topic_tree import TopicTreeViewer
 
 
 class HintHigherVerbosity(Message):
@@ -633,7 +636,7 @@ class ChatPane(Widget):
 
     async def _cmd_explore(self) -> None:
         """Browse and select topics from the topic tree."""
-        existing = list(self.query(TopicTree))
+        existing = list(self.query(TopicTreeViewer))
         if existing:
             tree = existing[-1]
             tree.query_one("#topic-tree-help").update(
@@ -642,7 +645,7 @@ class ChatPane(Widget):
             tree.focus()
         else:
             area = self.query_one("#message-area")
-            tree = TopicTree(id="topic-tree")
+            tree = TopicTreeViewer(id="topic-tree")
             await area.mount(tree)
             area.scroll_end(animate=False)
             tree.focus()
@@ -822,17 +825,17 @@ class ChatPane(Widget):
     # Child widget events (topic tree, options editor)
     # ------------------------------------------------------------------
 
-    def on_topic_tree_topic_selected(self, event: TopicTree.TopicSelected) -> None:
+    def on_topic_tree_viewer_topic_selected(self, event: TopicTreeViewer.TopicSelected) -> None:
         self.active_topic = event.topic
         self._topic_path = event.path
         self.update_status_bar()
         self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {self.active_topic.name}"))
-        for tree in self.query(TopicTree):
+        for tree in self.query(TopicTreeViewer):
             tree.remove()
         self._restore_chat_input()
 
-    def on_topic_tree_dismissed(self, event: TopicTree.Dismissed) -> None:
-        for tree in self.query(TopicTree):
+    def on_topic_tree_viewer_dismissed(self, event: TopicTreeViewer.Dismissed) -> None:
+        for tree in self.query(TopicTreeViewer):
             tree.remove()
         self._restore_chat_input()
 
@@ -952,9 +955,6 @@ class ChatPane(Widget):
             {"index": idx, "content": self._commit.selectable[idx].content_text}
             for idx in sorted(self._commit.selected)
         ]
-
-        from langchain_core.messages import HumanMessage
-        from langchain_core.messages.utils import count_tokens_approximately
 
         combined = "\n".join(entry["content"] for entry in self._commit.commit_payload)
         approx_tokens = count_tokens_approximately([HumanMessage(content=combined)])

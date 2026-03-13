@@ -48,7 +48,7 @@ class CommandPalette(Widget):
 
     def _get_command_list(self) -> list[tuple[str, str]]:
         """Build command list from the parent ChatPane's registry."""
-        from rhizome.tui.widgets.chat_pane import ChatPane
+        from .chat_pane import ChatPane
 
         # Walk up to find the parent ChatPane
         node = self.parent

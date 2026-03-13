@@ -1,4 +1,4 @@
-"""InterruptMultipleChoice — multi-question interrupt widget with tabbed navigation.
+"""MultipleChoices — multi-question interrupt widget with tabbed navigation.
 
 Presents multiple questions as a horizontal tab bar with checkboxes. The user
 answers each question by selecting from a choices list (identical styling to
@@ -28,7 +28,7 @@ class _Phase(Enum):
     CONFIRMING = auto()
 
 
-class InterruptMultipleChoice(Widget, can_focus=True):
+class MultipleChoices(Widget, can_focus=True):
     """Multi-question interrupt widget with tabbed question navigation.
 
     Each question is displayed as a tab in a horizontal bar with a checkbox
@@ -51,13 +51,13 @@ class InterruptMultipleChoice(Widget, can_focus=True):
     ]
 
     DEFAULT_CSS = """
-    InterruptMultipleChoice {
+    MultipleChoices {
         height: auto;
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
     }
-    InterruptMultipleChoice #mc-hint {
+    MultipleChoices #mc-hint {
         margin-bottom: 1;
     }
     """
@@ -81,7 +81,7 @@ class InterruptMultipleChoice(Widget, can_focus=True):
         self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
-    def from_interrupt(cls, value: dict[str, Any]) -> InterruptMultipleChoice:
+    def from_interrupt(cls, value: dict[str, Any]) -> MultipleChoices:
         """Construct from an interrupt value dict.
 
         Expected format::

@@ -11,7 +11,7 @@ from rhizome.db import Topic
 from rhizome.db.operations import list_children, list_root_topics
 
 
-class _InnerTree(Tree[Topic]):
+class TopicTree(Tree[Topic]):
     """The actual Tree widget — used inside TopicTree container."""
 
     def __init__(self) -> None:
@@ -85,28 +85,28 @@ class _InnerTree(Tree[Topic]):
             super()._on_key(event) # pyright: ignore[reportUnusedCoroutine]
 
 
-class TopicTree(Vertical):
+class TopicTreeViewer(Vertical):
     """A bordered container with a tree viewer for browsing topics."""
 
     DEFAULT_CSS = """
-    TopicTree {
+    TopicTreeViewer {
         height: auto;
         margin-top: 1;
         border: round rgb(86, 126, 160);
         padding: 0 0 1 1;
     }
-    TopicTree #topic-tree-help {
+    TopicTreeViewer #topic-tree-help {
         color: $text-muted;
         margin: 1 0 0 1;
     }
-    TopicTree _InnerTree {
+    TopicTreeViewer TopicTree {
         height: auto;
         scrollbar-size: 0 0;
         padding-left: 2;
         margin-top: 1;
         background: transparent;
     }
-    TopicTree #topic-tree-dismiss {
+    TopicTreeViewer #topic-tree-dismiss {
         dock: right;
         width: 3;
         min-width: 3;
@@ -117,7 +117,7 @@ class TopicTree(Vertical):
         margin: 0;
         padding: 0;
     }
-    TopicTree #topic-tree-dismiss:hover {
+    TopicTreeViewer #topic-tree-dismiss:hover {
         color: $error;
     }
     """
@@ -139,7 +139,7 @@ class TopicTree(Vertical):
     def compose(self):
         yield Button("x", id="topic-tree-dismiss")
         yield Static("Use arrow keys to navigate, enter to select a topic.", id="topic-tree-help")
-        yield _InnerTree()
+        yield TopicTree()
 
     def on_mount(self) -> None:
         self.border_title = "Topics"
@@ -163,4 +163,4 @@ class TopicTree(Vertical):
 
     def focus(self, scroll_visible: bool = True) -> None:
         """Delegate focus to the inner tree."""
-        self.query_one(_InnerTree).focus(scroll_visible)
+        self.query_one(TopicTree).focus(scroll_visible)

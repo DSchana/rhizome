@@ -142,7 +142,7 @@ class ChatInput(TextArea):
 
     def _is_complete_command(self, text: str) -> bool:
         """Return True if *text* is a fully typed known command (e.g. '/explore')."""
-        from rhizome.tui.widgets.chat_pane import ChatPane
+        from .chat_pane import ChatPane
 
         parsed = parse_input(text)
         if parsed is None:

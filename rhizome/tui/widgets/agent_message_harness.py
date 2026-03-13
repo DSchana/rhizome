@@ -13,14 +13,15 @@ from langchain.messages import AIMessageChunk, ToolMessage
 from rhizome.agent.tools import TOOL_VISIBILITY, ToolVisibility
 from rhizome.logs import get_logger
 from rhizome.tui.types import Mode, Role
-from rhizome.tui.widgets.commit_proposal import CommitProposalInterrupt
-from rhizome.tui.widgets.interrupt_base import InterruptWidget
-from rhizome.tui.widgets.interrupt_choices import InterruptChoices
-from rhizome.tui.widgets.interrupt_multiple_choice import InterruptMultipleChoice
-from rhizome.tui.widgets.interrupt_warning import InterruptWarning
-from rhizome.tui.widgets.message import ChatMessage, MarkdownChatMessage
-from rhizome.tui.widgets.thinking import ThinkingIndicator
-from rhizome.tui.widgets.tool_call_list import ToolCallList
+
+from .commit_proposal import CommitProposal
+from .interrupt import InterruptWidget
+from .choices import Choices
+from .multiple_choices import MultipleChoices
+from .warning import WarningChoices
+from .message import ChatMessage, MarkdownChatMessage
+from .thinking import ThinkingIndicator
+from .tool_call_list import ToolCallList
 
 _logger = get_logger("tui.agent_message_harness")
 
@@ -55,7 +56,7 @@ class AgentMessageHarness(Widget):
     @property
     def _session_mode(self) -> Mode:
         # Needed to avoid circular import
-        from rhizome.tui.widgets.chat_pane import ChatPane
+        from .chat_pane import ChatPane
 
         pane = self.query_ancestor(ChatPane)
         return pane.session_mode
@@ -256,13 +257,13 @@ class AgentMessageHarness(Widget):
 
         itype = interrupt_value["type"]
         if itype == "choices":
-            widget = InterruptChoices.from_interrupt(interrupt_value)
+            widget = Choices.from_interrupt(interrupt_value)
         elif itype == "warning":
-            widget = InterruptWarning.from_interrupt(interrupt_value)
+            widget = WarningChoices.from_interrupt(interrupt_value)
         elif itype == "multiple_choice":
-            widget = InterruptMultipleChoice.from_interrupt(interrupt_value)
+            widget = MultipleChoices.from_interrupt(interrupt_value)
         elif itype == "commit_proposal":
-            widget = CommitProposalInterrupt.from_interrupt(interrupt_value)
+            widget = CommitProposal.from_interrupt(interrupt_value)
         else:
             raise ValueError(f"Unknown interrupt type: {itype!r}")
         self._interrupt_widget = widget

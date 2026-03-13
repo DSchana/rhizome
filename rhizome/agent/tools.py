@@ -355,7 +355,7 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
     @tool_visibility(ToolVisibility.LOW)
     async def hint_higher_verbosity_tool() -> str:
         if chat_pane is not None:
-            from rhizome.tui.widgets.chat_pane import HintHigherVerbosity
+            from rhizome.tui.widgets import HintHigherVerbosity
             chat_pane.post_message(HintHigherVerbosity())
         return "Hint sent."
 

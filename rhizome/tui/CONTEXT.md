@@ -22,5 +22,5 @@ See `docs/architecture.md` for the overall TUI architecture.
   - `message.py` — `ChatMessage(Widget)` for rendering a single chat message with markdown support, role-based styling, and conditional collapse button (shown only for messages exceeding `COLLAPSE_LINE_THRESHOLD` lines).
   - `thinking.py` — `ThinkingIndicator(Static)` animated spinner shown while awaiting agent response.
   - `chat_input.py` — `ChatInput(TextArea)` that submits on Enter and inserts newlines on Ctrl+Enter.
-  - `topic_tree.py` — `TopicTree(Tree[Topic])` for browsing the topic hierarchy. Mounted by the `/explore` command.
+  - `topic_tree.py` — `TopicTree(Tree[Topic])` core tree widget; `TopicTreeViewer(Vertical)` bordered container. Mounted by the `/explore` command.
   - `options_editor.py` — `OptionsEditor(Widget)` inline widget for editing options. Receives an `Options` instance and uses `WIDGET_BUILDERS` dispatch to create appropriate widgets per spec type. On change, calls `options.set()` directly — pub/sub handles all side effects. Posts `Done` message when dismissed.

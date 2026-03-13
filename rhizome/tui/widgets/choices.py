@@ -1,10 +1,4 @@
-"""InterruptWarning — widget for resolving dangerous-action confirmation interrupts.
-
-Displays a warning icon and highlighted message, with Approve/Deny as default
-options plus any additional options from the interrupt config. After selection,
-the widget removes itself from the DOM (the harness keeps only the chosen option
-text visible).
-"""
+"""Choices — widget for resolving agent graph interrupts."""
 
 from __future__ import annotations
 
@@ -16,15 +10,17 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import Label, Static
 
+class Choices(Widget, can_focus=True):
+    """Displays an interrupt prompt with a navigable list of options.
 
-class InterruptWarning(Widget, can_focus=True):
-    """Displays a warning prompt with Approve / Deny and optional extra choices.
+    The widget is mounted by ``AgentMessageHarness.on_interrupt()`` and blocks
+    the agent stream until the user selects an option.  The selection is
+    returned via ``wait_for_selection()``, which awaits an internal
+    ``asyncio.Future``.
 
     Navigation: Up/Down to move highlight, Enter to select.
-    After selection the widget collapses to a single line showing the choice,
-    then removes the warning text from the display.
     """
 
     BINDINGS = [
@@ -34,17 +30,13 @@ class InterruptWarning(Widget, can_focus=True):
     ]
 
     DEFAULT_CSS = """
-    InterruptWarning {
+    Choices {
         height: auto;
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
     }
-    InterruptWarning .warning-icon {
-        color: rgb(220, 160, 50);
-    }
-    InterruptWarning .warning-message {
-        color: rgb(220, 160, 50);
+    Choices .interrupt-prompt {
         margin-bottom: 1;
     }
     """
@@ -53,32 +45,31 @@ class InterruptWarning(Widget, can_focus=True):
 
     def __init__(
         self,
-        message: str = "The agent has requested a dangerous action.",
+        prompt: str = "The agent requires your input:",
         options: list[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self._message = message
-        self._options = ["Approve", "Deny"] + (options or [])
+        self._prompt = prompt
+        self._options = options or ["Continue", "Cancel"]
         self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
-    def from_interrupt(cls, value: dict[str, Any]) -> InterruptWarning:
+    def from_interrupt(cls, value: dict[str, Any]) -> Choices:
         """Construct from an interrupt value dict."""
         return cls(
-            message=value.get("message", "The agent has requested a dangerous action."),
+            prompt=value.get("message", "The agent requires your input:"),
             options=value.get("options"),
         )
 
     def compose(self) -> ComposeResult:
-        yield Static("⚠", classes="warning-icon")
-        yield Static(self._message, classes="warning-message")
-        yield Static(id="warning-options")
-        yield Static("  (ctrl+c to cancel)", id="warning-hint")
+        yield Label(self._prompt, classes="interrupt-prompt")
+        yield Static(id="interrupt-options")
+        yield Static("  (ctrl+c to cancel)", id="interrupt-hint")
 
     def on_mount(self) -> None:
         self._render_options()
-        self.query_one("#warning-hint", Static).styles.color = "rgb(100,100,100)"
+        self.query_one("#interrupt-hint", Static).styles.color = "rgb(100,100,100)"
         self.focus()
         self.scroll_visible(animate=False)
         self.call_after_refresh(self._render_options)
@@ -107,7 +98,7 @@ class InterruptWarning(Widget, can_focus=True):
                 text.append(label, style="bold white")
             else:
                 text.append(label, style="rgb(100,100,100)")
-        self.query_one("#warning-options", Static).update(text)
+        self.query_one("#interrupt-options", Static).update(text)
 
     def action_cursor_up(self) -> None:
         if not self._future.done():
@@ -122,13 +113,10 @@ class InterruptWarning(Widget, can_focus=True):
             return
         selected = self._options[self.cursor]
         self._future.set_result(selected)
-        # Collapse: hide everything except a brief confirmation line
-        self.query_one(".warning-icon", Static).display = False
-        self.query_one(".warning-message", Static).display = False
         display = Text()
         display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
-        self.query_one("#warning-options", Static).update(display)
-        self.query_one("#warning-hint", Static).update("")
+        self.query_one("#interrupt-options", Static).update(display)
+        self.query_one("#interrupt-hint", Static).update("")
 
     async def wait_for_selection(self) -> Any:
         """Block until the user selects an option. Returns the selected value."""
