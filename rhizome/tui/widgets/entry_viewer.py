@@ -1,0 +1,240 @@
+"""EntryViewer — read-only widget for browsing knowledge entries."""
+
+from __future__ import annotations
+
+from rich.text import Text
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Vertical, VerticalScroll
+from textual.message import Message
+from textual.reactive import reactive
+from textual.widget import Widget
+from textual.widgets import Static
+
+from rhizome.db import KnowledgeEntry
+
+# Shared color constants (also used by CommitProposal)
+ENTRY_DIM = "rgb(100,100,100)"
+ENTRY_HINT = "rgb(80,80,80)"
+ENTRY_ACCENT = "rgb(255,80,80)"
+_FOCUS_GREEN = "rgb(100,200,100)"
+
+
+class EntryViewer(Widget, can_focus=True):
+    """Read-only entry list with detail panel for browsing KnowledgeEntry objects."""
+
+    BINDINGS = [
+        Binding("up", "cursor_up", show=False),
+        Binding("down", "cursor_down", show=False),
+        Binding("enter", "dismiss", show=False),
+        Binding("escape", "dismiss", show=False),
+    ]
+
+    DEFAULT_CSS = """
+    EntryViewer {
+        height: auto;
+        layout: vertical;
+        padding: 0 1;
+    }
+    EntryViewer #ev-entry-list-scroll {
+        height: auto;
+        max-height: 10;
+        margin: 1 0 1 0;
+    }
+    EntryViewer #ev-entry-list {
+        height: auto;
+    }
+    EntryViewer #ev-detail-panel {
+        border: solid $surface-lighten-2;
+        padding: 1 2;
+        height: auto;
+    }
+    EntryViewer #ev-title {
+        text-style: bold;
+        margin-bottom: 0;
+    }
+    EntryViewer #ev-meta {
+        color: rgb(100,100,100);
+        margin: 0 0 1 0;
+    }
+    EntryViewer #ev-content-scroll {
+        height: auto;
+        max-height: 10;
+    }
+    EntryViewer #ev-content {
+        height: auto;
+    }
+    EntryViewer #ev-empty {
+        color: $text-muted;
+        text-style: italic;
+        margin: 1 0 0 1;
+    }
+    """
+
+    class Dismissed(Message):
+        """Posted when the user presses Escape to leave the entry viewer."""
+
+    cursor: reactive[int] = reactive(0)
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._entries: list[KnowledgeEntry] = []
+
+    def compose(self) -> ComposeResult:
+        yield Static("", id="ev-empty")
+        with VerticalScroll(id="ev-entry-list-scroll"):
+            yield Static(id="ev-entry-list")
+        with Vertical(id="ev-detail-panel"):
+            yield Static(id="ev-title")
+            yield Static(id="ev-meta")
+            with VerticalScroll(id="ev-content-scroll"):
+                yield Static(id="ev-content")
+
+    def on_mount(self) -> None:
+        self._apply_empty_state()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_entries(self, entries: list[KnowledgeEntry]) -> None:
+        """Replace the displayed entries and reset the cursor."""
+        self._entries = list(entries)
+        self.cursor = 0
+        self._apply_empty_state()
+        if self._entries:
+            self._render_entry_list()
+            self._render_detail()
+            self._scroll_cursor_visible()
+
+    # ------------------------------------------------------------------
+    # Reactive watchers
+    # ------------------------------------------------------------------
+
+    def watch_cursor(self) -> None:
+        if self._entries:
+            self._render_entry_list()
+            self._render_detail()
+            self._scroll_cursor_visible()
+
+    def _scroll_cursor_visible(self) -> None:
+        """Scroll the entry list so the cursor row is visible (deferred to after layout)."""
+        self.call_after_refresh(self._do_scroll_cursor_visible)
+
+    def _do_scroll_cursor_visible(self) -> None:
+        scroll = self.query_one("#ev-entry-list-scroll", VerticalScroll)
+        if scroll.size.height == 0:
+            return
+        if self.cursor < scroll.scroll_y:
+            scroll.scroll_y = self.cursor
+        elif self.cursor >= scroll.scroll_y + scroll.size.height:
+            scroll.scroll_y = self.cursor - scroll.size.height + 1
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def _apply_empty_state(self) -> None:
+        """Toggle between empty message and list/detail views."""
+        empty = not self._entries
+        self.query_one("#ev-empty", Static).display = empty
+        self.query_one("#ev-entry-list-scroll", VerticalScroll).display = not empty
+        self.query_one("#ev-detail-panel", Vertical).display = not empty
+        if empty:
+            self.query_one("#ev-empty", Static).update("(No entries for this topic)")
+
+    def _render_entry_list(self) -> None:
+        num_width = len(str(len(self._entries))) + 2  # "N. "
+        title_widths = [len(e.title) for e in self._entries]
+        max_title = max(title_widths, default=0)
+
+        # Build right-side parts (entry_type)
+        right_parts = [
+            (e.entry_type.value if e.entry_type else "—") for e in self._entries
+        ]
+        max_right = max((len(r) for r in right_parts), default=0)
+
+        text = Text()
+        for i, entry in enumerate(self._entries):
+            if i > 0:
+                text.append("\n")
+
+            is_selected = self.cursor == i
+            marker = "► " if is_selected else "  "
+            num = f"{i + 1}. ".rjust(num_width + 1)
+            title = entry.title
+            right = right_parts[i].rjust(max_right)
+            padding = max_title - len(title) + 2
+            gap = " " * padding
+
+            if is_selected and self.has_focus:
+                # Focused + selected: green highlight
+                style = f"bold {_FOCUS_GREEN}"
+                marker_style = f"bold {_FOCUS_GREEN}"
+                right_style = ENTRY_DIM
+            elif is_selected:
+                # Selected but unfocused: just bold
+                style = "bold"
+                marker_style = "bold"
+                right_style = ENTRY_DIM
+            else:
+                style = ""
+                marker_style = ""
+                right_style = ENTRY_DIM
+
+            text.append(marker, style=marker_style)
+            text.append(num, style=style)
+            text.append(title, style=style)
+            text.append(gap)
+            text.append(right, style=right_style)
+
+        self.query_one("#ev-entry-list", Static).update(text)
+
+    def _render_detail(self) -> None:
+        if not self._entries:
+            return
+        idx = min(self.cursor, len(self._entries) - 1)
+        entry = self._entries[idx]
+
+        panel = self.query_one("#ev-detail-panel", Vertical)
+        panel.border_title = f"Entry {idx + 1}"
+
+        self.query_one("#ev-title", Static).update(entry.title)
+
+        # Meta line
+        etype = entry.entry_type.value if entry.entry_type else "—"
+        parts = [f"Type: {etype}"]
+        if entry.difficulty is not None:
+            parts.append(f"Difficulty: {entry.difficulty}")
+        if entry.created_at is not None:
+            parts.append(f"Created: {entry.created_at:%Y-%m-%d}")
+        self.query_one("#ev-meta", Static).update("  ".join(parts))
+
+        self.query_one("#ev-content", Static).update(entry.content)
+
+    # ------------------------------------------------------------------
+    # Focus changes
+    # ------------------------------------------------------------------
+
+    def on_focus(self) -> None:
+        if self._entries:
+            self.call_after_refresh(self._render_entry_list)
+
+    def on_blur(self) -> None:
+        if self._entries:
+            self.call_after_refresh(self._render_entry_list)
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def action_cursor_up(self) -> None:
+        if self._entries and self.cursor > 0:
+            self.cursor -= 1
+
+    def action_cursor_down(self) -> None:
+        if self._entries and self.cursor < len(self._entries) - 1:
+            self.cursor += 1
+
+    def action_dismiss(self) -> None:
+        self.post_message(self.Dismissed())

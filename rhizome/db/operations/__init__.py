@@ -12,6 +12,7 @@ from .curricula import (
     update_curriculum,
 )
 from .entries import (
+    count_entries,
     create_entry,
     delete_entry,
     get_entry,
@@ -71,6 +72,7 @@ __all__ = [
     "update_topic",
     "delete_topic",
     # entries
+    "count_entries",
     "create_entry",
     "get_entry",
     "list_entries",

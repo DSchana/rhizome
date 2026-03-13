@@ -3,6 +3,7 @@ from .chat_input import ChatInput
 from .chat_pane import ChatPane, HintHigherVerbosity
 from .command_palette import CommandPalette
 from .commit_proposal import CommitProposal
+from .entry_viewer import EntryViewer
 from .interrupt import InterruptWidget
 from .choices import Choices
 from .multiple_choices import MultipleChoices
@@ -24,6 +25,7 @@ __all__ = [
     "Choices",
     "CommandPalette",
     "CommitProposal",
+    "EntryViewer",
     "HintHigherVerbosity",
     "InterruptWidget",
     "LoggingPane",

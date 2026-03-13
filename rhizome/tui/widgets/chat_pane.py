@@ -639,9 +639,6 @@ class ChatPane(Widget):
         existing = list(self.query(TopicTreeViewer))
         if existing:
             tree = existing[-1]
-            tree.query_one("#topic-tree-help").update(
-                "Use arrow keys to navigate, enter to select a topic."
-            )
             tree.focus()
         else:
             area = self.query_one("#message-area")

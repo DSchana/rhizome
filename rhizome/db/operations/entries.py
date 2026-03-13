@@ -1,6 +1,6 @@
 """CRUD + search operations for KnowledgeEntry objects."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rhizome.db import CurriculumTopic, KnowledgeEntry, Topic
@@ -43,6 +43,18 @@ async def get_entry(
 ) -> KnowledgeEntry | None:
     """Return an entry by id, or None if not found."""
     return await session.get(KnowledgeEntry, entry_id)
+
+
+async def count_entries(
+    session: AsyncSession,
+    topic_id: int,
+) -> int:
+    """Return the number of entries for a topic."""
+    result = await session.execute(
+        select(func.count()).select_from(KnowledgeEntry)
+        .where(KnowledgeEntry.topic_id == topic_id)
+    )
+    return result.scalar_one()
 
 
 async def list_entries(
