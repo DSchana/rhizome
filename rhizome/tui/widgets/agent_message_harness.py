@@ -233,7 +233,10 @@ class AgentMessageHarness(Widget):
     async def on_message(self, kind: str, payload: Any) -> None:
         """Callback for ``"messages"`` chunks from the agent stream."""
         chunk, _metadata = payload
-        if isinstance(chunk, ToolMessage):
+        # Only process AIMessageChunks — filter out ToolMessages, HumanMessages
+        # (e.g. [System] notifications injected by middleware), and anything
+        # else that isn't an AI token.
+        if not isinstance(chunk, AIMessageChunk):
             return
         await self.append(chunk)
 

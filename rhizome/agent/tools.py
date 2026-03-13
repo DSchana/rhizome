@@ -8,7 +8,9 @@ eliminating the need for a shared session lock. Tools needing TUI access
 from enum import IntEnum
 
 from langchain.tools import tool
-from langgraph.types import interrupt
+from langchain_core.messages import ToolMessage
+from langgraph.prebuilt.tool_node import ToolRuntime
+from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -295,13 +297,19 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
 
     @tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
     @tool_visibility(ToolVisibility.LOW)
-    async def set_mode_tool(mode: str) -> str:
+    async def set_mode_tool(mode: str, runtime: ToolRuntime) -> str | Command:
         try:
             target = Mode(mode)
         except ValueError:
             return f"Invalid mode '{mode}'. Must be one of: idle, learn, review."
-        await chat_pane._set_mode(target, silent=True)
-        return f"Mode is now: {chat_pane.session_mode.value}"
+        await chat_pane._set_mode(target, silent=True, source="agent")
+        return Command(update={
+            "mode": target.value,
+            "messages": [ToolMessage(
+                content=f"Mode is now: {target.value}",
+                tool_call_id=runtime.tool_call_id,
+            )],
+        })
 
     @tool("rename_tab", description=(
         "Rename the active chat session tab. Keep the name short — around 20 characters, "

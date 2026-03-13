@@ -10,6 +10,7 @@ import time
 import traceback
 from functools import partial
 from pathlib import Path
+from typing import Literal
 
 from langchain_core.messages import HumanMessage
 from langchain_core.messages.utils import count_tokens_approximately
@@ -287,7 +288,7 @@ class ChatPane(Widget):
     # Message area & status bar
     # ------------------------------------------------------------------
 
-    def append_message(self, msg: ChatMessageData) -> None:
+    def append_message(self, msg: ChatMessageData, ui_only=False) -> None:
         """Append a message to the history and mount its widget."""
         # Deduplicate consecutive identical system messages by pinging the existing one.
         if msg.role == Role.SYSTEM:
@@ -301,7 +302,7 @@ class ChatPane(Widget):
         self.messages.append(msg)
 
         # Add message to agent message history.
-        if self._agent_session is not None:
+        if not ui_only and self._agent_session is not None:
             if msg.role == Role.USER:
                 self._agent_session.add_human_message(msg.content)
             elif msg.role == Role.SYSTEM:
@@ -595,28 +596,98 @@ class ChatPane(Widget):
         async def close():
             await self._cmd_close()
 
-    async def _set_mode(self, mode: Mode, *, silent: bool = False) -> None:
+    async def _set_mode(
+        self,
+        mode: Mode,
+        *,
+        silent: bool = False,
+        source: Literal["user", "agent"] = "user",
+    ) -> None:
         """Set the session mode.
 
-        Updates both the TUI-level ``session_mode`` and the agent session's
-        ``active_mode`` (which controls the system prompt and tool visibility
-        via ``AgentModeMiddleware``).
+        Updates the TUI-level ``session_mode`` and (for user-initiated
+        changes) queues a pending mode change on the agent middleware so
+        graph state is updated on the next model call.
 
-        When *silent* is ``True`` the system message is suppressed (useful
-        when the agent switches modes programmatically).
+        Args:
+            mode: The target mode.
+            silent: Suppress the chat system message (e.g. for shift+tab
+                cycling or agent-initiated changes).
+            source: ``"user"`` for UI-initiated changes (shift+tab, slash
+                commands) — these queue a pending change on the middleware.
+                ``"agent"`` for tool-initiated changes — graph state is
+                updated directly via ``Command``, so no pending change is
+                needed.
         """
+
+        # Branch variables:
+        #   - silent
+        #   - source
+        #   - agent_busy
+
+        # source is "agent"
+        #   - Under this condition, these assertions must pass
+        #       - agent_busy is True
+        #       - silent is True
+        if source == "agent":
+            assert self._agent_busy
+            silent = True # Just override
+        
+        # In all cases, if the new mode is no different from the current, just return early.
         if self.session_mode == mode:
+            # Since "silent" is always true when source is "agent", this should never fire while the agent is busy.
             if not silent:
                 self.append_message(
                     ChatMessageData(role=Role.SYSTEM, content=f"Already in {mode.value} mode.")
                 )
             return
-        self.session_mode = mode
-        if self._agent_session is not None:
-            self._agent_session._handle_mode_change(mode.value)
-        if not silent:
-            label = "Returned to idle mode." if mode == Mode.IDLE else f"Entered {mode.value} mode."
-            self.append_message(ChatMessageData(role=Role.SYSTEM, content=label))
+        
+        # In this case:
+        #   - Mutate self.session_mode and propagate to UI
+        #   - Graph state is updated by the agent tool call
+        #   - Clear pending user-initated mode changes - agent tool calls take priority.
+        if source == "agent":
+            self.session_mode = mode
+            self.update_status_bar()
+
+            # Clearing the pending user-initiated mode change addresses this edge case:
+            #   - User sets mode to A while agent is running, then agent runs set_tool to change mode to B
+            #
+            # The agent's tool call wins in this case, and we discard the user-initiated change.
+            await self._agent_session._mode_middleware.clear_pending_user_mode()
+            return
+
+        # From hereron-in, source is "user"
+        message = "Returned to idle mode." if mode == Mode.IDLE else f"Entered {mode.value} mode."
+        if self._agent_busy:
+            # Mutate self.session_mode
+            self.session_mode = mode
+            
+            # Post a pending user mode change to the agent. This gets intercepted before the next model call and is used
+            # to automatically update the mode in the agnet state graph.
+            if self._agent_session is not None:
+                await self._agent_session.set_pending_user_mode(mode.value)
+
+            if not silent:
+                # append message to _UI only_.
+                # set_pending_user_mode submits a message directly to the agent _when_ the queue is drained, which is
+                # directly before the next model invocation (within)
+                self.append_message(
+                    ChatMessageData(role=Role.SYSTEM, content=message),
+                    ui_only=True
+                )
+        
+        else:
+            self.session_mode = mode
+            if silent:
+                # Just post a notification to the agent
+                if self._agent_session is not None:
+                    self._agent_session.add_system_notification(message)
+            else:
+                # Post a notification to both the UI, and the agent.
+                self.append_message(ChatMessageData(role=Role.SYSTEM, content=message))
+
+        # Propagate to UI
         self.update_status_bar()
 
     async def _cmd_idle(self) -> None:

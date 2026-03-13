@@ -227,7 +227,7 @@ def build_subagent_tools(
             included=tools,
         )
 
-        model, agent = build_agent(
+        model, agent, _middleware = build_agent(
             subagent_tools,
             provider="anthropic",
             model_name=None,

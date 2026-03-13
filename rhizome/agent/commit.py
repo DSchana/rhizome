@@ -80,7 +80,7 @@ def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Structu
     provider = agent_kwargs.pop("provider", "anthropic")
     model_name = agent_kwargs.pop("model_name", "claude-sonnet-4-6")
 
-    model, agent = build_agent(
+    model, agent, _middleware = build_agent(
         tools,
         provider=provider,
         model_name=model_name,

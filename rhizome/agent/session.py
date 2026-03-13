@@ -16,8 +16,8 @@ from rhizome.agent.builder import build_root_agent
 from rhizome.config import get_log_dir
 from rhizome.agent.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
 from rhizome.agent.context import AgentContext
-from rhizome.agent.middleware.agent_mode import SYSTEM_PROMPT_MESSAGE_ID
-from rhizome.agent.modes import MODE_REGISTRY, IdleAgentMode
+from rhizome.agent.middleware.agent_mode import AgentModeMiddleware, SYSTEM_PROMPT_MESSAGE_ID
+from rhizome.agent.modes import MODE_REGISTRY
 from rhizome.agent.subagent import Subagent
 from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
@@ -42,6 +42,14 @@ def get_agent_kwargs(options: Options) -> dict[str, Any]:
         kwargs["web_tools"] = options.get(Options.Agent.Anthropic.WebTools) == "enabled"
 
     return kwargs
+
+
+def _extract_middleware[T](middleware_list: list, cls: type[T]) -> T:
+    """Find and return the first middleware instance of the given type."""
+    for mw in middleware_list:
+        if isinstance(mw, cls):
+            return mw
+    raise RuntimeError(f"Expected {cls.__name__} in middleware list but not found")
 
 
 class AgentSession:
@@ -84,10 +92,6 @@ class AgentSession:
             self._dump_dir = log_dir / f"agent-stream-{max_idx + 1}"
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
-        # Active agent mode — controls the system prompt and tool filtering
-        # via AgentModeMiddleware.
-        self.active_mode: AgentMode = IdleAgentMode(debug=debug)
-
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
 
@@ -99,11 +103,12 @@ class AgentSession:
             build_commit_subagent_tools(session_factory, chat_pane, commit_subagent)
         )
 
-        self._model, self._agent = build_root_agent(
+        self._model, self._agent, middleware = build_root_agent(
             self._tools, self._provider, self._model_name,
-            mode_accessor=lambda: self.active_mode,
+            debug=debug,
             **self._agent_kwargs,
         )
+        self._mode_middleware = _extract_middleware(middleware, AgentModeMiddleware)
 
         self._session_logger = get_logger("agent.session")
         self._session_logger.info("Session created (provider=%s, model=%s)", provider, model_name)
@@ -112,8 +117,9 @@ class AgentSession:
         # next stream() call.  The system prompt is seeded here so it appears
         # in the graph state (for debugging / log dumps).  AgentModeMiddleware
         # keeps it in sync with the active mode on every model call.
+        idle_mode = MODE_REGISTRY["idle"](debug=debug)
         self._message_queue: list[BaseMessage] = [
-            SystemMessage(content=self.active_mode.system_prompt, id=SYSTEM_PROMPT_MESSAGE_ID)
+            SystemMessage(content=idle_mode.system_prompt, id=SYSTEM_PROMPT_MESSAGE_ID)
         ]
 
         self._token_usage = TokenUsageData()
@@ -149,11 +155,12 @@ class AgentSession:
         self._model_name = model_name
         if agent_kwargs is not None:
             self._agent_kwargs = agent_kwargs
-        self._model, self._agent = build_agent(
+        self._model, self._agent, middleware = build_root_agent(
             self._tools, provider, model_name,
-            mode_accessor=lambda: self.active_mode,
+            debug=self._debug,
             **self._agent_kwargs,
         )
+        self._mode_middleware = _extract_middleware(middleware, AgentModeMiddleware)
         self._token_usage.max_tokens = compute_chat_model_max_tokens(self._model)
         if self.on_rebuild_agent is not None:
             self.on_rebuild_agent(old_model, model_name)
@@ -167,24 +174,19 @@ class AgentSession:
         if provider != self._provider or model_name != self._model_name or new_kwargs != self._agent_kwargs:
             self.rebuild_agent(provider, model_name, agent_kwargs=new_kwargs)
 
-    def _handle_mode_change(self, mode_name: str) -> None:
-        """Update the active agent mode.
+    async def set_pending_user_mode(self, mode_name: str) -> None:
+        """Queue a user-initiated mode change to be applied on the next model call.
 
-        Called by ``ChatPane._set_mode()`` whenever the mode changes (whether
-        via slash command, keybinding, or the agent's ``set_mode`` tool).
+        Called by ``ChatPane._set_mode()`` for user-initiated mode changes
+        (shift+tab, slash commands).  The pending mode is consumed by
+        ``AgentModeMiddleware.abefore_model`` which updates graph state and
+        injects a notification message.
 
-        Updates ``active_mode`` so that ``AgentModeMiddleware.abefore_model``
-        will replace the system message in graph state on the next model call.
-        No manual system message queuing is needed — the middleware handles it
-        idempotently.
+        Agent-initiated mode changes (the ``set_mode`` tool) do NOT go
+        through this path — they update graph state directly via
+        ``Command(update={"mode": ...})``.
         """
-        mode_cls = MODE_REGISTRY.get(mode_name)
-        if mode_cls is None:
-            self._session_logger.warning("Unknown mode %r — keeping current mode", mode_name)
-            return
-        old_name = self.active_mode.name
-        self.active_mode = mode_cls(debug=self._debug)
-        self._session_logger.info("Agent mode changed: %s -> %s", old_name, mode_name)
+        await self._mode_middleware.set_pending_user_mode(mode_name)
 
     def add_human_message(self, text: str) -> None:
         self._message_queue.append(HumanMessage(content=text))
@@ -244,7 +246,13 @@ class AgentSession:
         # the graph.  The checkpointer restores previous state and the
         # add_messages reducer appends these new messages.
         queued = self._drain_queue()
-        next_input: dict | Command = {"messages": queued}
+        next_input: dict | Command = {"messages": queued, "mode": mode}
+
+        # Reset any pending user mode changes from the last invocation of .stream(). The graph state is provided
+        # with the mode fresh at every invocation of .stream(), and the chat pane mode always takes priority. The
+        # pending user mode changes are just so that user-initiated mode changes can be propagated to the agent
+        # state _during_ execution (before the next invocation of the model).
+        await self._mode_middleware.clear_pending_user_mode()
 
         try:
             user_settings = {

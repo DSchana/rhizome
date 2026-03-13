@@ -76,7 +76,7 @@ async def main():
 
     # Build a subagent with read-only DB tools.
     tools = build_tools(session_factory, included=ToolGroups.DB_TOPICS)
-    model, agent = build_agent(tools, provider="anthropic", model_name="claude-sonnet-4-6", response_format=ProviderStrategy(TopicSummary))
+    model, agent, _middleware = build_agent(tools, provider="anthropic", model_name="claude-sonnet-4-6", response_format=ProviderStrategy(TopicSummary))
 
     schema_hint = json.dumps({
         "topic_count": "int — number of root topics found",

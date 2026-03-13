@@ -9,9 +9,6 @@ Two entry points:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
@@ -19,9 +16,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from rhizome.agent.config import get_api_key
 from rhizome.agent.middleware import LogToolCallsMiddleware
 from rhizome.logs import get_logger
-
-if TYPE_CHECKING:
-    from rhizome.agent.modes import AgentMode
 
 _logger = get_logger("agent")
 
@@ -41,6 +35,7 @@ def build_agent(
     response_format=None,
     middleware: list | None = None,
     context_schema=None,
+    state_schema=None,
     **kwargs,
 ):
     """Build a model + compiled agent graph.
@@ -49,7 +44,7 @@ def build_agent(
     agent.  ``LogToolCallsMiddleware`` is always prepended to the middleware
     chain.
 
-    Returns a ``(model, agent)`` tuple.
+    Returns a ``(model, agent, all_middleware)`` tuple.
     """
     _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
 
@@ -59,7 +54,7 @@ def build_agent(
     if middleware:
         all_middleware.extend(middleware)
 
-    agent = create_agent(
+    create_kwargs: dict = dict(
         model=model,
         tools=list(tools),
         middleware=all_middleware,
@@ -67,14 +62,17 @@ def build_agent(
         context_schema=context_schema,
         checkpointer=InMemorySaver(),
     )
-    return model, agent
+    if state_schema is not None:
+        create_kwargs["state_schema"] = state_schema
+
+    agent = create_agent(**create_kwargs)
+    return model, agent, all_middleware
 
 
 def build_root_agent(
     tools: list,
     provider: str,
     model_name: str,
-    mode_accessor: Callable[[], AgentMode],
     **agent_kwargs,
 ):
     """Build the root agent with mode switching, prompt caching, and web tools.
@@ -82,7 +80,7 @@ def build_root_agent(
     Assembles root-specific middleware and tools, then delegates to
     ``build_agent``.
 
-    Returns a ``(model, agent)`` tuple.
+    Returns a ``(model, agent, middleware_list)`` tuple.
     """
     from rhizome.agent.context import AgentContext
     from rhizome.agent.middleware import (
@@ -90,10 +88,12 @@ def build_root_agent(
         AnthropicPenultimateCacheMiddleware,
         DisableParallelToolCallsMiddleware,
     )
+    from rhizome.agent.state import RhizomeAgentState
 
     _logger.info("Building root agent (provider=%s, model=%s)", provider, model_name)
 
-    middleware = [AgentModeMiddleware(mode_accessor)]
+    debug = agent_kwargs.get("debug", False)
+    middleware = [AgentModeMiddleware(debug=debug)]
 
     if not agent_kwargs.get("parallel_tool_calling", True):
         middleware.append(DisableParallelToolCallsMiddleware())
@@ -114,5 +114,6 @@ def build_root_agent(
         model_name,
         middleware=middleware,
         context_schema=AgentContext,
+        state_schema=RhizomeAgentState,
         temperature=agent_kwargs.get("temperature", 0.3),
     )
