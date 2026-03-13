@@ -71,6 +71,8 @@ class InterruptChoices(Widget, can_focus=True):
         self._render_options()
         self.query_one("#interrupt-hint", Static).styles.color = "rgb(100,100,100)"
         self.focus()
+        self.scroll_visible(animate=False)
+        self.call_after_refresh(self._render_options)
 
     def watch_cursor(self) -> None:
         self._render_options()

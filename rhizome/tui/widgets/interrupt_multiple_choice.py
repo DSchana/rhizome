@@ -110,6 +110,8 @@ class InterruptMultipleChoice(Widget, can_focus=True):
         self.query_one("#mc-hint", Static).styles.color = "rgb(100,100,100)"
         self._render_all()
         self.focus()
+        self.scroll_visible(animate=False)
+        self.call_after_refresh(self._render_all)
 
     # ------------------------------------------------------------------
     # Reactive watchers
