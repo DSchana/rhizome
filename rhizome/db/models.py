@@ -192,6 +192,8 @@ class ReviewSession(Base):
     __tablename__ = "review_session"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ephemeral: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     started_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     additional_args: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -207,9 +209,12 @@ class ReviewSession(Base):
     interactions: Mapped[list["ReviewInteraction"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
+    flashcards: Mapped[list["Flashcard"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
-        return f"<ReviewSession id={self.id} started_at={self.started_at}>"
+        return f"<ReviewSession id={self.id} ephemeral={self.ephemeral} started_at={self.started_at}>"
 
 
 class ReviewSessionTopic(Base):
@@ -246,6 +251,9 @@ class Flashcard(Base):
     __tablename__ = "flashcard"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("review_session.id"), nullable=True, index=True
+    )
     topic_id: Mapped[int] = mapped_column(
         ForeignKey("topic.id"), nullable=False, index=True
     )
@@ -253,12 +261,13 @@ class Flashcard(Base):
     answer_text: Mapped[str] = mapped_column(Text, nullable=False)
     testing_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    session: Mapped["ReviewSession | None"] = relationship(back_populates="flashcards")
     flashcard_entries: Mapped[list["FlashcardEntry"]] = relationship(
         cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
-        return f"<Flashcard id={self.id} topic={self.topic_id}>"
+        return f"<Flashcard id={self.id} topic={self.topic_id} session={self.session_id}>"
 
 
 class FlashcardEntry(Base):
