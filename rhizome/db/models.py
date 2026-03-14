@@ -7,6 +7,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -193,6 +194,9 @@ class ReviewSession(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     started_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    additional_args: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    user_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     session_topics: Mapped[list["ReviewSessionTopic"]] = relationship(
         cascade="all, delete-orphan"
@@ -238,6 +242,40 @@ class ReviewSessionEntry(Base):
         return f"<ReviewSessionEntry session={self.session_id} entry={self.entry_id}>"
 
 
+class Flashcard(Base):
+    __tablename__ = "flashcard"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic.id"), nullable=False, index=True
+    )
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_text: Mapped[str] = mapped_column(Text, nullable=False)
+    testing_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    flashcard_entries: Mapped[list["FlashcardEntry"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Flashcard id={self.id} topic={self.topic_id}>"
+
+
+class FlashcardEntry(Base):
+    __tablename__ = "flashcard_entry"
+    __table_args__ = (UniqueConstraint("flashcard_id", "entry_id"),)
+
+    flashcard_id: Mapped[int] = mapped_column(
+        ForeignKey("flashcard.id"), primary_key=True
+    )
+    entry_id: Mapped[int] = mapped_column(
+        ForeignKey("knowledge_entry.id"), primary_key=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<FlashcardEntry flashcard={self.flashcard_id} entry={self.entry_id}>"
+
+
 class ReviewInteraction(Base):
     __tablename__ = "review_interaction"
     __table_args__ = (
@@ -247,6 +285,9 @@ class ReviewInteraction(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(
         ForeignKey("review_session.id"), nullable=False, index=True
+    )
+    flashcard_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flashcard.id"), nullable=True, index=True
     )
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     user_response: Mapped[str] = mapped_column(Text, nullable=False)
