@@ -24,4 +24,4 @@ class RhizomeAgentState(AgentState):
     """
 
     mode: Annotated[str, lambda x, y: y]
-    # Remark: in parallel executions of the set_mode tool, the last one wins.
+    # Remark: in parallel executions of the set_mode tool, the last one wins - this is what "lambda x, y: y" means.

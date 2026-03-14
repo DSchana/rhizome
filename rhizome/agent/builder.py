@@ -10,11 +10,21 @@ Two entry points:
 from __future__ import annotations
 
 from langchain.agents import create_agent
+from langchain.agents.middleware.types import AgentMiddleware
 from langchain.chat_models import init_chat_model
 from langgraph.checkpoint.memory import InMemorySaver
 
 from rhizome.agent.config import get_api_key
-from rhizome.agent.middleware import LogToolCallsMiddleware
+from rhizome.agent.context import AgentContext
+from rhizome.agent.middleware import (
+    LogToolCallsMiddleware,
+    AgentModeMiddleware,
+    AnthropicPenultimateCacheMiddleware,
+    DisableParallelToolCallsMiddleware,
+    MessageIdMiddleware,
+)
+
+from rhizome.agent.state import RhizomeAgentState
 from rhizome.logs import get_logger
 
 _logger = get_logger("agent")
@@ -50,7 +60,7 @@ def build_agent(
 
     model = _init_model(provider, model_name, temperature=kwargs.get("temperature", 0.3))
 
-    all_middleware = [LogToolCallsMiddleware()]
+    all_middleware: list[AgentMiddleware] = [LogToolCallsMiddleware()]
     if middleware:
         all_middleware.extend(middleware)
 
@@ -82,18 +92,11 @@ def build_root_agent(
 
     Returns a ``(model, agent, middleware_list)`` tuple.
     """
-    from rhizome.agent.context import AgentContext
-    from rhizome.agent.middleware import (
-        AgentModeMiddleware,
-        AnthropicPenultimateCacheMiddleware,
-        DisableParallelToolCallsMiddleware,
-    )
-    from rhizome.agent.state import RhizomeAgentState
 
     _logger.info("Building root agent (provider=%s, model=%s)", provider, model_name)
 
     debug = agent_kwargs.get("debug", False)
-    middleware = [AgentModeMiddleware(debug=debug)]
+    middleware: list[AgentMiddleware] = [AgentModeMiddleware(debug=debug), MessageIdMiddleware()]
 
     if not agent_kwargs.get("parallel_tool_calling", True):
         middleware.append(DisableParallelToolCallsMiddleware())
