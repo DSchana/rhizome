@@ -34,13 +34,24 @@ from .tags import (
     tag_entry,
     untag_entry,
 )
+from .flashcards import (
+    create_flashcard,
+    get_flashcard_entry_ids,
+    get_flashcards_by_ids,
+    list_flashcards_by_entries,
+)
 from .reviews import (
     add_review_interaction,
     complete_review_session,
     create_review_session,
+    get_interaction_stats,
     get_review_session,
     get_review_session_entries,
+    get_sessions_by_topics,
     list_review_interactions,
+    update_session_ephemeral,
+    update_session_instructions,
+    update_session_summary,
 )
 from .topics import (
     create_topic,
@@ -98,4 +109,14 @@ __all__ = [
     "add_review_interaction",
     "list_review_interactions",
     "get_review_session_entries",
+    "get_sessions_by_topics",
+    "update_session_ephemeral",
+    "update_session_instructions",
+    "update_session_summary",
+    "get_interaction_stats",
+    # flashcards
+    "create_flashcard",
+    "list_flashcards_by_entries",
+    "get_flashcards_by_ids",
+    "get_flashcard_entry_ids",
 ]

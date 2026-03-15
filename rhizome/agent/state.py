@@ -6,6 +6,8 @@ from langchain.agents.middleware.types import AgentState
 
 from typing import Annotated
 
+from rhizome.agent.review_state import ReviewState
+
 
 class RhizomeAgentState(AgentState):
     """Extended agent state with mode tracking for checkpoint/replay.
@@ -25,3 +27,6 @@ class RhizomeAgentState(AgentState):
 
     mode: Annotated[str, lambda x, y: y]
     # Remark: in parallel executions of the set_mode tool, the last one wins - this is what "lambda x, y: y" means.
+
+    review: Annotated[ReviewState | None, lambda x, y: x or y]
+    # This reducer means that if review state is already set, keep it - don't overwrite with None.

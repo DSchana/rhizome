@@ -19,6 +19,7 @@ from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.agent_mode import AgentModeMiddleware, SYSTEM_PROMPT_MESSAGE_ID
 from rhizome.agent.modes import MODE_REGISTRY
 from rhizome.agent.subagent import Subagent
+from rhizome.agent.review_tools import build_review_tools
 from rhizome.agent.tools import build_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 from rhizome.logs import get_logger
@@ -94,6 +95,10 @@ class AgentSession:
 
         # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
         self._tools = build_tools(session_factory, chat_pane=chat_pane)
+
+        # Build review-mode tools and add them to the root agent's tool list.
+        review_tool_dict = build_review_tools(session_factory)
+        self._tools.extend(review_tool_dict.values())
 
         # Build the commit subagent and add its tools to the root agent's tool list.
         commit_subagent = build_commit_subagent(
@@ -246,7 +251,7 @@ class AgentSession:
         # the graph.  The checkpointer restores previous state and the
         # add_messages reducer appends these new messages.
         queued = self._drain_queue()
-        next_input: dict | Command = {"messages": queued, "mode": mode}
+        next_input: dict | Command = {"messages": queued, "mode": mode, "review_state": None}
 
         # Reset any pending user mode changes from the last invocation of .stream(). The graph state is provided
         # with the mode fresh at every invocation of .stream(), and the chat pane mode always takes priority. The

@@ -57,6 +57,22 @@ _WEB_TOOLS = frozenset({
     "web_fetch",
 })
 
+_REVIEW_TOOLS = frozenset({
+    "get_review_sessions",
+    "set_review_scope",
+    "configure_review",
+    "list_flashcards",
+    "get_flashcards",
+    "add_flashcards_to_review",
+    "create_flashcards",
+    "start_review",
+    "record_review_interaction",
+    "complete_review_session",
+    "save_review_summary",
+    "inspect_review_state",
+    "clear_review_state",
+})
+
 
 def _compose_prompt(*sections: str) -> str:
     return "".join(sections)
@@ -132,7 +148,7 @@ class LearnAgentMode(AgentMode):
 
 
 class ReviewAgentMode(AgentMode):
-    """Active during review/quiz sessions.  Stub — will grow as review is implemented."""
+    """Active during review/quiz sessions — full review state machine."""
 
     @property
     def name(self) -> str:
@@ -148,7 +164,7 @@ class ReviewAgentMode(AgentMode):
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS | _APP_TOOLS | _WEB_TOOLS
+        return _DB_READ_TOOLS | _APP_TOOLS | _WEB_TOOLS | _REVIEW_TOOLS
 
 
 # -- Registry ----------------------------------------------------------------
