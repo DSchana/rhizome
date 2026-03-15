@@ -18,6 +18,7 @@ from .commit_proposal import CommitProposal
 from .interrupt import InterruptWidget
 from .choices import Choices
 from .multiple_choices import MultipleChoices
+from .sql_confirmation import SqlConfirmation
 from .warning import WarningChoices
 from .message import ChatMessage, MarkdownChatMessage
 from .thinking import ThinkingIndicator
@@ -267,6 +268,8 @@ class AgentMessageHarness(Widget):
             widget = MultipleChoices.from_interrupt(interrupt_value)
         elif itype == "commit_proposal":
             widget = CommitProposal.from_interrupt(interrupt_value)
+        elif itype == "sql_confirmation":
+            widget = SqlConfirmation.from_interrupt(interrupt_value)
         else:
             raise ValueError(f"Unknown interrupt type: {itype!r}")
         self._interrupt_widget = widget
