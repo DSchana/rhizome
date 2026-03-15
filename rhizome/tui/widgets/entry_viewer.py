@@ -69,10 +69,35 @@ class EntryViewer(Widget, can_focus=True):
         text-style: italic;
         margin: 1 0 0 1;
     }
+    EntryViewer.--compact {
+        padding: 0 0 0 1;
+    }
+    EntryViewer.--compact #ev-detail-panel {
+        display: none;
+    }
+    EntryViewer.--compact #ev-entry-list-scroll {
+        margin: 1 0 0 0;
+        max-height: 30;
+    }
+    EntryViewer.--compact #ev-compact-hint {
+        display: block;
+    }
+    EntryViewer #ev-compact-hint {
+        display: none;
+        color: $text-muted;
+        margin: 0 0 0 1;
+    }
     """
 
     class Dismissed(Message):
         """Posted when the user presses Escape to leave the entry viewer."""
+
+    class CursorChanged(Message):
+        """Posted when the cursor moves to a different entry."""
+
+        def __init__(self, entry: KnowledgeEntry | None) -> None:
+            super().__init__()
+            self.entry = entry
 
     cursor: reactive[int] = reactive(0)
 
@@ -84,6 +109,7 @@ class EntryViewer(Widget, can_focus=True):
         yield Static("", id="ev-empty")
         with VerticalScroll(id="ev-entry-list-scroll"):
             yield Static(id="ev-entry-list")
+        yield Static("", id="ev-compact-hint")
         with Vertical(id="ev-detail-panel"):
             yield Static(id="ev-title")
             yield Static(id="ev-meta")
@@ -104,8 +130,12 @@ class EntryViewer(Widget, can_focus=True):
         self._apply_empty_state()
         if self._entries:
             self._render_entry_list()
-            self._render_detail()
+            if not self.has_class("--compact"):
+                self._render_detail()
             self._scroll_cursor_visible()
+            self.post_message(self.CursorChanged(self._entries[0]))
+        else:
+            self.post_message(self.CursorChanged(None))
 
     # ------------------------------------------------------------------
     # Reactive watchers
@@ -114,8 +144,15 @@ class EntryViewer(Widget, can_focus=True):
     def watch_cursor(self) -> None:
         if self._entries:
             self._render_entry_list()
-            self._render_detail()
+            if self.has_class("--compact"):
+                self._render_compact_hint()
+            else:
+                self._render_detail()
             self._scroll_cursor_visible()
+            entry = self._entries[min(self.cursor, len(self._entries) - 1)]
+            self.post_message(self.CursorChanged(entry))
+        else:
+            self.post_message(self.CursorChanged(None))
 
     def _scroll_cursor_visible(self) -> None:
         """Scroll the entry list so the cursor row is visible (deferred to after layout)."""
@@ -125,10 +162,14 @@ class EntryViewer(Widget, can_focus=True):
         scroll = self.query_one("#ev-entry-list-scroll", VerticalScroll)
         if scroll.size.height == 0:
             return
-        if self.cursor < scroll.scroll_y:
-            scroll.scroll_y = self.cursor
-        elif self.cursor >= scroll.scroll_y + scroll.size.height:
-            scroll.scroll_y = self.cursor - scroll.size.height + 1
+        # Each entry is one line; use line height to compute pixel offset
+        line_height = 1
+        cursor_top = self.cursor * line_height
+        cursor_bottom = cursor_top + line_height
+        if cursor_top < scroll.scroll_y:
+            scroll.scroll_y = cursor_top
+        elif cursor_bottom > scroll.scroll_y + scroll.size.height:
+            scroll.scroll_y = cursor_bottom - scroll.size.height
 
     # ------------------------------------------------------------------
     # Rendering
@@ -137,18 +178,26 @@ class EntryViewer(Widget, can_focus=True):
     def _apply_empty_state(self) -> None:
         """Toggle between empty message and list/detail views."""
         empty = not self._entries
+        compact = self.has_class("--compact")
         self.query_one("#ev-empty", Static).display = empty
         self.query_one("#ev-entry-list-scroll", VerticalScroll).display = not empty
-        self.query_one("#ev-detail-panel", Vertical).display = not empty
+        # In compact mode, detail panel is always hidden
+        self.query_one("#ev-detail-panel", Vertical).display = not empty and not compact
         if empty:
             self.query_one("#ev-empty", Static).update("(No entries for this topic)")
+            self.query_one("#ev-compact-hint", Static).update("")
 
     def _render_entry_list(self) -> None:
+        compact = self.has_class("--compact")
+
+        if compact:
+            self._render_entry_list_compact()
+            return
+
         num_width = len(str(len(self._entries))) + 2  # "N. "
         title_widths = [len(e.title) for e in self._entries]
         max_title = max(title_widths, default=0)
 
-        # Build right-side parts (entry_type)
         right_parts = [
             (e.entry_type.value if e.entry_type else "—") for e in self._entries
         ]
@@ -163,17 +212,12 @@ class EntryViewer(Widget, can_focus=True):
             marker = "► " if is_selected else "  "
             num = f"{i + 1}. ".rjust(num_width + 1)
             title = entry.title
-            right = right_parts[i].rjust(max_right)
-            padding = max_title - len(title) + 2
-            gap = " " * padding
 
             if is_selected and self.has_focus:
-                # Focused + selected: green highlight
                 style = f"bold {_FOCUS_GREEN}"
                 marker_style = f"bold {_FOCUS_GREEN}"
                 right_style = ENTRY_DIM
             elif is_selected:
-                # Selected but unfocused: just bold
                 style = "bold"
                 marker_style = "bold"
                 right_style = ENTRY_DIM
@@ -185,10 +229,52 @@ class EntryViewer(Widget, can_focus=True):
             text.append(marker, style=marker_style)
             text.append(num, style=style)
             text.append(title, style=style)
+
+            right = right_parts[i].rjust(max_right)
+            padding = max_title - len(title) + 2
+            gap = " " * padding
             text.append(gap)
             text.append(right, style=right_style)
 
         self.query_one("#ev-entry-list", Static).update(text)
+
+    def _render_entry_list_compact(self) -> None:
+        """Render a minimal entry list for compact (3-pane) mode."""
+        text = Text()
+        for i, entry in enumerate(self._entries):
+            if i > 0:
+                text.append("\n")
+
+            is_selected = self.cursor == i
+            if is_selected and self.has_focus:
+                style = f"bold {_FOCUS_GREEN}"
+            elif is_selected:
+                style = "bold"
+            else:
+                style = ""
+
+            marker = "► " if is_selected else "  "
+            text.append(marker, style=style)
+            text.append(entry.title, style=style)
+
+        self.query_one("#ev-entry-list", Static).update(text)
+
+        # Update compact metadata hint
+        self._render_compact_hint()
+
+    def _render_compact_hint(self) -> None:
+        """Update the metadata hint shown below the list in compact mode."""
+        if not self._entries:
+            self.query_one("#ev-compact-hint", Static).update("")
+            return
+        idx = min(self.cursor, len(self._entries) - 1)
+        entry = self._entries[idx]
+        parts: list[str] = []
+        if entry.entry_type:
+            parts.append(entry.entry_type.value)
+        if entry.created_at is not None:
+            parts.append(f"created {entry.created_at:%Y-%m-%d}")
+        self.query_one("#ev-compact-hint", Static).update("  ".join(parts))
 
     def _render_detail(self) -> None:
         if not self._entries:

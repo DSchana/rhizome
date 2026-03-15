@@ -35,10 +35,12 @@ from .tags import (
     untag_entry,
 )
 from .flashcards import (
+    count_flashcards_by_topic,
     create_flashcard,
     get_flashcard_entry_ids,
     get_flashcards_by_ids,
     list_flashcards_by_entries,
+    list_flashcards_by_topic,
 )
 from .reviews import (
     add_review_interaction,
@@ -117,8 +119,10 @@ __all__ = [
     "update_session_summary",
     "get_interaction_stats",
     # flashcards
+    "count_flashcards_by_topic",
     "create_flashcard",
-    "list_flashcards_by_entries",
-    "get_flashcards_by_ids",
     "get_flashcard_entry_ids",
+    "get_flashcards_by_ids",
+    "list_flashcards_by_entries",
+    "list_flashcards_by_topic",
 ]

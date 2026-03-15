@@ -1,7 +1,8 @@
 """CRUD operations for flashcards."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from rhizome.db import (
     Flashcard,
@@ -56,6 +57,10 @@ async def list_flashcards_by_entries(
 
     result = await session.execute(
         select(Flashcard)
+        .options(
+            selectinload(Flashcard.flashcard_entries),
+            selectinload(Flashcard.session),
+        )
         .join(FlashcardEntry, Flashcard.id == FlashcardEntry.flashcard_id)
         .outerjoin(ReviewSession, Flashcard.session_id == ReviewSession.id)
         .where(
@@ -65,7 +70,7 @@ async def list_flashcards_by_entries(
         )
         .distinct()
     )
-    return list(result.scalars().all())
+    return list(result.scalars().unique().all())
 
 
 async def get_flashcards_by_ids(
@@ -81,6 +86,38 @@ async def get_flashcards_by_ids(
         .where(Flashcard.id.in_(flashcard_ids))
     )
     return list(result.scalars().all())
+
+
+async def list_flashcards_by_topic(
+    session: AsyncSession,
+    topic_id: int,
+) -> list[Flashcard]:
+    """Return flashcards for a topic, with entries and session eagerly loaded.
+
+    Includes ephemeral flashcards (caller can check ``flashcard.session.ephemeral``).
+    """
+    result = await session.execute(
+        select(Flashcard)
+        .options(
+            selectinload(Flashcard.flashcard_entries),
+            selectinload(Flashcard.session),
+        )
+        .where(Flashcard.topic_id == topic_id)
+    )
+    return list(result.scalars().all())
+
+
+async def count_flashcards_by_topic(
+    session: AsyncSession,
+    topic_id: int,
+) -> int:
+    """Return the number of flashcards for a topic (including ephemeral)."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Flashcard)
+        .where(Flashcard.topic_id == topic_id)
+    )
+    return result.scalar_one()
 
 
 async def get_flashcard_entry_ids(

@@ -86,19 +86,10 @@ class TopicTree(Tree[Topic]):
             event.stop()
             event.prevent_default()
         elif event.key == "enter":
-            parent_viewer = next(
-                (a for a in self.ancestors_with_self if isinstance(a, TopicTreeViewer)),
-                None,
-            )
-            if parent_viewer is not None and parent_viewer.show_entries:
-                # Panel is open — focus the entry viewer if it has entries
-                viewer = parent_viewer.query_one("#topic-entry-viewer", EntryViewer)
-                if viewer._entries:
-                    viewer.focus()
-                event.stop()
-                event.prevent_default()
-            else:
-                super()._on_key(event) # pyright: ignore[reportUnusedCoroutine]
+            # Suppress default Tree Enter (which fires NodeSelected).
+            # Topic selection is handled by ctrl+j in the parent container.
+            event.stop()
+            event.prevent_default()
         else:
             super()._on_key(event) # pyright: ignore[reportUnusedCoroutine]
 

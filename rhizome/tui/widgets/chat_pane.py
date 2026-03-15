@@ -41,7 +41,7 @@ from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
 from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
 from .status_bar import StatusBar
-from .topic_tree import TopicTreeViewer
+from .explorer_viewer import ExplorerViewer
 
 
 class HintHigherVerbosity(Message):
@@ -564,7 +564,7 @@ class ChatPane(Widget):
         async def clear():
             await self._cmd_clear()
 
-        @registry.command(name="topics", help="Browse and select topics from the topic tree")
+        @registry.command(name="explore", help="Browse topics, entries, and flashcards")
         async def explore():
             await self._cmd_explore()
 
@@ -706,19 +706,19 @@ class ChatPane(Widget):
         self.messages.clear()
 
     async def _cmd_explore(self) -> None:
-        """Browse and select topics from the topic tree."""
-        existing = list(self.query(TopicTreeViewer))
+        """Browse topics, entries, and flashcards."""
+        existing = list(self.query(ExplorerViewer))
         if existing:
             tree = existing[-1]
             tree.focus()
         else:
             area = self.query_one("#message-area")
-            tree = TopicTreeViewer(id="topic-tree")
+            tree = ExplorerViewer(id="explorer")
             await area.mount(tree)
             area.scroll_end(animate=False)
             tree.focus()
         self.query_one("#chat-input").placeholder = (
-            "Use Tab/Shift+Tab to navigate between widgets"
+            "Ctrl+l to refocus chat input"
         )
 
     async def _cmd_options(self, *, edit: bool = False, scope: str = "session") -> None:
@@ -893,18 +893,18 @@ class ChatPane(Widget):
     # Child widget events (topic tree, options editor)
     # ------------------------------------------------------------------
 
-    def on_topic_tree_viewer_topic_selected(self, event: TopicTreeViewer.TopicSelected) -> None:
+    def on_explorer_viewer_topic_selected(self, event: ExplorerViewer.TopicSelected) -> None:
         self.active_topic = event.topic
         self._topic_path = event.path
         self.update_status_bar()
         self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {self.active_topic.name}"))
-        for tree in self.query(TopicTreeViewer):
-            tree.remove()
+        for viewer in self.query(ExplorerViewer):
+            viewer.remove()
         self._restore_chat_input()
 
-    def on_topic_tree_viewer_dismissed(self, event: TopicTreeViewer.Dismissed) -> None:
-        for tree in self.query(TopicTreeViewer):
-            tree.remove()
+    def on_explorer_viewer_dismissed(self, event: ExplorerViewer.Dismissed) -> None:
+        for viewer in self.query(ExplorerViewer):
+            viewer.remove()
         self._restore_chat_input()
 
     def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:

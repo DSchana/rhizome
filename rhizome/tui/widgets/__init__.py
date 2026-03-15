@@ -4,6 +4,8 @@ from .chat_pane import ChatPane, HintHigherVerbosity
 from .command_palette import CommandPalette
 from .commit_proposal import CommitProposal
 from .entry_viewer import EntryViewer
+from .explorer_viewer import ExplorerViewer
+from .flashcard_viewer import FlashcardViewer
 from .interrupt import InterruptWidget
 from .choices import Choices
 from .multiple_choices import MultipleChoices
@@ -26,6 +28,8 @@ __all__ = [
     "CommandPalette",
     "CommitProposal",
     "EntryViewer",
+    "ExplorerViewer",
+    "FlashcardViewer",
     "HintHigherVerbosity",
     "InterruptWidget",
     "LoggingPane",

@@ -16,7 +16,7 @@ Async tool functions for the agent/TUI to interact with the database. Every publ
 
 - **reviews.py** — `create_review_session` (with topic and entry IDs), `get_review_session`, `complete_review_session` (sets `completed_at`), `add_review_interaction` (with entry IDs, optional feedback/score/flashcard_id, position for ordering), `list_review_interactions` (ordered by position), `get_review_session_entries` (returns entry IDs in the session pool), `get_sessions_by_topics` (recent non-ephemeral sessions ranked by topic IoU), `update_session_ephemeral`, `update_session_instructions`, `update_session_summary`, `get_interaction_stats` (aggregate scores and per-entry breakdown).
 
-- **flashcards.py** — `create_flashcard` (with topic_id, question/answer text, entry_ids, optional testing_notes and session_id), `list_flashcards_by_entries` (flashcards linked to given entry IDs, excludes ephemeral), `get_flashcards_by_ids` (with eager-loaded flashcard_entries), `get_flashcard_entry_ids` (resolve flashcard → entry_ids).
+- **flashcards.py** — `create_flashcard` (with topic_id, question/answer text, entry_ids, optional testing_notes and session_id), `list_flashcards_by_topic` (all flashcards for a topic, eager-loads flashcard_entries and session for ephemeral detection), `count_flashcards_by_topic` (count for a topic), `list_flashcards_by_entries` (flashcards linked to given entry IDs, excludes ephemeral), `get_flashcards_by_ids` (with eager-loaded flashcard_entries), `get_flashcard_entry_ids` (resolve flashcard → entry_ids).
 
 ## Conventions
 
