@@ -20,10 +20,18 @@ Database layer. Defines the ORM schema and provides async engine/session managem
   - `ReviewInteraction` — one question-answer exchange within a review session. Has optional `flashcard_id` FK (indexed) — present for flashcard-based reviews, null for conversational exchanges. Has `question_text`, `user_response`, optional `feedback` and `score` (0-5, CHECK constraint), and `position` for ordering. References entries tested via `ReviewInteractionEntry` junction.
   - `ReviewInteractionEntry` — junction table: review interaction ↔ entry. Composite PK on (`interaction_id`, `entry_id`).
 
-- **engine.py** — Three functions:
-  - `get_engine(db_path)` — creates an `AsyncEngine` using `sqlite+aiosqlite`.
+- **engine.py** — Engine, session, and migration functions:
+  - `get_engine(db_path)` — creates an `AsyncEngine` using `sqlite+aiosqlite`. Registers a `connect` event listener that enables SQLite foreign key enforcement (`PRAGMA foreign_keys = ON`) on every new DBAPI connection.
   - `get_session_factory(engine)` — returns an `async_sessionmaker` with `expire_on_commit=False`.
-  - `init_db(db_path)` — creates all tables (idempotent) and returns the engine.
+  - `init_db(db_path)` — creates all tables (idempotent) and returns the engine. Runs migrations on a temporary engine without FK enforcement, then returns a production engine with FK enforcement ON. Three migration phases: (1) `_migrate_review_tables` drops/recreates review tables with missing columns, (2) `create_all` creates any missing tables, (3) `_migrate_add_cascades` recreates FK tables to add `ON DELETE CASCADE`/`SET NULL` constraints using a data-preserving rename-create-copy-drop cycle.
+
+## FK Cascade Behavior
+
+All foreign keys define explicit `ON DELETE` behavior at the database level, enforced by SQLite's `PRAGMA foreign_keys = ON`:
+- Most FKs use `ON DELETE CASCADE` — deleting a parent row automatically deletes dependent rows (e.g., deleting a topic cascades to its entries, flashcards, junction rows, etc.).
+- `review_interaction.flashcard_id` uses `ON DELETE SET NULL` — deleting a flashcard nullifies the reference rather than deleting the interaction.
+
+This matches the ORM-level `cascade="all, delete-orphan"` on relationships, but also applies to raw SQL operations.
 
 ## `__init__.py` exports
 

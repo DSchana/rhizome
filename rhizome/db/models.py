@@ -55,10 +55,10 @@ class CurriculumTopic(Base):
     __table_args__ = (UniqueConstraint("curriculum_id", "topic_id"),)
 
     curriculum_id: Mapped[int] = mapped_column(
-        ForeignKey("curriculum.id"), primary_key=True
+        ForeignKey("curriculum.id", ondelete="CASCADE"), primary_key=True
     )
     topic_id: Mapped[int] = mapped_column(
-        ForeignKey("topic.id"), primary_key=True
+        ForeignKey("topic.id", ondelete="CASCADE"), primary_key=True
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
@@ -75,7 +75,7 @@ class Topic(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("topic.id"), nullable=True, index=True
+        ForeignKey("topic.id", ondelete="CASCADE"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -101,7 +101,7 @@ class KnowledgeEntry(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     topic_id: Mapped[int] = mapped_column(
-        ForeignKey("topic.id"), nullable=False, index=True
+        ForeignKey("topic.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -154,9 +154,9 @@ class KnowledgeEntryTag(Base):
     __tablename__ = "knowledge_entry_tag"
 
     knowledge_entry_id: Mapped[int] = mapped_column(
-        ForeignKey("knowledge_entry.id"), primary_key=True
+        ForeignKey("knowledge_entry.id", ondelete="CASCADE"), primary_key=True
     )
-    tag_id: Mapped[int] = mapped_column(ForeignKey("tag.id"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tag.id", ondelete="CASCADE"), primary_key=True)
 
 
 class RelatedKnowledgeEntries(Base):
@@ -166,10 +166,10 @@ class RelatedKnowledgeEntries(Base):
     )
 
     source_entry_id: Mapped[int] = mapped_column(
-        ForeignKey("knowledge_entry.id"), primary_key=True
+        ForeignKey("knowledge_entry.id", ondelete="CASCADE"), primary_key=True
     )
     target_entry_id: Mapped[int] = mapped_column(
-        ForeignKey("knowledge_entry.id"), primary_key=True
+        ForeignKey("knowledge_entry.id", ondelete="CASCADE"), primary_key=True
     )
     relationship_type: Mapped[str] = mapped_column(String, nullable=False)
 
@@ -223,10 +223,10 @@ class ReviewSessionTopic(Base):
     __table_args__ = (UniqueConstraint("session_id", "topic_id"),)
 
     session_id: Mapped[int] = mapped_column(
-        ForeignKey("review_session.id"), primary_key=True
+        ForeignKey("review_session.id", ondelete="CASCADE"), primary_key=True
     )
     topic_id: Mapped[int] = mapped_column(
-        ForeignKey("topic.id"), primary_key=True
+        ForeignKey("topic.id", ondelete="CASCADE"), primary_key=True
     )
 
     def __repr__(self) -> str:
@@ -238,10 +238,10 @@ class ReviewSessionEntry(Base):
     __table_args__ = (UniqueConstraint("session_id", "entry_id"),)
 
     session_id: Mapped[int] = mapped_column(
-        ForeignKey("review_session.id"), primary_key=True
+        ForeignKey("review_session.id", ondelete="CASCADE"), primary_key=True
     )
     entry_id: Mapped[int] = mapped_column(
-        ForeignKey("knowledge_entry.id"), primary_key=True
+        ForeignKey("knowledge_entry.id", ondelete="CASCADE"), primary_key=True
     )
 
     def __repr__(self) -> str:
@@ -253,10 +253,10 @@ class Flashcard(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     session_id: Mapped[int | None] = mapped_column(
-        ForeignKey("review_session.id"), nullable=True, index=True
+        ForeignKey("review_session.id", ondelete="CASCADE"), nullable=True, index=True
     )
     topic_id: Mapped[int] = mapped_column(
-        ForeignKey("topic.id"), nullable=False, index=True
+        ForeignKey("topic.id", ondelete="CASCADE"), nullable=False, index=True
     )
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     answer_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -276,10 +276,10 @@ class FlashcardEntry(Base):
     __table_args__ = (UniqueConstraint("flashcard_id", "entry_id"),)
 
     flashcard_id: Mapped[int] = mapped_column(
-        ForeignKey("flashcard.id"), primary_key=True
+        ForeignKey("flashcard.id", ondelete="CASCADE"), primary_key=True
     )
     entry_id: Mapped[int] = mapped_column(
-        ForeignKey("knowledge_entry.id"), primary_key=True
+        ForeignKey("knowledge_entry.id", ondelete="CASCADE"), primary_key=True
     )
 
     def __repr__(self) -> str:
@@ -294,10 +294,10 @@ class ReviewInteraction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(
-        ForeignKey("review_session.id"), nullable=False, index=True
+        ForeignKey("review_session.id", ondelete="CASCADE"), nullable=False, index=True
     )
     flashcard_id: Mapped[int | None] = mapped_column(
-        ForeignKey("flashcard.id"), nullable=True, index=True
+        ForeignKey("flashcard.id", ondelete="SET NULL"), nullable=True, index=True
     )
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
     user_response: Mapped[str] = mapped_column(Text, nullable=False)
@@ -322,10 +322,10 @@ class ReviewInteractionEntry(Base):
     __table_args__ = (UniqueConstraint("interaction_id", "entry_id"),)
 
     interaction_id: Mapped[int] = mapped_column(
-        ForeignKey("review_interaction.id"), primary_key=True
+        ForeignKey("review_interaction.id", ondelete="CASCADE"), primary_key=True
     )
     entry_id: Mapped[int] = mapped_column(
-        ForeignKey("knowledge_entry.id"), primary_key=True
+        ForeignKey("knowledge_entry.id", ondelete="CASCADE"), primary_key=True
     )
 
     def __repr__(self) -> str:
