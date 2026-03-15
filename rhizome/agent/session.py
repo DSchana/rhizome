@@ -100,6 +100,11 @@ class AgentSession:
         review_tool_dict = build_review_tools(session_factory)
         self._tools.extend(review_tool_dict.values())
 
+        # Build SQL tools and add them to the root agent's tool list.
+        from rhizome.agent.sql_tools import build_sql_tools
+        sql_tool_dict = build_sql_tools(session_factory)
+        self._tools.extend(sql_tool_dict.values())
+
         # Build the commit subagent and add its tools to the root agent's tool list.
         commit_subagent = build_commit_subagent(
             session_factory, chat_pane, **dict(self._agent_kwargs)

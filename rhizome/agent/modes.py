@@ -15,6 +15,7 @@ from rhizome.agent.system_prompt import (
     LEARN_MODE_SECTION,
     REVIEW_MODE_SECTION,
     SHARED_APP_OVERVIEW,
+    SHARED_DATABASE_CONTEXT,
     SHARED_PREAMBLE,
     SHARED_SETTINGS_AND_BEHAVIOR,
 )
@@ -55,6 +56,12 @@ _COMMIT_TOOLS = frozenset({
 _WEB_TOOLS = frozenset({
     "web_search",
     "web_fetch",
+})
+
+_DB_SQL_TOOLS = frozenset({
+    "describe_database",
+    "run_sql_query",
+    "run_sql_modification",
 })
 
 _REVIEW_TOOLS = frozenset({
@@ -117,14 +124,14 @@ class IdleAgentMode(AgentMode):
     @property
     def system_prompt(self) -> str:
         return _compose_prompt(
-            SHARED_PREAMBLE, SHARED_APP_OVERVIEW,
+            SHARED_PREAMBLE, SHARED_APP_OVERVIEW, SHARED_DATABASE_CONTEXT,
             IDLE_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS | _DB_WRITE_TOOLS | _APP_TOOLS | _COMMIT_TOOLS | _WEB_TOOLS
+        return _DB_READ_TOOLS | _DB_WRITE_TOOLS | _APP_TOOLS | _COMMIT_TOOLS | _WEB_TOOLS | _DB_SQL_TOOLS
 
 
 class LearnAgentMode(AgentMode):
@@ -137,14 +144,14 @@ class LearnAgentMode(AgentMode):
     @property
     def system_prompt(self) -> str:
         return _compose_prompt(
-            SHARED_PREAMBLE, SHARED_APP_OVERVIEW,
+            SHARED_PREAMBLE, SHARED_APP_OVERVIEW, SHARED_DATABASE_CONTEXT,
             LEARN_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS | _DB_WRITE_TOOLS | _APP_TOOLS | _COMMIT_TOOLS | _WEB_TOOLS
+        return _DB_READ_TOOLS | _DB_WRITE_TOOLS | _APP_TOOLS | _COMMIT_TOOLS | _WEB_TOOLS | _DB_SQL_TOOLS
 
 
 class ReviewAgentMode(AgentMode):
@@ -157,14 +164,14 @@ class ReviewAgentMode(AgentMode):
     @property
     def system_prompt(self) -> str:
         return _compose_prompt(
-            SHARED_PREAMBLE, SHARED_APP_OVERVIEW,
+            SHARED_PREAMBLE, SHARED_APP_OVERVIEW, SHARED_DATABASE_CONTEXT,
             REVIEW_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS | _APP_TOOLS | _WEB_TOOLS | _REVIEW_TOOLS
+        return _DB_READ_TOOLS | _APP_TOOLS | _WEB_TOOLS | _REVIEW_TOOLS | _DB_SQL_TOOLS
 
 
 # -- Registry ----------------------------------------------------------------

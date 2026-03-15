@@ -68,6 +68,7 @@ class ToolGroups:
     """Named groups of tool names for selective inclusion via build_tools()."""
     DB_TOPICS = ["list_all_topics", "show_topics", "create_new_topic", "delete_topics"]
     DB_ENTRIES = ["get_entries", "create_entries"]
+    DB_SQL = ["describe_database", "run_sql_query", "run_sql_modification"]
     DATABASE = DB_TOPICS + DB_ENTRIES
     APP = ["set_topic", "set_mode", "rename_tab", "ask_user_input", "hint_higher_verbosity"]
 

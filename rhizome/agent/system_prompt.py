@@ -136,6 +136,47 @@ Question-as-title without a clear answer:
   structure (recursive resolvers, root/TLD/authoritative servers, TTL). Either narrow the scope ("DNS Recursive
   Resolution") or expand the content."""
 
+SHARED_DATABASE_CONTEXT = """
+
+## Database Tables
+
+The database contains the following tables (names are exact):
+
+- **topic** — Tree-structured topic hierarchy (parent_id self-FK)
+- **knowledge_entry** — Atomic knowledge units, each belonging to one topic
+- **tag** — Normalized tags (lowercased)
+- **knowledge_entry_tag** — Junction: entry <-> tag
+- **related_knowledge_entries** — Directed graph edges between entries
+- **curriculum** — Named subject areas
+- **curriculum_topic** — Junction: curriculum <-> topic (ordered by position)
+- **flashcard** — Question/answer cards, optionally linked to a review session
+- **flashcard_entry** — Junction: flashcard <-> knowledge entry
+- **review_session** — Tracked review session metadata and summaries
+- **review_session_topic** — Junction: review session <-> topic
+- **review_session_entry** — Junction: review session <-> knowledge entry
+- **review_interaction** — Individual Q&A records within a review session
+- **review_interaction_entry** — Junction: review interaction <-> knowledge entry
+
+For full column details, use the `describe_database` tool.
+
+### Cascade Behavior
+
+SQLite foreign key enforcement is ON. All foreign keys have `ON DELETE CASCADE` (or `ON DELETE SET NULL`
+for nullable references like `review_interaction.flashcard_id`). This means deleting a parent row
+automatically deletes or nullifies dependent rows — you do NOT need to manually clean up junction tables.
+
+For example, `DELETE FROM flashcard WHERE id = 5` automatically deletes related `flashcard_entry` rows
+and sets `review_interaction.flashcard_id = NULL` where it referenced that flashcard.
+
+### SQL Tools — Last Resort
+
+You have access to three SQL tools: `describe_database`, `run_sql_query`, and `run_sql_modification`.
+These are **last-resort tools** — always prefer native tools (`list_all_topics`, `show_topics`, `get_entries`,
+`create_new_topic`, `create_entries`, `delete_topics`, etc.) for standard operations. Only use SQL tools when:
+- The user explicitly requests raw SQL access
+- No native tool can accomplish the task (e.g., inspecting junction tables, bulk cleanup, complex joins)
+"""
+
 SHARED_SETTINGS_AND_BEHAVIOR = """
 
 ## Planning
