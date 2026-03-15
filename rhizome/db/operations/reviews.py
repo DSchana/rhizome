@@ -196,6 +196,19 @@ async def update_session_instructions(
     await session.flush()
 
 
+async def update_session_plan(
+    session: AsyncSession,
+    review_session_id: int,
+    plan: str | None,
+) -> None:
+    """Write the discussion plan to a review session."""
+    review = await session.get(ReviewSession, review_session_id)
+    if review is None:
+        raise ValueError(f"ReviewSession {review_session_id} not found")
+    review.plan = plan
+    await session.flush()
+
+
 async def update_session_summary(
     session: AsyncSession,
     review_session_id: int,

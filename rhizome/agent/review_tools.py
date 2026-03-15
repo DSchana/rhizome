@@ -27,6 +27,7 @@ from rhizome.db.operations import (
     list_flashcards_by_entries,
     update_session_ephemeral,
     update_session_instructions,
+    update_session_plan,
     update_session_summary,
 )
 from rhizome.db.models import KnowledgeEntry
@@ -240,19 +241,20 @@ def build_review_tools(session_factory) -> list:
 
         return "\n\n---\n\n".join(lines)
 
-    @tool("add_flashcards_to_review", description=(
-        "Add existing flashcard IDs to the review queue."
+    @tool("set_review_flashcards", description=(
+        "Set the flashcard queue to the given list of flashcard IDs. "
+        "Replaces the current queue entirely — use this to add, remove, "
+        "reorder, or clear flashcards."
     ))
-    async def add_flashcards_to_review_tool(
+    async def set_review_flashcards_tool(
         flashcard_ids: list[int],
         runtime: ToolRuntime,
     ) -> Command:
         review_state: ReviewState = runtime.state["review"]
         new_state = dict(review_state)
-        new_queue = list(review_state["flashcard_queue"]) + list(flashcard_ids)
-        new_state["flashcard_queue"] = new_queue
+        new_state["flashcard_queue"] = list(flashcard_ids)
 
-        msg = f"Added {len(flashcard_ids)} flashcards to queue. Queue size: {len(new_queue)}."
+        msg = f"Flashcard queue set: {len(flashcard_ids)} card(s)."
         return Command(update={
             "review": new_state,
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
@@ -304,6 +306,13 @@ def build_review_tools(session_factory) -> list:
         plan: str | None = None,
     ) -> Command:
         review_state: ReviewState = runtime.state["review"]
+        session_id = review_state["session_id"]
+
+        if plan:
+            async with session_factory() as session:
+                await update_session_plan(session, session_id, plan)
+                await session.commit()
+
         new_state = dict(review_state)
         new_state["phase"] = "reviewing"
         new_state["discussion_plan"] = plan
@@ -551,7 +560,7 @@ def build_review_tools(session_factory) -> list:
         "configure_review": configure_review_tool,
         "list_flashcards": list_flashcards_tool,
         "get_flashcards": get_flashcards_tool,
-        "add_flashcards_to_review": add_flashcards_to_review_tool,
+        "set_review_flashcards": set_review_flashcards_tool,
         "create_flashcards": create_flashcards_tool,
         "start_review": start_review_tool,
         "record_review_interaction": record_review_interaction_tool,

@@ -198,6 +198,7 @@ class ReviewSession(Base):
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     additional_args: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     user_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    plan: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     session_topics: Mapped[list["ReviewSessionTopic"]] = relationship(

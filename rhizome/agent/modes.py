@@ -63,7 +63,7 @@ _REVIEW_TOOLS = frozenset({
     "configure_review",
     "list_flashcards",
     "get_flashcards",
-    "add_flashcards_to_review",
+    "set_review_flashcards",
     "create_flashcards",
     "start_review",
     "record_review_interaction",

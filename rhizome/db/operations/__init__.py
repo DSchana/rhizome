@@ -51,6 +51,7 @@ from .reviews import (
     list_review_interactions,
     update_session_ephemeral,
     update_session_instructions,
+    update_session_plan,
     update_session_summary,
 )
 from .topics import (
@@ -112,6 +113,7 @@ __all__ = [
     "get_sessions_by_topics",
     "update_session_ephemeral",
     "update_session_instructions",
+    "update_session_plan",
     "update_session_summary",
     "get_interaction_stats",
     # flashcards

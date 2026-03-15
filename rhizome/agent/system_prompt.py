@@ -453,7 +453,7 @@ Once configuration is determined, call `configure_review` with the parameters to
 Goal: prepare the question sequence before starting the review.
 
 1. Load all entry content via `get_entries` if not already loaded.
-2. If flashcard style: use `list_flashcards` to check for existing flashcards. Use `get_flashcards` to inspect their content. Use `add_flashcards_to_review` to queue existing flashcards, and `create_flashcards` to create + queue new ones for entries that need them.
+2. If flashcard style: use `list_flashcards` to check for existing flashcards. Use `get_flashcards` to inspect their content. Use `set_review_flashcards` to set the queue (existing flashcard IDs), and `create_flashcards` to create + queue new ones for entries that need them.
 3. If conversational: mentally organize entries into a concept map / discussion flow.
 4. Call `start_review` (with an optional plan string) to advance to REVIEWING.
 
