@@ -16,7 +16,7 @@ See `docs/architecture.md` for the overall TUI architecture.
 
 ## Subpackages
 
-- **screens/** — Textual `Screen` subclasses. Currently contains `main.py` (the main screen with message area, input box, and status bar). `main.py` also defines `LogTabPane(TabPane)` which composes a `LoggingPane` for the `/logs` command. Future screens: context selection, commit workflow, review, options.
+- **screens/** — Textual `Screen` subclasses. Contains `main.py` (the main screen with message area, input box, and status bar), `setup.py` (`SetupScreen` — first-run wizard collecting user name and Anthropic API key, storing the key in the system keyring via `rhizome.credentials`), and `topic_selector.py`. `main.py` also defines `LogTabPane(TabPane)` which composes a `LoggingPane` for the `/logs` command.
 - **widgets/** — Reusable Textual widgets:
   - `status_bar.py` — `StatusBar(Static)` with reactive `mode` and `context` properties, bound to the app's reactive state.
   - `message.py` — `ChatMessage(Widget)` for rendering a single chat message with markdown support, role-based styling, and conditional collapse button (shown only for messages exceeding `COLLAPSE_LINE_THRESHOLD` lines).

@@ -9,11 +9,13 @@ from textual.app import App
 from textual.widgets import TabbedContent
 
 from rhizome.config import get_default_db_path
+from rhizome.credentials import has_api_key
 from rhizome.logs import get_logger, initialize_global_logger
 from rhizome.tui.log_handler import TUILogHandler
 from rhizome.tui.options import Options, OptionScope
 from rhizome.db import get_engine, get_session_factory
 from rhizome.tui.screens.main import MainScreen, ChatTabPane, LogTabPane
+from rhizome.tui.screens.setup import SetupScreen
 from rhizome.tui.widgets import ChatPane
 
 
@@ -59,6 +61,12 @@ class RhizomeApp(App):
             pane.update_tab_max_length(new)
 
     def on_mount(self) -> None:
+        if not has_api_key("anthropic"):
+            self.push_screen(SetupScreen(), callback=self._on_setup_complete)
+        else:
+            self.push_screen(MainScreen())
+
+    def _on_setup_complete(self, completed: bool) -> None:
         self.push_screen(MainScreen())
 
     def on_exit_app(self, event: messages.ExitApp) -> None:

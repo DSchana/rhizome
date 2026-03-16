@@ -4,6 +4,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from rhizome.tui.options import Options
+
 ASCII_ART = r"""
     ____  __    _
    / __ \/ /_  (_)___  ____  ____ ___  ___
@@ -40,5 +42,7 @@ class WelcomeHeader(Vertical):
     """
 
     def compose(self) -> ComposeResult:
+        user_name = self.app.options.get(Options.UserName)
+        greeting = f"Welcome back, {user_name}" if user_name else "Welcome to Rhizome"
         yield Static(ASCII_ART, id="welcome-art")
-        yield Static("Welcome to Rhizome", id="welcome-title")
+        yield Static(greeting, id="welcome-title")

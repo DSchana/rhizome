@@ -1,13 +1,13 @@
 """Environment-based configuration for the LLM agent."""
 
-import os
+from rhizome.credentials import get_api_key as _resolve_key
 
 
 def get_api_key() -> str:
-    """Read ANTHROPIC_API_KEY from the environment."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    """Read the Anthropic API key from env var or system keyring."""
+    key = _resolve_key("anthropic")
     if not key:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set. Export it before launching the app."
+            "No Anthropic API key found. Set ANTHROPIC_API_KEY or run the setup wizard."
         )
     return key

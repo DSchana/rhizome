@@ -7,6 +7,8 @@ Top-level application package. The `__init__.py` is empty — all public API is 
 - **`agent/`** — LLM agent integration (LangChain/LangGraph). Built once at startup, invoked per chat message with a fresh DB session via `ToolRuntime` context injection.
 - **`tui/`** — Textual-based terminal UI. Launch via `uv run python -m rhizome.tui`. Contains the main app, screens, widgets, state management, and slash command routing.
 
+- **`credentials.py`** — Credential resolution module. Checks env vars first (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), then falls back to `~/.config/rhizome/credentials.json` (mode `0600`). Used by both `agent/config.py` and the TUI setup screen.
+
 Typical usage (programmatic):
 
 ```python

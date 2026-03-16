@@ -424,6 +424,13 @@ class Options(metaclass=OptionsMeta):
         ],
     )
 
+    UserName = OptionSpec(
+        name="user_name",
+        scope=OptionScope.Root,
+        default="",
+        help="Display name used in greetings",
+    )
+
     TabMaxLength = IntRangeOptionSpec(
         name="tab_max_length",
         scope=OptionScope.Root,

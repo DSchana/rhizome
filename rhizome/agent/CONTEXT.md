@@ -17,7 +17,7 @@ The system message is seeded into graph state on init with a well-known ID (`SYS
 
 ## Modules
 
-- **config.py** — Reads `ANTHROPIC_API_KEY` (required) and `CURRICULUM_AGENT_MODEL` (optional, defaults to `claude-sonnet-4-20250514`) from environment variables.
+- **config.py** — Resolves the Anthropic API key via `rhizome.credentials.get_api_key()` (env var → keyring fallback). Raises `RuntimeError` if no key is found.
 - **context.py** — `AgentContext` dataclass holding `user_settings: dict` for the current invocation.
 - **tools.py** — `build_tools(session_factory, chat_pane, included=None)` factory that returns `@tool`-decorated async functions. Each tool creates its own `AsyncSession` via the closed-over `session_factory`. Tools needing TUI access (`set_mode`, `rename_tab`) capture `chat_pane` from the closure. The `included` parameter filters to a subset of tool names.
 - **system_prompt.py** — System prompt components split into shared and mode-specific sections. Shared sections (`SHARED_PREAMBLE`, `SHARED_APP_OVERVIEW`, `SHARED_SETTINGS_AND_BEHAVIOR`) are included by all modes. Mode-specific sections (`IDLE_MODE_SECTION`, `LEARN_MODE_SECTION`, `REVIEW_MODE_SECTION`) are composed by each `AgentMode` subclass. A backward-compatible `SYSTEM_PROMPT` constant is retained for subagents that don't use modes.
