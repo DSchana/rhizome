@@ -41,6 +41,8 @@ class TopicTree(Tree[Topic]):
             else:
                 self.root.add_leaf(topic.name, data=topic)
         self._refresh_height()
+        if self.root.children:
+            self.move_cursor(self.root.children[0])
 
     async def on_tree_node_expanded(self, event: Tree.NodeExpanded[Topic]) -> None:
         node: TreeNode[Topic] = event.node
