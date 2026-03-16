@@ -18,6 +18,7 @@ ENTRY_DIM = "rgb(100,100,100)"
 ENTRY_HINT = "rgb(80,80,80)"
 ENTRY_ACCENT = "rgb(255,80,80)"
 _FOCUS_GREEN = "rgb(100,200,100)"
+_ALT_GREY = "rgb(180,180,180)"
 
 
 class EntryViewer(Widget, can_focus=True):
@@ -84,8 +85,8 @@ class EntryViewer(Widget, can_focus=True):
     }
     EntryViewer #ev-compact-hint {
         display: none;
-        color: $text-muted;
-        margin: 0 0 0 1;
+        color: rgb(80,80,80);
+        margin: 1 0 0 1;
     }
     """
 
@@ -222,7 +223,7 @@ class EntryViewer(Widget, can_focus=True):
                 marker_style = "bold"
                 right_style = ENTRY_DIM
             else:
-                style = ""
+                style = "" if i % 2 == 0 else _ALT_GREY
                 marker_style = ""
                 right_style = ENTRY_DIM
 
@@ -251,7 +252,7 @@ class EntryViewer(Widget, can_focus=True):
             elif is_selected:
                 style = "bold"
             else:
-                style = ""
+                style = "" if i % 2 == 0 else _ALT_GREY
 
             marker = "► " if is_selected else "  "
             text.append(marker, style=style)
