@@ -56,7 +56,7 @@ class ChatPane(Widget):
     # ------------------------------------------------------------------
 
     BINDINGS = [
-        ("ctrl+c", "cancel_agent", "Cancel agent"),
+        ("ctrl+c", "cancel_or_copy", "Cancel/Copy"),
         Binding("ctrl+l", "refocus_input", "Refocus input", show=False, priority=True),
         Binding("ctrl+t", "toggle_last_agent_message", "Toggle agent msg", show=False, priority=True),
         Binding("ctrl+o", "toggle_last_tool_call", "Toggle tool call", show=False, priority=True),
@@ -459,8 +459,12 @@ class ChatPane(Widget):
         if self._agent_busy and self._agent_worker is not None:
             self._agent_worker.cancel()
 
-    def action_cancel_agent(self) -> None:
-        self.cancel_agent()
+    def action_cancel_or_copy(self) -> None:
+        selected = self.screen.get_selected_text()
+        if selected:
+            self.app.copy_to_clipboard(selected)
+        else:
+            self.cancel_agent()
 
     def action_refocus_input(self) -> None:
         self.query_one("#chat-input").focus()
