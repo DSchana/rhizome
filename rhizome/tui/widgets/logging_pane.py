@@ -7,7 +7,6 @@ import re
 import subprocess
 import tempfile
 
-from rich.segment import Segment
 from rich.text import Text
 
 from textual.app import ComposeResult
