@@ -1,4 +1,4 @@
-"""EntryViewer — read-only widget for browsing knowledge entries."""
+"""EntryList — read-only widget for browsing knowledge entries."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ _FOCUS_GREEN = "rgb(100,200,100)"
 _ALT_GREY = "rgb(180,180,180)"
 
 
-class EntryViewer(Widget, can_focus=True):
+class EntryList(Widget, can_focus=True):
     """Read-only entry list with detail panel for browsing KnowledgeEntry objects."""
 
     BINDINGS = [
@@ -32,58 +32,58 @@ class EntryViewer(Widget, can_focus=True):
     ]
 
     DEFAULT_CSS = """
-    EntryViewer {
+    EntryList {
         height: auto;
         layout: vertical;
         padding: 0 1;
     }
-    EntryViewer #ev-entry-list-scroll {
+    EntryList #ev-entry-list-scroll {
         height: auto;
         max-height: 10;
         margin: 1 0 1 0;
     }
-    EntryViewer #ev-entry-list {
+    EntryList #ev-entry-list {
         height: auto;
     }
-    EntryViewer #ev-detail-panel {
+    EntryList #ev-detail-panel {
         border: solid $surface-lighten-2;
         padding: 1 2;
         height: auto;
     }
-    EntryViewer #ev-title {
+    EntryList #ev-title {
         text-style: bold;
         margin-bottom: 0;
     }
-    EntryViewer #ev-meta {
+    EntryList #ev-meta {
         color: rgb(100,100,100);
         margin: 0 0 1 0;
     }
-    EntryViewer #ev-content-scroll {
+    EntryList #ev-content-scroll {
         height: auto;
         max-height: 10;
     }
-    EntryViewer #ev-content {
+    EntryList #ev-content {
         height: auto;
     }
-    EntryViewer #ev-empty {
+    EntryList #ev-empty {
         color: $text-muted;
         text-style: italic;
         margin: 1 0 0 1;
     }
-    EntryViewer.--compact {
+    EntryList.--compact {
         padding: 0 0 0 1;
     }
-    EntryViewer.--compact #ev-detail-panel {
+    EntryList.--compact #ev-detail-panel {
         display: none;
     }
-    EntryViewer.--compact #ev-entry-list-scroll {
+    EntryList.--compact #ev-entry-list-scroll {
         margin: 1 0 0 0;
         max-height: 30;
     }
-    EntryViewer.--compact #ev-compact-hint {
+    EntryList.--compact #ev-compact-hint {
         display: block;
     }
-    EntryViewer #ev-compact-hint {
+    EntryList #ev-compact-hint {
         display: none;
         color: rgb(80,80,80);
         margin: 1 0 0 1;

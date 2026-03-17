@@ -42,7 +42,7 @@ from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
-from .flashcard_study import FlashcardStudy
+from .flashcard_viewer import FlashcardViewer
 
 
 class HintHigherVerbosity(Message):
@@ -742,7 +742,7 @@ class ChatPane(Widget):
         ]
 
         area = self.query_one("#message-area")
-        study = FlashcardStudy()
+        study = FlashcardViewer()
         await area.mount(study)
         study.set_flashcards(sample_cards)
         area.scroll_end(animate=False)
@@ -937,12 +937,12 @@ class ChatPane(Widget):
             viewer.remove()
         self._restore_chat_input()
 
-    def on_flashcard_study_dismissed(self, event: FlashcardStudy.Dismissed) -> None:
-        for w in self.query(FlashcardStudy):
+    def on_flashcard_viewer_dismissed(self, event: FlashcardViewer.Dismissed) -> None:
+        for w in self.query(FlashcardViewer):
             w.remove()
         self._restore_chat_input()
 
-    def on_flashcard_study_session_complete(self, event: FlashcardStudy.SessionComplete) -> None:
+    def on_flashcard_viewer_session_complete(self, event: FlashcardViewer.SessionComplete) -> None:
         self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard session complete."))
         self._restore_chat_input()
 

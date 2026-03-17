@@ -12,7 +12,7 @@ from textual.widgets._tree import TreeNode
 from rhizome.db import KnowledgeEntry, Topic
 from rhizome.db.operations import count_entries, list_children, list_entries, list_root_topics
 
-from .entry_viewer import EntryViewer
+from .entry_list import EntryList
 
 
 class TopicTree(Tree[Topic]):
@@ -218,7 +218,7 @@ class TopicTreeViewer(Vertical):
                 with ScrollableContainer(id="topic-tree-scroll"):
                     yield TopicTree()
                 yield Static("", id="entry-count-hint")
-            yield EntryViewer(id="topic-entry-viewer")
+            yield EntryList(id="topic-entry-viewer")
 
     def on_mount(self) -> None:
         self.border_title = "Topics"
@@ -261,7 +261,7 @@ class TopicTreeViewer(Vertical):
                 entries = await list_entries(session, topic.id)
                 self._entry_cache[topic.id] = entries
                 self._entry_count_cache[topic.id] = len(entries)
-        viewer = self.query_one("#topic-entry-viewer", EntryViewer)
+        viewer = self.query_one("#topic-entry-viewer", EntryList)
         viewer.set_entries(self._entry_cache[topic.id])
         if topic.id in self._entry_cursor_cache:
             viewer.cursor = min(
@@ -308,7 +308,7 @@ class TopicTreeViewer(Vertical):
         # Scroll the container so the highlighted node's label is visible
         self._scroll_to_node(event.node)
         # Save cursor position for the previous topic
-        viewer = self.query_one("#topic-entry-viewer", EntryViewer)
+        viewer = self.query_one("#topic-entry-viewer", EntryList)
         if self._current_topic_id is not None:
             self._entry_cursor_cache[self._current_topic_id] = viewer.cursor
         self._current_topic_id = topic.id
@@ -354,7 +354,7 @@ class TopicTreeViewer(Vertical):
         event.stop()
         if self.show_entries:
             # Enter with panel open → focus the entry viewer
-            self.query_one("#topic-entry-viewer", EntryViewer).focus()
+            self.query_one("#topic-entry-viewer", EntryList).focus()
         else:
             # Enter with panel closed → select topic and exit
             self._post_topic_selected(event.node)
@@ -381,7 +381,7 @@ class TopicTreeViewer(Vertical):
     # Entry viewer dismissed → return focus to tree
     # ------------------------------------------------------------------
 
-    def on_entry_viewer_dismissed(self, event: EntryViewer.Dismissed) -> None:
+    def on_entry_list_dismissed(self, event: EntryList.Dismissed) -> None:
         event.stop()
         self.query_one(TopicTree).focus()
 

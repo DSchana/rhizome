@@ -16,7 +16,7 @@ from textual.widget import Widget
 from textual.message import Message
 from textual.widgets import Input, Static, TextArea
 
-from .entry_viewer import ENTRY_ACCENT, ENTRY_DIM, ENTRY_HINT
+from .entry_list import ENTRY_ACCENT, ENTRY_DIM, ENTRY_HINT
 
 
 _ENTRY_TYPES = ["fact", "exposition", "overview"]
@@ -29,7 +29,7 @@ _CHOICE_DESCRIPTIONS = [
     "cancel the proposal",
 ]
 
-# Colors — shared constants from entry_viewer, plus proposal-specific ones
+# Colors — shared constants from entry_list, plus proposal-specific ones
 _RED = ENTRY_ACCENT
 _DIM = ENTRY_DIM
 _EXCLUDED_DIM = "rgb(60,60,60)"

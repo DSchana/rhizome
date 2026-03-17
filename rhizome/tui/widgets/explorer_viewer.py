@@ -19,8 +19,8 @@ from rhizome.db.operations import (
     list_flashcards_by_topic,
 )
 
-from .entry_viewer import EntryViewer
-from .flashcard_viewer import FlashcardViewer
+from .entry_list import EntryList
+from .flashcard_list import FlashcardList
 from .topic_tree import TopicTree
 
 
@@ -254,10 +254,10 @@ class ExplorerViewer(Vertical):
                 yield Static("", id="explorer-count-hint")
             with Vertical(id="explorer-entry-pane"):
                 yield Static("Entries", classes="pane-title")
-                yield EntryViewer(id="explorer-entry-viewer")
+                yield EntryList(id="explorer-entry-viewer")
             with Vertical(id="explorer-flashcard-pane"):
                 yield Static("Flashcards", classes="pane-title")
-                yield FlashcardViewer(id="explorer-flashcard-viewer")
+                yield FlashcardList(id="explorer-flashcard-viewer")
 
     def on_mount(self) -> None:
         self.border_title = "Explore"
@@ -282,10 +282,10 @@ class ExplorerViewer(Vertical):
     def watch_view_mode(self, old_value: ViewMode, new_value: ViewMode) -> None:
         # Save cursors from the old mode before switching
         if self._current_topic_id is not None:
-            entry_viewer = self.query_one("#explorer-entry-viewer", EntryViewer)
+            entry_viewer = self.query_one("#explorer-entry-viewer", EntryList)
             self._entry_cursor_cache[self._current_topic_id] = entry_viewer.cursor
             if old_value == ViewMode.TOPICS_FLASHCARDS:
-                fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardViewer)
+                fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardList)
                 self._fc_cursor_by_topic_cache[self._current_topic_id] = fc_viewer.cursor
 
         # Remove old CSS class
@@ -298,7 +298,7 @@ class ExplorerViewer(Vertical):
             self.add_class(new_cls)
 
         # Toggle compact mode on entry viewer
-        entry_viewer = self.query_one("#explorer-entry-viewer", EntryViewer)
+        entry_viewer = self.query_one("#explorer-entry-viewer", EntryList)
         if new_value == ViewMode.TOPICS_ENTRIES_FLASHCARDS:
             entry_viewer.add_class("--compact")
         else:
@@ -337,11 +337,11 @@ class ExplorerViewer(Vertical):
         if pane_id == "explorer-tree-pane":
             self.query_one(TopicTree).focus()
         elif pane_id == "explorer-entry-pane":
-            viewer = self.query_one("#explorer-entry-viewer", EntryViewer)
+            viewer = self.query_one("#explorer-entry-viewer", EntryList)
             if viewer._entries:
                 viewer.focus()
         elif pane_id == "explorer-flashcard-pane":
-            viewer = self.query_one("#explorer-flashcard-viewer", FlashcardViewer)
+            viewer = self.query_one("#explorer-flashcard-viewer", FlashcardList)
             if viewer._flashcards:
                 viewer.focus()
 
@@ -404,7 +404,7 @@ class ExplorerViewer(Vertical):
                     entries = await list_entries(session, topic.id)
                     self._entry_cache[topic.id] = entries
                     self._entry_count_cache[topic.id] = len(entries)
-            entry_viewer = self.query_one("#explorer-entry-viewer", EntryViewer)
+            entry_viewer = self.query_one("#explorer-entry-viewer", EntryList)
             entry_viewer.set_entries(self._entry_cache[topic.id])
             # Restore persisted entry cursor (shared across all entry-showing modes)
             if topic.id in self._entry_cursor_cache:
@@ -421,7 +421,7 @@ class ExplorerViewer(Vertical):
                     flashcards = await list_flashcards_by_topic(session, topic.id)
                     self._fc_by_topic_cache[topic.id] = flashcards
                     self._fc_count_cache[topic.id] = len(flashcards)
-            fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardViewer)
+            fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardList)
             fc_viewer.set_flashcards(self._fc_by_topic_cache[topic.id])
             if topic.id in self._fc_cursor_by_topic_cache:
                 fc_viewer.cursor = min(
@@ -432,7 +432,7 @@ class ExplorerViewer(Vertical):
 
         # Three-pane mode: flashcard panel starts empty, reset on each topic change
         if mode == ViewMode.TOPICS_ENTRIES_FLASHCARDS:
-            fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardViewer)
+            fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardList)
             fc_viewer.set_flashcards([])
 
         # Entry count hint (for TOPICS mode only)
@@ -484,11 +484,11 @@ class ExplorerViewer(Vertical):
         # Save cursor positions for the previous topic
         if self._current_topic_id is not None:
             # Entry cursor persists across all entry-showing modes
-            entry_viewer = self.query_one("#explorer-entry-viewer", EntryViewer)
+            entry_viewer = self.query_one("#explorer-entry-viewer", EntryList)
             self._entry_cursor_cache[self._current_topic_id] = entry_viewer.cursor
             # Flashcard cursor persists only in two-pane mode
             if self.view_mode == ViewMode.TOPICS_FLASHCARDS:
-                fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardViewer)
+                fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardList)
                 self._fc_cursor_by_topic_cache[self._current_topic_id] = fc_viewer.cursor
         self._current_topic_id = topic.id
 
@@ -498,12 +498,12 @@ class ExplorerViewer(Vertical):
     # Entry cursor change — load flashcards for selected entry (mode 4)
     # ------------------------------------------------------------------
 
-    async def on_entry_viewer_cursor_changed(self, event: EntryViewer.CursorChanged) -> None:
+    async def on_entry_list_cursor_changed(self, event: EntryList.CursorChanged) -> None:
         if self.view_mode != ViewMode.TOPICS_ENTRIES_FLASHCARDS:
             return
         event.stop()
 
-        fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardViewer)
+        fc_viewer = self.query_one("#explorer-flashcard-viewer", FlashcardList)
         if event.entry is None:
             fc_viewer.set_flashcards([])
             return
@@ -548,15 +548,15 @@ class ExplorerViewer(Vertical):
     # Child viewer dismissed — return focus to appropriate pane
     # ------------------------------------------------------------------
 
-    def on_entry_viewer_dismissed(self, event: EntryViewer.Dismissed) -> None:
+    def on_entry_list_dismissed(self, event: EntryList.Dismissed) -> None:
         event.stop()
         self.query_one(TopicTree).focus()
 
-    def on_flashcard_viewer_dismissed(self, event: FlashcardViewer.Dismissed) -> None:
+    def on_flashcard_list_dismissed(self, event: FlashcardList.Dismissed) -> None:
         event.stop()
         if self.view_mode == ViewMode.TOPICS_ENTRIES_FLASHCARDS:
             # In 3-pane mode, go back to entry viewer
-            entry_viewer = self.query_one("#explorer-entry-viewer", EntryViewer)
+            entry_viewer = self.query_one("#explorer-entry-viewer", EntryList)
             if entry_viewer._entries:
                 entry_viewer.focus()
             else:
