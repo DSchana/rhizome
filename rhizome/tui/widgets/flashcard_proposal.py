@@ -114,6 +114,17 @@ class FlashcardProposal(Widget, can_focus=True):
         width: 65%;
         height: auto;
     }
+    FlashcardProposal.stacked #fp-split {
+        layout: vertical;
+    }
+    FlashcardProposal.stacked #fp-list-pane {
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 1;
+    }
+    FlashcardProposal.stacked #fp-detail-pane {
+        width: 100%;
+    }
     FlashcardProposal #fp-detail {
         border: solid $surface-lighten-2;
         padding: 1 2;
@@ -266,6 +277,23 @@ class FlashcardProposal(Widget, can_focus=True):
         self._render_all()
         self.focus()
 
+    _LIST_PROPORTION = 0.3
+    _LIST_MIN_WIDTH = 40
+    _UNSTACKED_LIST_PROPORTION = 0.8
+
+    def on_resize(self, event) -> None:
+        total_width = event.size.width
+
+        # We should stack if we _cannot_ apportion a minimum number of characters for the list width
+        should_stack = total_width * self._LIST_PROPORTION < self._LIST_MIN_WIDTH
+        if should_stack and not self.has_class("stacked"):
+            self.add_class("stacked")
+            
+        elif not should_stack and self.has_class("stacked"):
+            self.remove_class("stacked")
+            
+        self._render_all()
+
     # ------------------------------------------------------------------
     # Reactive watchers
     # ------------------------------------------------------------------
@@ -323,7 +351,13 @@ class FlashcardProposal(Widget, can_focus=True):
         ))
 
     def _render_list(self) -> None:
-        max_q_len = 40
+
+        max_q_len = int(
+            self.size.width * self._LIST_PROPORTION 
+            if not self.has_class("stacked") 
+            else self.size.width * self._UNSTACKED_LIST_PROPORTION
+        )
+
         titles: list[str] = []
         for fc in self._flashcards:
             q = fc["question"].replace("\n", " ")
