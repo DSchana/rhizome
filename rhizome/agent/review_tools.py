@@ -11,14 +11,11 @@ from langchain.tools import tool
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command
-from pydantic import BaseModel, Field
-
 from rhizome.agent.review_state import ReviewConfig, ReviewScope, ReviewState
 from rhizome.agent.tools import ToolVisibility, tool_visibility
 from rhizome.db.operations import (
     add_review_interaction,
     complete_review_session,
-    create_flashcard,
     create_review_session,
     get_flashcard_entry_ids,
     get_flashcards_by_ids,
@@ -36,16 +33,6 @@ from rhizome.logs import get_logger
 from sqlalchemy import select
 
 _logger = get_logger("agent.review_tools")
-
-
-class FlashcardInput(BaseModel):
-    """Input schema for creating a single flashcard."""
-
-    topic_id: int = Field(description="Topic ID the flashcard belongs to")
-    question_text: str = Field(description="The question text")
-    answer_text: str = Field(description="The expected answer text")
-    entry_ids: list[int] = Field(description="Knowledge entry IDs this flashcard tests")
-    testing_notes: str | None = Field(default=None, description="Notes on how to assess responses")
 
 
 def build_review_tools(session_factory) -> list:
@@ -260,38 +247,21 @@ def build_review_tools(session_factory) -> list:
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
-    @tool("create_flashcards", description=(
-        "Create new flashcards and add them to the review queue. "
-        "Each flashcard needs: topic_id, question_text, answer_text, entry_ids, "
-        "and optionally testing_notes."
+    @tool("add_flashcards_to_review", description=(
+        "Append flashcard IDs to the review queue. Use this after "
+        "accept_flashcard_proposal or with existing flashcard IDs from "
+        "list_flashcards."
     ))
-    async def create_flashcards_tool(
-        flashcards: list[FlashcardInput],
+    async def add_flashcards_to_review_tool(
+        flashcard_ids: list[int],
         runtime: ToolRuntime,
     ) -> Command:
         review_state: ReviewState = runtime.state["review"]
-        session_id = review_state["session_id"]
-        new_ids: list[int] = []
-
-        async with session_factory() as session:
-            for fc_input in flashcards:
-                fc = await create_flashcard(
-                    session,
-                    topic_id=fc_input.topic_id,
-                    question_text=fc_input.question_text,
-                    answer_text=fc_input.answer_text,
-                    entry_ids=fc_input.entry_ids,
-                    testing_notes=fc_input.testing_notes,
-                    session_id=session_id,
-                )
-                new_ids.append(fc.id)
-            await session.commit()
-
         new_state = dict(review_state)
-        new_queue = list(review_state["flashcard_queue"]) + new_ids
+        new_queue = list(review_state["flashcard_queue"]) + list(flashcard_ids)
         new_state["flashcard_queue"] = new_queue
 
-        msg = f"Created {len(new_ids)} flashcards (IDs: {new_ids}). Queue size: {len(new_queue)}."
+        msg = f"Added {len(flashcard_ids)} flashcard(s) to queue. Queue size: {len(new_queue)}."
         return Command(update={
             "review": new_state,
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
@@ -561,7 +531,7 @@ def build_review_tools(session_factory) -> list:
         "list_flashcards": list_flashcards_tool,
         "get_flashcards": get_flashcards_tool,
         "set_review_flashcards": set_review_flashcards_tool,
-        "create_flashcards": create_flashcards_tool,
+        "add_flashcards_to_review": add_flashcards_to_review_tool,
         "start_review": start_review_tool,
         "record_review_interaction": record_review_interaction_tool,
         "complete_review_session": complete_review_session_tool,

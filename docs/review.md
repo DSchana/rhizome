@@ -46,8 +46,13 @@ The agent prepares the question sequence before starting:
 **For flashcard-based reviews:**
 1. `list_flashcards(entry_ids)` — check which entries already have flashcards
 2. `get_flashcards(flashcard_ids)` — inspect existing card content
-3. `create_flashcards(flashcards)` — create new cards (auto-appended to queue)
-4. `set_review_flashcards(flashcard_ids)` — set the final queue order (replace semantics)
+3. `add_flashcards_to_review(flashcard_ids)` — queue existing flashcard IDs
+4. For entries that need new flashcards, follow the proposal workflow:
+   - `create_flashcard_proposal(flashcards)` — stage cards for user review
+   - `present_flashcard_proposal()` — show proposal to user (approve / edit / cancel)
+   - `accept_flashcard_proposal()` — write approved cards to DB
+   - `add_flashcards_to_review(flashcard_ids)` — add created IDs to the queue
+5. `set_review_flashcards(flashcard_ids)` — replace the full queue order if needed
 
 **For conversational reviews:**
 - Load entry content and organize a discussion flow
@@ -84,7 +89,7 @@ Flashcards are reusable question templates stored in the database:
 - Have `question_text`, `answer_text`, and optional `testing_notes` (instructions for evaluating responses)
 - When a parent session is deleted, its flashcards cascade-delete
 
-The flashcard queue uses **replace semantics** — `set_review_flashcards` always sets the full queue rather than appending, giving the agent complete control over ordering and removal.
+The flashcard queue supports both **append** (`add_flashcards_to_review`) and **replace** (`set_review_flashcards`) semantics. Use append for adding new cards; use replace for reordering or clearing the queue.
 
 ## Review Tools
 
@@ -96,7 +101,10 @@ The flashcard queue uses **replace semantics** — `set_review_flashcards` alway
 | `list_flashcards` | Planning | Check existing flashcard coverage |
 | `get_flashcards` | Planning | Get flashcard content by ID |
 | `set_review_flashcards` | Planning / Reviewing | Set queue (replace semantics) |
-| `create_flashcards` | Planning / Reviewing | Create cards, auto-append to queue |
+| `create_flashcard_proposal` | Any (learn or review) | Stage flashcards for user review |
+| `present_flashcard_proposal` | Any (learn or review) | Show proposal interrupt, return user's decision |
+| `accept_flashcard_proposal` | Any (learn or review) | Write approved flashcards to DB |
+| `add_flashcards_to_review` | Planning / Reviewing | Append flashcard IDs to queue |
 | `start_review` | Planning → Reviewing | Store discussion plan, begin review |
 | `record_review_interaction` | Reviewing | Record Q&A, update coverage and queue |
 | `complete_review_session` | Reviewing → Summarizing | Compute stats, mark complete |

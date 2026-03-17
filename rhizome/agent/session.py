@@ -100,6 +100,11 @@ class AgentSession:
         review_tool_dict = build_review_tools(session_factory)
         self._tools.extend(review_tool_dict.values())
 
+        # Build flashcard proposal tools (available in learn + review modes).
+        from rhizome.agent.flashcard_proposal_tools import build_flashcard_proposal_tools
+        fc_proposal_tool_dict = build_flashcard_proposal_tools(session_factory)
+        self._tools.extend(fc_proposal_tool_dict.values())
+
         # Build SQL tools and add them to the root agent's tool list.
         from rhizome.agent.sql_tools import build_sql_tools
         sql_tool_dict = build_sql_tools(session_factory)

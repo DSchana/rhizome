@@ -15,6 +15,7 @@ from rhizome.logs import get_logger
 from rhizome.tui.types import Mode, Role
 
 from .commit_proposal import CommitProposal
+from .flashcard_proposal import FlashcardProposal
 from .interrupt import InterruptWidget
 from .choices import Choices
 from .multiple_choices import MultipleChoices
@@ -268,6 +269,8 @@ class AgentMessageHarness(Widget):
             widget = MultipleChoices.from_interrupt(interrupt_value)
         elif itype == "commit_proposal":
             widget = CommitProposal.from_interrupt(interrupt_value)
+        elif itype == "flashcard_proposal":
+            widget = FlashcardProposal.from_interrupt(interrupt_value)
         elif itype == "sql_confirmation":
             widget = SqlConfirmation.from_interrupt(interrupt_value)
         else:

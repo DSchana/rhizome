@@ -3,6 +3,7 @@ from .chat_input import ChatInput
 from .chat_pane import ChatPane, HintHigherVerbosity
 from .command_palette import CommandPalette
 from .commit_proposal import CommitProposal
+from .flashcard_proposal import FlashcardProposal
 from .entry_list import EntryList
 from .explorer_viewer import ExplorerViewer
 from .flashcard_list import FlashcardList
@@ -29,6 +30,7 @@ __all__ = [
     "CommandPalette",
     "CommitProposal",
     "EntryList",
+    "FlashcardProposal",
     "ExplorerViewer",
     "FlashcardList",
     "FlashcardViewer",

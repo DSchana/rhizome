@@ -16,6 +16,7 @@ from rhizome.agent.system_prompt import (
     REVIEW_MODE_SECTION,
     SHARED_APP_OVERVIEW,
     SHARED_DATABASE_CONTEXT,
+    SHARED_MODE_SWITCHING,
     SHARED_PREAMBLE,
     SHARED_SETTINGS_AND_BEHAVIOR,
 )
@@ -64,6 +65,12 @@ _DB_SQL_TOOLS = frozenset({
     "run_sql_modification",
 })
 
+_FLASHCARD_PROPOSAL_TOOLS = frozenset({
+    "create_flashcard_proposal",
+    "present_flashcard_proposal",
+    "accept_flashcard_proposal",
+})
+
 _REVIEW_TOOLS = frozenset({
     "get_review_sessions",
     "set_review_scope",
@@ -71,7 +78,7 @@ _REVIEW_TOOLS = frozenset({
     "list_flashcards",
     "get_flashcards",
     "set_review_flashcards",
-    "create_flashcards",
+    "add_flashcards_to_review",
     "start_review",
     "record_review_interaction",
     "complete_review_session",
@@ -125,7 +132,7 @@ class IdleAgentMode(AgentMode):
     def system_prompt(self) -> str:
         return _compose_prompt(
             SHARED_PREAMBLE, SHARED_APP_OVERVIEW, SHARED_DATABASE_CONTEXT,
-            IDLE_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
+            SHARED_MODE_SWITCHING, IDLE_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
@@ -145,13 +152,13 @@ class LearnAgentMode(AgentMode):
     def system_prompt(self) -> str:
         return _compose_prompt(
             SHARED_PREAMBLE, SHARED_APP_OVERVIEW, SHARED_DATABASE_CONTEXT,
-            LEARN_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
+            SHARED_MODE_SWITCHING, LEARN_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS | _DB_WRITE_TOOLS | _APP_TOOLS | _COMMIT_TOOLS | _WEB_TOOLS | _DB_SQL_TOOLS
+        return _DB_READ_TOOLS | _DB_WRITE_TOOLS | _APP_TOOLS | _COMMIT_TOOLS | _FLASHCARD_PROPOSAL_TOOLS | _WEB_TOOLS | _DB_SQL_TOOLS
 
 
 class ReviewAgentMode(AgentMode):
@@ -165,13 +172,13 @@ class ReviewAgentMode(AgentMode):
     def system_prompt(self) -> str:
         return _compose_prompt(
             SHARED_PREAMBLE, SHARED_APP_OVERVIEW, SHARED_DATABASE_CONTEXT,
-            REVIEW_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
+            SHARED_MODE_SWITCHING, REVIEW_MODE_SECTION, SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS | _APP_TOOLS | _WEB_TOOLS | _REVIEW_TOOLS | _DB_SQL_TOOLS
+        return _DB_READ_TOOLS | _APP_TOOLS | _WEB_TOOLS | _REVIEW_TOOLS | _FLASHCARD_PROPOSAL_TOOLS | _DB_SQL_TOOLS
 
 
 # -- Registry ----------------------------------------------------------------

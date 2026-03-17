@@ -6,6 +6,7 @@ from langchain.agents.middleware.types import AgentState
 
 from typing import Annotated
 
+from rhizome.agent.flashcard_proposal_tools import FlashcardProposalItem
 from rhizome.agent.review_state import ReviewState
 
 
@@ -30,3 +31,5 @@ class RhizomeAgentState(AgentState):
 
     review: Annotated[ReviewState | None, lambda x, y: x or y]
     # This reducer means that if review state is already set, keep it - don't overwrite with None.
+
+    flashcard_proposal: list[FlashcardProposalItem] | None
