@@ -42,6 +42,8 @@ from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
+from .commit_proposal import CommitProposal
+from .flashcard_proposal import FlashcardProposal
 from .flashcard_viewer import FlashcardViewer
 
 
@@ -606,6 +608,14 @@ class ChatPane(Widget):
             async def test_flashcards():
                 await self._cmd_test_flashcards()
 
+            @registry.command(name="test-flashcard-proposal", help="Open flashcard proposal widget with sample data")
+            async def test_flashcard_proposal():
+                await self._cmd_test_flashcard_proposal()
+
+            @registry.command(name="test-commit-proposal", help="Open commit proposal widget with sample data")
+            async def test_commit_proposal():
+                await self._cmd_test_commit_proposal()
+
     async def _set_mode(
         self,
         mode: Mode,
@@ -747,6 +757,74 @@ class ChatPane(Widget):
         study.set_flashcards(sample_cards)
         area.scroll_end(animate=False)
         study.focus()
+        self.query_one("#chat-input").placeholder = (
+            "Ctrl+l to refocus chat input"
+        )
+
+    async def _cmd_test_flashcard_proposal(self) -> None:
+        """Open the flashcard proposal widget with sample data."""
+        sample_cards = [
+            {
+                "question": "What is the time complexity of binary search?",
+                "answer": "O(log n) — each comparison halves the remaining search space.",
+                "testing_notes": "Ask for best/worst case separately.",
+                "entry_ids": [1, 3],
+            },
+            {
+                "question": "Explain the difference between a stack and a queue.",
+                "answer": "A stack is LIFO (Last In, First Out): the most recently added element is removed first.\n\nA queue is FIFO (First In, First Out): the earliest added element is removed first.",
+                "testing_notes": None,
+                "entry_ids": [2],
+            },
+            {
+                "question": "What is a hash collision and how is it typically resolved?",
+                "answer": "A hash collision occurs when two different keys produce the same hash value.\n\nCommon resolution strategies:\n• Chaining — each bucket holds a linked list of entries\n• Open addressing — probe for the next available slot (linear, quadratic, or double hashing)",
+                "testing_notes": "Can ask about chaining vs open addressing trade-offs as a follow-up.",
+                "entry_ids": [],
+            },
+        ]
+
+        area = self.query_one("#message-area")
+        proposal = FlashcardProposal(flashcards=sample_cards)
+        await area.mount(proposal)
+        area.scroll_end(animate=False)
+        proposal.focus()
+        self.query_one("#chat-input").placeholder = (
+            "Ctrl+l to refocus chat input"
+        )
+
+    async def _cmd_test_commit_proposal(self) -> None:
+        """Open the commit proposal widget with sample data."""
+        sample_entries = [
+            {
+                "title": "Binary Search",
+                "content": "Binary search is a divide-and-conquer algorithm that finds a target value in a sorted array by repeatedly halving the search space.\n\nTime complexity: O(log n)\nSpace complexity: O(1) iterative, O(log n) recursive",
+                "entry_type": "fact",
+                "topic_id": 1,
+            },
+            {
+                "title": "Hash Table Collision Resolution",
+                "content": "When two keys hash to the same bucket, a collision occurs. Common strategies:\n\n• Chaining — each bucket holds a linked list\n• Open addressing — probe for the next available slot\n• Robin Hood hashing — minimize probe distance variance",
+                "entry_type": "exposition",
+                "topic_id": 1,
+            },
+            {
+                "title": "CAP Theorem Overview",
+                "content": "The CAP theorem states that a distributed system can provide at most two of three guarantees: Consistency, Availability, and Partition tolerance.\n\nIn practice, partition tolerance is non-negotiable, so the real trade-off is between consistency and availability.",
+                "entry_type": "overview",
+                "topic_id": 2,
+            },
+        ]
+        sample_topic_map = {
+            1: "Data Structures",
+            2: "Distributed Systems",
+        }
+
+        area = self.query_one("#message-area")
+        proposal = CommitProposal(entries=sample_entries, topic_map=sample_topic_map)
+        await area.mount(proposal)
+        area.scroll_end(animate=False)
+        proposal.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
         )
