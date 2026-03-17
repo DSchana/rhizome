@@ -42,6 +42,7 @@ from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
+from .flashcard_study import FlashcardStudy
 
 
 class HintHigherVerbosity(Message):
@@ -600,6 +601,11 @@ class ChatPane(Widget):
         async def close():
             await self._cmd_close()
 
+        if getattr(self.app, "debug_logging", False):
+            @registry.command(name="test-flashcards", help="Open flashcard study widget with sample data")
+            async def test_flashcards():
+                await self._cmd_test_flashcards()
+
     async def _set_mode(
         self,
         mode: Mode,
@@ -721,6 +727,26 @@ class ChatPane(Widget):
             await area.mount(tree)
             area.scroll_end(animate=False)
             tree.focus()
+        self.query_one("#chat-input").placeholder = (
+            "Ctrl+l to refocus chat input"
+        )
+
+    async def _cmd_test_flashcards(self) -> None:
+        """Open the flashcard study widget with sample data."""
+        sample_cards = [
+            {"question": "What is the time complexity of binary search?", "answer": "O(log n) — each comparison halves the remaining search space."},
+            {"question": "Explain the difference between a stack and a queue.", "answer": "A stack is LIFO (Last In, First Out): the most recently added element is removed first.\n\nA queue is FIFO (First In, First Out): the earliest added element is removed first."},
+            {"question": "What is a hash collision and how is it typically resolved?", "answer": "A hash collision occurs when two different keys produce the same hash value.\n\nCommon resolution strategies:\n• Chaining — each bucket holds a linked list of entries\n• Open addressing — probe for the next available slot (linear, quadratic, or double hashing)"},
+            {"question": "What does the CAP theorem state?", "answer": "A distributed system can provide at most two of the following three guarantees simultaneously:\n\n• Consistency — every read returns the most recent write\n• Availability — every request receives a response\n• Partition tolerance — the system operates despite network partitions"},
+            {"question": "What is the difference between concurrency and parallelism?", "answer": "Concurrency is about dealing with multiple tasks at once (structure).\nParallelism is about doing multiple tasks at once (execution).\n\nConcurrency is possible on a single core via interleaving; parallelism requires multiple cores."},
+        ]
+
+        area = self.query_one("#message-area")
+        study = FlashcardStudy()
+        await area.mount(study)
+        study.set_flashcards(sample_cards)
+        area.scroll_end(animate=False)
+        study.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
         )
@@ -909,6 +935,15 @@ class ChatPane(Widget):
     def on_explorer_viewer_dismissed(self, event: ExplorerViewer.Dismissed) -> None:
         for viewer in self.query(ExplorerViewer):
             viewer.remove()
+        self._restore_chat_input()
+
+    def on_flashcard_study_dismissed(self, event: FlashcardStudy.Dismissed) -> None:
+        for w in self.query(FlashcardStudy):
+            w.remove()
+        self._restore_chat_input()
+
+    def on_flashcard_study_session_complete(self, event: FlashcardStudy.SessionComplete) -> None:
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard session complete."))
         self._restore_chat_input()
 
     def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:
