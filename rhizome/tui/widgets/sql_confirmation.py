@@ -8,19 +8,15 @@ factory, Up/Down/Enter navigation.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
-from .interrupt import WidgetDeactivated
-
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+from .interrupt import InterruptWidgetBase
 _MAX_CELL_WIDTH = 40
 _MAX_TABLE_HEIGHT = 14
 
@@ -33,7 +29,7 @@ def _truncate(value: Any, max_len: int = _MAX_CELL_WIDTH) -> str:
     return s
 
 
-class SqlConfirmation(Widget, can_focus=True):
+class SqlConfirmation(InterruptWidgetBase):
     """Displays a SQL modification confirmation with preview table.
 
     Navigation: Up/Down to move highlight, Enter to select.
@@ -52,13 +48,6 @@ class SqlConfirmation(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
-        border: solid rgb(40,40,40);
-    }
-    SqlConfirmation:hover {
-        border: solid rgb(120,120,120);
-    }
-    SqlConfirmation:focus-within {
-        border: solid rgb(86,126,160);
     }
     SqlConfirmation .sql-warning-header {
         color: rgb(220, 160, 50);
@@ -100,7 +89,6 @@ class SqlConfirmation(Widget, can_focus=True):
         self._preview_rows = preview_rows or []
         self._row_count = row_count
         self._options = ["Approve", "Deny"]
-        self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
         self._has_preview = bool(self._preview_columns)
 
     @classmethod
@@ -142,6 +130,7 @@ class SqlConfirmation(Widget, can_focus=True):
         yield Static("  (ctrl+c to cancel)", id="sql-hint")
 
     def on_mount(self) -> None:
+        super().on_mount()
         if self._has_preview:
             table = self.query_one("#sql-preview-table", DataTable)
             for col in self._preview_columns:
@@ -151,7 +140,6 @@ class SqlConfirmation(Widget, can_focus=True):
 
         self._render_options()
         self.query_one("#sql-hint", Static).styles.color = "rgb(100,100,100)"
-        self.border_subtitle = _NAV_HINT
         self.focus()
         self.scroll_visible(animate=False)
         self.call_after_refresh(self._render_options)
@@ -160,14 +148,12 @@ class SqlConfirmation(Widget, can_focus=True):
         self._render_options()
 
     def on_focus(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = None
-            self._render_options()
+        super().on_focus()
+        self._render_options()
 
     def on_blur(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = _NAV_HINT
-            self._render_options()
+        super().on_blur()
+        self._render_options()
 
     def _render_options(self) -> None:
         focused = self.has_focus
@@ -196,9 +182,7 @@ class SqlConfirmation(Widget, can_focus=True):
         if self._future.done():
             return
         selected = self._options[self.cursor]
-        self._future.set_result(selected)
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.resolve(selected)
         # Collapse: hide everything except a brief confirmation line
         for cls_name in ("sql-warning-icon", "sql-warning-header", "sql-statement",
                          "sql-no-preview", "sql-truncation-note"):
@@ -210,14 +194,3 @@ class SqlConfirmation(Widget, can_focus=True):
         display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
         self.query_one("#sql-options", Static).update(display)
         self.query_one("#sql-hint", Static).update("")
-
-    async def wait_for_selection(self) -> Any:
-        """Block until the user selects an option. Returns the selected value."""
-        return await self._future
-
-    def cancel(self) -> None:
-        """Cancel the pending future if not yet resolved."""
-        if not self._future.done():
-            self._future.cancel()
-            self.border_subtitle = None
-            self.post_message(WidgetDeactivated(self))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import copy
 from enum import Enum, auto
 from typing import Any
@@ -12,14 +11,11 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.message import Message
 from textual.widgets import Input, Static, TextArea
 
 from .entry_list import ENTRY_ACCENT, ENTRY_DIM, ENTRY_HINT
-from .interrupt import WidgetDeactivated
-
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+from .interrupt import InterruptWidgetBase
 
 _ENTRY_TYPES = ["fact", "exposition", "overview"]
 _CHOICES = ["Approve", "Edit", "Reset", "Cancel"]
@@ -67,7 +63,7 @@ class _EditInstructions(TextArea):
             super()._on_key(event)
 
 
-class CommitProposal(Widget, can_focus=True):
+class CommitProposal(InterruptWidgetBase):
     """Displays a commit proposal for review with inline editing.
 
     The entry list and choice list share a single cursor. Position 0 is
@@ -96,13 +92,6 @@ class CommitProposal(Widget, can_focus=True):
         layout: vertical;
         padding: 1 2;
         margin: 1 0;
-        border: solid rgb(40,40,40);
-    }
-    CommitProposal:hover {
-        border: solid rgb(120,120,120);
-    }
-    CommitProposal:focus-within {
-        border: solid rgb(86,126,160);
     }
     CommitProposal #proposal-header {
         margin-bottom: 0;
@@ -175,7 +164,6 @@ class CommitProposal(Widget, can_focus=True):
         self._excluded: set[int] = set()
         self._state = _State.BROWSE
         self._max_content_lines: int = 0
-        self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
     def from_interrupt(cls, value: dict[str, Any]) -> CommitProposal:
@@ -234,34 +222,18 @@ class CommitProposal(Widget, can_focus=True):
         )
 
     def on_mount(self) -> None:
+        super().on_mount()
         edit_inst = self.query_one("#edit-instructions", _EditInstructions)
         edit_inst.display = False
         edit_inst.placeholder = "Describe what changes you'd like..."
         # Disable cursor blink on the TextArea until it's focused
         self.query_one("#detail-content", TextArea).cursor_blink = False
-        self.border_subtitle = _NAV_HINT
         self._render_all()
         self.focus()
 
     # ------------------------------------------------------------------
     # Reactive watchers
     # ------------------------------------------------------------------
-
-    def on_focus(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = None
-
-    def on_blur(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = _NAV_HINT
-
-    def on_descendant_focus(self, event) -> None:
-        if not self._future.done():
-            self.border_subtitle = None
-
-    def on_descendant_blur(self, event) -> None:
-        if not self._future.done():
-            self.border_subtitle = _NAV_HINT
 
     def watch_cursor(self) -> None:
         if self._state == _State.BROWSE:
@@ -606,9 +578,7 @@ class CommitProposal(Widget, can_focus=True):
         result: dict[str, Any] = {"choice": choice, "entries": included}
         if instructions:
             result["instructions"] = instructions
-        self._future.set_result(result)
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.resolve(result)
         self._render_resolved(choice, instructions)
 
     def _resolve_edit(self, instructions: str) -> None:
@@ -626,15 +596,3 @@ class CommitProposal(Widget, can_focus=True):
         self.query_one("#proposal-hints", Static).update("")
         self.query_one("#edit-instructions", _EditInstructions).display = False
 
-    # ------------------------------------------------------------------
-    # InterruptWidget protocol
-    # ------------------------------------------------------------------
-
-    async def wait_for_selection(self) -> Any:
-        return await self._future
-
-    def cancel(self) -> None:
-        if not self._future.done():
-            self._future.cancel()
-            self.border_subtitle = None
-            self.post_message(WidgetDeactivated(self))

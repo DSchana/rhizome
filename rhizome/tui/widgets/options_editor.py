@@ -12,7 +12,7 @@ from textual.widget import Widget
 
 from textual.widgets import Button, Input, Label, Rule, Select, Static
 
-from .interrupt import WidgetDeactivated
+from .navigable import WidgetDeactivated
 from rhizome.tui.options import (
     ChoicesOptionSpec,
     ConditionalChoicesOptionSpec,

@@ -8,22 +8,18 @@ text visible).
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.widgets import Static
 
-from .interrupt import WidgetDeactivated
-
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+from .interrupt import InterruptWidgetBase
 
 
-class WarningChoices(Widget, can_focus=True):
+class WarningChoices(InterruptWidgetBase):
     """Displays a warning prompt with Approve / Deny and optional extra choices.
 
     Navigation: Up/Down to move highlight, Enter to select.
@@ -43,13 +39,6 @@ class WarningChoices(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
-        border: solid rgb(40,40,40);
-    }
-    WarningChoices:hover {
-        border: solid rgb(120,120,120);
-    }
-    WarningChoices:focus-within {
-        border: solid rgb(86,126,160);
     }
     WarningChoices .warning-icon {
         color: rgb(220, 160, 50);
@@ -71,7 +60,6 @@ class WarningChoices(Widget, can_focus=True):
         super().__init__(**kwargs)
         self._message = message
         self._options = ["Approve", "Deny"] + (options or [])
-        self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
     def from_interrupt(cls, value: dict[str, Any]) -> WarningChoices:
@@ -88,9 +76,9 @@ class WarningChoices(Widget, can_focus=True):
         yield Static("  (ctrl+c to cancel)", id="warning-hint")
 
     def on_mount(self) -> None:
+        super().on_mount()
         self._render_options()
         self.query_one("#warning-hint", Static).styles.color = "rgb(100,100,100)"
-        self.border_subtitle = _NAV_HINT
         self.focus()
         self.scroll_visible(animate=False)
         self.call_after_refresh(self._render_options)
@@ -99,14 +87,12 @@ class WarningChoices(Widget, can_focus=True):
         self._render_options()
 
     def on_focus(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = None
-            self._render_options()
+        super().on_focus()
+        self._render_options()
 
     def on_blur(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = _NAV_HINT
-            self._render_options()
+        super().on_blur()
+        self._render_options()
 
     def _render_options(self) -> None:
         focused = self.has_focus
@@ -135,9 +121,7 @@ class WarningChoices(Widget, can_focus=True):
         if self._future.done():
             return
         selected = self._options[self.cursor]
-        self._future.set_result(selected)
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.resolve(selected)
         # Collapse: hide everything except a brief confirmation line
         self.query_one(".warning-icon", Static).display = False
         self.query_one(".warning-message", Static).display = False
@@ -145,14 +129,3 @@ class WarningChoices(Widget, can_focus=True):
         display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
         self.query_one("#warning-options", Static).update(display)
         self.query_one("#warning-hint", Static).update("")
-
-    async def wait_for_selection(self) -> Any:
-        """Block until the user selects an option. Returns the selected value."""
-        return await self._future
-
-    def cancel(self) -> None:
-        """Cancel the pending future if not yet resolved."""
-        if not self._future.done():
-            self._future.cancel()
-            self.border_subtitle = None
-            self.post_message(WidgetDeactivated(self))

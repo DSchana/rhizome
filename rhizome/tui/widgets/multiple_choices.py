@@ -9,7 +9,6 @@ Ctrl+C cancels the entire widget at any point.
 
 from __future__ import annotations
 
-import asyncio
 from enum import Enum, auto
 from typing import Any
 
@@ -17,12 +16,9 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.widgets import Static
 
-from .interrupt import WidgetDeactivated
-
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+from .interrupt import InterruptWidgetBase
 
 
 class _Phase(Enum):
@@ -32,7 +28,7 @@ class _Phase(Enum):
     CONFIRMING = auto()
 
 
-class MultipleChoices(Widget, can_focus=True):
+class MultipleChoices(InterruptWidgetBase):
     """Multi-question interrupt widget with tabbed question navigation.
 
     Each question is displayed as a tab in a horizontal bar with a checkbox
@@ -60,13 +56,6 @@ class MultipleChoices(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
-        border: solid rgb(40,40,40);
-    }
-    MultipleChoices:hover {
-        border: solid rgb(120,120,120);
-    }
-    MultipleChoices:focus-within {
-        border: solid rgb(86,126,160);
     }
     MultipleChoices #mc-hint {
         margin-bottom: 1;
@@ -89,7 +78,6 @@ class MultipleChoices(Widget, can_focus=True):
         self._phase = _Phase.ANSWERING
         self._confirm_cursor = 0
         self._has_confirmed_once = False
-        self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
     def from_interrupt(cls, value: dict[str, Any]) -> MultipleChoices:
@@ -118,8 +106,8 @@ class MultipleChoices(Widget, can_focus=True):
         yield Static(id="mc-options")
 
     def on_mount(self) -> None:
+        super().on_mount()
         self.query_one("#mc-hint", Static).styles.color = "rgb(100,100,100)"
-        self.border_subtitle = _NAV_HINT
         self._render_all()
         self.focus()
         self.scroll_visible(animate=False)
@@ -140,14 +128,12 @@ class MultipleChoices(Widget, can_focus=True):
         self._render_options()
 
     def on_focus(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = None
-            self._render_all()
+        super().on_focus()
+        self._render_all()
 
     def on_blur(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = _NAV_HINT
-            self._render_all()
+        super().on_blur()
+        self._render_all()
 
     # ------------------------------------------------------------------
     # Rendering
@@ -257,7 +243,7 @@ class MultipleChoices(Widget, can_focus=True):
                     self._questions[i]["name"]: answer
                     for i, answer in self._answers.items()
                 }
-                self._future.set_result(result)
+                self.resolve(result)
                 self._show_final_summary()
             else:  # No
                 self._has_confirmed_once = True
@@ -303,7 +289,7 @@ class MultipleChoices(Widget, can_focus=True):
                 self._questions[i]["name"]: answer
                 for i, answer in self._answers.items()
             }
-            self._future.set_result(result)
+            self.resolve(result)
             self._show_final_summary()
 
     # ------------------------------------------------------------------
@@ -321,8 +307,6 @@ class MultipleChoices(Widget, can_focus=True):
 
     def _show_final_summary(self) -> None:
         """Collapse the widget to a summary of answers after submission."""
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
         summary = Text()
         for i, q in enumerate(self._questions):
             if i > 0:
@@ -335,17 +319,3 @@ class MultipleChoices(Widget, can_focus=True):
         self.query_one("#mc-prompt", Static).display = False
         self.query_one("#mc-options", Static).update(summary)
 
-    # ------------------------------------------------------------------
-    # InterruptWidget protocol
-    # ------------------------------------------------------------------
-
-    async def wait_for_selection(self) -> Any:
-        """Block until the user submits answers. Returns dict of name->answer."""
-        return await self._future
-
-    def cancel(self) -> None:
-        """Cancel the pending future if not yet resolved."""
-        if not self._future.done():
-            self._future.cancel()
-            self.border_subtitle = None
-            self.post_message(WidgetDeactivated(self))

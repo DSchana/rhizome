@@ -28,6 +28,15 @@ class RhizomeApp(App):
     MainScreen {
         background: $surface;
     }
+    .navigable {
+        border: solid rgb(40,40,40);
+    }
+    .navigable:hover {
+        border: solid rgb(120,120,120);
+    }
+    .navigable:focus-within {
+        border: solid rgb(86,126,160);
+    }
     """
 
     def __init__(self, db_path: str | Path | None = None, debug: bool = False) -> None:

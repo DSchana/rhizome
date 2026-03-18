@@ -21,10 +21,8 @@ from rhizome.db.operations import (
 
 from .entry_list import EntryList
 from .flashcard_list import FlashcardList
-from .interrupt import WidgetDeactivated
+from .navigable import NavigableWidgetMixin
 from .topic_tree import TopicTree
-
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
 
 
 class ViewMode(enum.IntEnum):
@@ -61,21 +59,14 @@ _CSS_CLASSES = {
 }
 
 
-class ExplorerViewer(Vertical):
+class ExplorerViewer(NavigableWidgetMixin, Vertical):
     """A bordered container for browsing topics, entries, and flashcards."""
 
     DEFAULT_CSS = """
     ExplorerViewer {
         height: auto;
         margin-top: 1;
-        border: solid rgb(40,40,40);
         padding: 0 0 1 1;
-    }
-    ExplorerViewer:hover {
-        border: solid rgb(120,120,120);
-    }
-    ExplorerViewer:focus-within {
-        border: solid rgb(86,126,160);
     }
     ExplorerViewer #explorer-split {
         height: auto;
@@ -269,15 +260,9 @@ class ExplorerViewer(Vertical):
                 yield FlashcardList(id="explorer-flashcard-viewer")
 
     def on_mount(self) -> None:
+        self._setup_navigable()
         self.border_title = "Explore"
-        self.border_subtitle = _NAV_HINT
         self._update_help_text()
-
-    def on_descendant_focus(self, event) -> None:
-        self.border_subtitle = None
-
-    def on_descendant_blur(self, event) -> None:
-        self.border_subtitle = _NAV_HINT
 
     # ------------------------------------------------------------------
     # Help text
@@ -558,8 +543,7 @@ class ExplorerViewer(Vertical):
                 path.append(current.data.name)
             current = current.parent
         path.reverse()
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.deactivate()
         self.post_message(self.TopicSelected(node.data, path))
 
     # ------------------------------------------------------------------
@@ -587,8 +571,7 @@ class ExplorerViewer(Vertical):
     # ------------------------------------------------------------------
 
     def action_dismiss_viewer(self) -> None:
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.deactivate()
         self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------
@@ -597,8 +580,7 @@ class ExplorerViewer(Vertical):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "explorer-dismiss":
-            self.border_subtitle = None
-            self.post_message(WidgetDeactivated(self))
+            self.deactivate()
             self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------

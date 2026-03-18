@@ -45,7 +45,7 @@ from .explorer_viewer import ExplorerViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
 from .flashcard_viewer import FlashcardViewer
-from .interrupt import WidgetDeactivated
+from .navigable import WidgetDeactivated
 
 
 class HintHigherVerbosity(Message):

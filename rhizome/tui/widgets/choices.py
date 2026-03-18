@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widget import Widget
 from textual.widgets import Label, Static
 
-from .interrupt import WidgetDeactivated
+from .interrupt import InterruptWidgetBase
 
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
 
-class Choices(Widget, can_focus=True):
+class Choices(InterruptWidgetBase):
     """Displays an interrupt prompt with a navigable list of options.
 
     The widget is mounted by ``AgentMessageHarness.on_interrupt()`` and blocks
@@ -39,13 +36,6 @@ class Choices(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
-        border: solid rgb(40,40,40);
-    }
-    Choices:hover {
-        border: solid rgb(120,120,120);
-    }
-    Choices:focus-within {
-        border: solid rgb(86,126,160);
     }
     Choices .interrupt-prompt {
         margin-bottom: 1;
@@ -63,7 +53,6 @@ class Choices(Widget, can_focus=True):
         super().__init__(**kwargs)
         self._prompt = prompt
         self._options = options or ["Continue", "Cancel"]
-        self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     @classmethod
     def from_interrupt(cls, value: dict[str, Any]) -> Choices:
@@ -79,9 +68,9 @@ class Choices(Widget, can_focus=True):
         yield Static("  (ctrl+c to cancel)", id="interrupt-hint")
 
     def on_mount(self) -> None:
+        super().on_mount()
         self._render_options()
         self.query_one("#interrupt-hint", Static).styles.color = "rgb(100,100,100)"
-        self.border_subtitle = _NAV_HINT
         self.focus()
         self.scroll_visible(animate=False)
         self.call_after_refresh(self._render_options)
@@ -90,14 +79,12 @@ class Choices(Widget, can_focus=True):
         self._render_options()
 
     def on_focus(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = None
-            self._render_options()
+        super().on_focus()
+        self._render_options()
 
     def on_blur(self) -> None:
-        if not self._future.done():
-            self.border_subtitle = _NAV_HINT
-            self._render_options()
+        super().on_blur()
+        self._render_options()
 
     def _render_options(self) -> None:
         focused = self.has_focus
@@ -126,21 +113,8 @@ class Choices(Widget, can_focus=True):
         if self._future.done():
             return
         selected = self._options[self.cursor]
-        self._future.set_result(selected)
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.resolve(selected)
         display = Text()
         display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
         self.query_one("#interrupt-options", Static).update(display)
         self.query_one("#interrupt-hint", Static).update("")
-
-    async def wait_for_selection(self) -> Any:
-        """Block until the user selects an option. Returns the selected value."""
-        return await self._future
-
-    def cancel(self) -> None:
-        """Cancel the pending future if not yet resolved."""
-        if not self._future.done():
-            self._future.cancel()
-            self.border_subtitle = None
-            self.post_message(WidgetDeactivated(self))

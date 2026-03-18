@@ -14,9 +14,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
-from .interrupt import WidgetDeactivated
-
-_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+from .navigable import NavigableWidgetMixin
 
 # ---------------------------------------------------------------------------
 # Color constants
@@ -56,7 +54,7 @@ _RATINGS: list[tuple[int, str]] = [
 ]
 
 
-class FlashcardViewer(Widget, can_focus=True):
+class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
     """Interactive flashcard study widget with reveal and self-rating."""
 
     BINDINGS = [
@@ -75,13 +73,6 @@ class FlashcardViewer(Widget, can_focus=True):
         height: auto;
         layout: vertical;
         padding: 0 1;
-        border: solid rgb(40,40,40);
-    }
-    FlashcardViewer:hover {
-        border: solid rgb(120,120,120);
-    }
-    FlashcardViewer:focus-within {
-        border: solid rgb(86,126,160);
     }
     FlashcardViewer #fs-header {
         height: 1;
@@ -187,14 +178,8 @@ class FlashcardViewer(Widget, can_focus=True):
         yield Static("", id="fs-done")
 
     def on_mount(self) -> None:
-        self.border_subtitle = _NAV_HINT
+        self._setup_navigable()
         self._refresh_view()
-
-    def on_focus(self) -> None:
-        self.border_subtitle = None
-
-    def on_blur(self) -> None:
-        self.border_subtitle = _NAV_HINT
 
     # ------------------------------------------------------------------
     # Public API
@@ -355,8 +340,7 @@ class FlashcardViewer(Widget, can_focus=True):
             self._refresh_view()
 
     def action_dismiss(self) -> None:
-        self.border_subtitle = None
-        self.post_message(WidgetDeactivated(self))
+        self.deactivate()
         self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------
