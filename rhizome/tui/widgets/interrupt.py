@@ -4,6 +4,20 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from textual.message import Message
+
+
+class WidgetDeactivated(Message):
+    """Posted by interactive widgets when they are no longer accepting input.
+
+    ChatPane listens for this to remove the widget from the navigable
+    active-widget stack.
+    """
+
+    def __init__(self, sender: Any) -> None:
+        super().__init__()
+        self.sender_widget = sender
+
 
 @runtime_checkable
 class InterruptWidget(Protocol):

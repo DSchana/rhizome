@@ -45,6 +45,7 @@ from .explorer_viewer import ExplorerViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
 from .flashcard_viewer import FlashcardViewer
+from .interrupt import WidgetDeactivated
 
 
 class HintHigherVerbosity(Message):
@@ -65,6 +66,8 @@ class ChatPane(Widget):
         Binding("ctrl+o", "toggle_last_tool_call", "Toggle tool call", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
         Binding("ctrl+b", "cycle_verbosity", "Cycle verbosity", show=False, priority=True),
+        Binding("ctrl+up", "focus_prev_widget", "Prev widget", show=False, priority=True),
+        Binding("ctrl+down", "focus_next_widget", "Next widget", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -134,6 +137,10 @@ class ChatPane(Widget):
         self._commit = CommitState()
 
         self._log = get_logger("tui.chat_pane")
+
+        # Active widget stack — interactive widgets in mount order.
+        # Ctrl+Up/Down navigates between them.
+        self._active_widgets: list[Widget] = []
 
         # Command registry
         self._command_registry = CommandRegistry()
@@ -277,6 +284,7 @@ class ChatPane(Widget):
         chat_input = self.query_one("#chat-input", ChatInput)
         chat_input.disabled = True
         chat_input.placeholder = "Respond to the agent's prompt above..."
+        self._active_widgets.append(event.widget)
         event.widget.focus()
 
     def on_agent_message_harness_interrupt_resolved(
@@ -286,6 +294,12 @@ class ChatPane(Widget):
         chat_input = self.query_one("#chat-input", ChatInput)
         chat_input.disabled = False
         self._restore_chat_input()
+
+    def on_widget_deactivated(self, event: WidgetDeactivated) -> None:
+        """Remove a widget from the active stack when it is no longer interactable."""
+        sender = event.sender_widget
+        if sender in self._active_widgets:
+            self._active_widgets.remove(sender)
 
     # ------------------------------------------------------------------
     # Message area & status bar
@@ -471,6 +485,38 @@ class ChatPane(Widget):
 
     def action_refocus_input(self) -> None:
         self.query_one("#chat-input").focus()
+
+    def action_focus_prev_widget(self) -> None:
+        self._navigate_active_widgets(-1)
+
+    def action_focus_next_widget(self) -> None:
+        self._navigate_active_widgets(1)
+
+    def _navigate_active_widgets(self, direction: int) -> None:
+        """Navigate the active widget stack by *direction* (-1 or +1)."""
+        if not self._active_widgets:
+            return
+
+        # Find which widget currently has focus (or contains focus).
+        focused = self.screen.focused
+        current_idx: int | None = None
+        if focused is not None:
+            for i, w in enumerate(self._active_widgets):
+                if focused is w or w in focused.ancestors_with_self:
+                    current_idx = i
+                    break
+
+        if current_idx is not None:
+            new_idx = current_idx + direction
+            # Clamp — don't wrap, just stop at the ends.
+            new_idx = max(0, min(new_idx, len(self._active_widgets) - 1))
+        else:
+            # Focus is not on any active widget — jump to nearest end.
+            new_idx = len(self._active_widgets) - 1 if direction < 0 else 0
+
+        target = self._active_widgets[new_idx]
+        target.focus()
+        target.scroll_visible(animate=False)
 
     def action_toggle_last_agent_message(self) -> None:
         harnesses = self.query(AgentMessageHarness)
@@ -724,6 +770,7 @@ class ChatPane(Widget):
         area = self.query_one("#message-area")
         await area.remove_children()
         self.messages.clear()
+        self._active_widgets.clear()
 
     async def _cmd_explore(self) -> None:
         """Browse topics, entries, and flashcards."""
@@ -736,6 +783,7 @@ class ChatPane(Widget):
             tree = ExplorerViewer(id="explorer")
             await area.mount(tree)
             area.scroll_end(animate=False)
+            self._active_widgets.append(tree)
             tree.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
@@ -756,6 +804,7 @@ class ChatPane(Widget):
         await area.mount(study)
         study.set_flashcards(sample_cards)
         area.scroll_end(animate=False)
+        self._active_widgets.append(study)
         study.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
@@ -788,6 +837,7 @@ class ChatPane(Widget):
         proposal = FlashcardProposal(flashcards=sample_cards)
         await area.mount(proposal)
         area.scroll_end(animate=False)
+        self._active_widgets.append(proposal)
         proposal.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
@@ -824,6 +874,7 @@ class ChatPane(Widget):
         proposal = CommitProposal(entries=sample_entries, topic_map=sample_topic_map)
         await area.mount(proposal)
         area.scroll_end(animate=False)
+        self._active_widgets.append(proposal)
         proposal.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"

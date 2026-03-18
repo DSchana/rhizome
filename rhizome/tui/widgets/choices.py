@@ -12,6 +12,10 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Label, Static
 
+from .interrupt import WidgetDeactivated
+
+_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+
 class Choices(Widget, can_focus=True):
     """Displays an interrupt prompt with a navigable list of options.
 
@@ -35,6 +39,13 @@ class Choices(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
+        border: solid rgb(40,40,40);
+    }
+    Choices:hover {
+        border: solid rgb(120,120,120);
+    }
+    Choices:focus-within {
+        border: solid rgb(86,126,160);
     }
     Choices .interrupt-prompt {
         margin-bottom: 1;
@@ -70,6 +81,7 @@ class Choices(Widget, can_focus=True):
     def on_mount(self) -> None:
         self._render_options()
         self.query_one("#interrupt-hint", Static).styles.color = "rgb(100,100,100)"
+        self.border_subtitle = _NAV_HINT
         self.focus()
         self.scroll_visible(animate=False)
         self.call_after_refresh(self._render_options)
@@ -79,10 +91,12 @@ class Choices(Widget, can_focus=True):
 
     def on_focus(self) -> None:
         if not self._future.done():
+            self.border_subtitle = None
             self._render_options()
 
     def on_blur(self) -> None:
         if not self._future.done():
+            self.border_subtitle = _NAV_HINT
             self._render_options()
 
     def _render_options(self) -> None:
@@ -113,6 +127,8 @@ class Choices(Widget, can_focus=True):
             return
         selected = self._options[self.cursor]
         self._future.set_result(selected)
+        self.border_subtitle = None
+        self.post_message(WidgetDeactivated(self))
         display = Text()
         display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
         self.query_one("#interrupt-options", Static).update(display)
@@ -126,3 +142,5 @@ class Choices(Widget, can_focus=True):
         """Cancel the pending future if not yet resolved."""
         if not self._future.done():
             self._future.cancel()
+            self.border_subtitle = None
+            self.post_message(WidgetDeactivated(self))

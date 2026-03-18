@@ -8,7 +8,7 @@ from .entry_list import EntryList
 from .explorer_viewer import ExplorerViewer
 from .flashcard_list import FlashcardList
 from .flashcard_viewer import FlashcardViewer
-from .interrupt import InterruptWidget
+from .interrupt import InterruptWidget, WidgetDeactivated
 from .choices import Choices
 from .multiple_choices import MultipleChoices
 from .warning import WarningChoices
@@ -48,4 +48,5 @@ __all__ = [
     "TopicTreeViewer",
     "WarningChoices",
     "WelcomeHeader",
+    "WidgetDeactivated",
 ]

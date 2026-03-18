@@ -20,6 +20,10 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from .interrupt import WidgetDeactivated
+
+_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
+
 
 class _Phase(Enum):
     """Internal state machine for the widget."""
@@ -56,6 +60,13 @@ class MultipleChoices(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
+        border: solid rgb(40,40,40);
+    }
+    MultipleChoices:hover {
+        border: solid rgb(120,120,120);
+    }
+    MultipleChoices:focus-within {
+        border: solid rgb(86,126,160);
     }
     MultipleChoices #mc-hint {
         margin-bottom: 1;
@@ -108,6 +119,7 @@ class MultipleChoices(Widget, can_focus=True):
 
     def on_mount(self) -> None:
         self.query_one("#mc-hint", Static).styles.color = "rgb(100,100,100)"
+        self.border_subtitle = _NAV_HINT
         self._render_all()
         self.focus()
         self.scroll_visible(animate=False)
@@ -129,10 +141,12 @@ class MultipleChoices(Widget, can_focus=True):
 
     def on_focus(self) -> None:
         if not self._future.done():
+            self.border_subtitle = None
             self._render_all()
 
     def on_blur(self) -> None:
         if not self._future.done():
+            self.border_subtitle = _NAV_HINT
             self._render_all()
 
     # ------------------------------------------------------------------
@@ -307,6 +321,8 @@ class MultipleChoices(Widget, can_focus=True):
 
     def _show_final_summary(self) -> None:
         """Collapse the widget to a summary of answers after submission."""
+        self.border_subtitle = None
+        self.post_message(WidgetDeactivated(self))
         summary = Text()
         for i, q in enumerate(self._questions):
             if i > 0:
@@ -331,3 +347,5 @@ class MultipleChoices(Widget, can_focus=True):
         """Cancel the pending future if not yet resolved."""
         if not self._future.done():
             self._future.cancel()
+            self.border_subtitle = None
+            self.post_message(WidgetDeactivated(self))

@@ -12,6 +12,7 @@ from textual.widget import Widget
 
 from textual.widgets import Button, Input, Label, Rule, Select, Static
 
+from .interrupt import WidgetDeactivated
 from rhizome.tui.options import (
     ChoicesOptionSpec,
     ConditionalChoicesOptionSpec,
@@ -315,6 +316,7 @@ class OptionsEditor(Widget):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "options-dismiss":
+            self.post_message(WidgetDeactivated(self))
             self.post_message(self.Dismissed())
         elif event.button.id == "options-done":
             self._flush_inputs()
@@ -324,6 +326,7 @@ class OptionsEditor(Widget):
                 new = self._options.get(spec)
                 if new != old:
                     changes[spec.resolved_name] = (old, new)
+            self.post_message(WidgetDeactivated(self))
             self.post_message(self.Done(changes))
 
     def _flush_inputs(self) -> None:

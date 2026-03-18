@@ -17,7 +17,9 @@ from textual.reactive import reactive
 from textual.widgets import Static, TextArea
 
 from .entry_list import ENTRY_ACCENT, ENTRY_DIM, ENTRY_HINT
+from .interrupt import WidgetDeactivated
 
+_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -91,6 +93,13 @@ class FlashcardProposal(Widget, can_focus=True):
         layout: vertical;
         padding: 1 2;
         margin: 1 0;
+        border: solid rgb(40,40,40);
+    }
+    FlashcardProposal:hover {
+        border: solid rgb(120,120,120);
+    }
+    FlashcardProposal:focus-within {
+        border: solid rgb(86,126,160);
     }
     FlashcardProposal #fp-header {
         margin-bottom: 0;
@@ -274,6 +283,7 @@ class FlashcardProposal(Widget, can_focus=True):
         self.query_one("#fp-question", TextArea).cursor_blink = False
         self.query_one("#fp-answer", TextArea).cursor_blink = False
         self.query_one("#fp-testing-notes", TextArea).cursor_blink = False
+        self.border_subtitle = _NAV_HINT
         self._render_all()
         self.focus()
 
@@ -297,6 +307,22 @@ class FlashcardProposal(Widget, can_focus=True):
     # ------------------------------------------------------------------
     # Reactive watchers
     # ------------------------------------------------------------------
+
+    def on_focus(self) -> None:
+        if not self._future.done():
+            self.border_subtitle = None
+
+    def on_blur(self) -> None:
+        if not self._future.done():
+            self.border_subtitle = _NAV_HINT
+
+    def on_descendant_focus(self, event) -> None:
+        if not self._future.done():
+            self.border_subtitle = None
+
+    def on_descendant_blur(self, event) -> None:
+        if not self._future.done():
+            self.border_subtitle = _NAV_HINT
 
     def watch_cursor(self) -> None:
         if self._state == _State.BROWSE:
@@ -574,6 +600,8 @@ class FlashcardProposal(Widget, can_focus=True):
         if instructions:
             result["instructions"] = instructions
         self._future.set_result(result)
+        self.border_subtitle = None
+        self.post_message(WidgetDeactivated(self))
         self._render_resolved(choice, instructions)
 
     def _resolve_edit(self, instructions: str) -> None:
@@ -602,3 +630,5 @@ class FlashcardProposal(Widget, can_focus=True):
     def cancel(self) -> None:
         if not self._future.done():
             self._future.cancel()
+            self.border_subtitle = None
+            self.post_message(WidgetDeactivated(self))

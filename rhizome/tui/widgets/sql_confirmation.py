@@ -18,6 +18,9 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import DataTable, Static
 
+from .interrupt import WidgetDeactivated
+
+_NAV_HINT = "ctrl+\u2191/\u2193 to navigate"
 _MAX_CELL_WIDTH = 40
 _MAX_TABLE_HEIGHT = 14
 
@@ -49,6 +52,13 @@ class SqlConfirmation(Widget, can_focus=True):
         layout: vertical;
         padding: 0 2;
         margin: 1 0;
+        border: solid rgb(40,40,40);
+    }
+    SqlConfirmation:hover {
+        border: solid rgb(120,120,120);
+    }
+    SqlConfirmation:focus-within {
+        border: solid rgb(86,126,160);
     }
     SqlConfirmation .sql-warning-header {
         color: rgb(220, 160, 50);
@@ -141,6 +151,7 @@ class SqlConfirmation(Widget, can_focus=True):
 
         self._render_options()
         self.query_one("#sql-hint", Static).styles.color = "rgb(100,100,100)"
+        self.border_subtitle = _NAV_HINT
         self.focus()
         self.scroll_visible(animate=False)
         self.call_after_refresh(self._render_options)
@@ -150,10 +161,12 @@ class SqlConfirmation(Widget, can_focus=True):
 
     def on_focus(self) -> None:
         if not self._future.done():
+            self.border_subtitle = None
             self._render_options()
 
     def on_blur(self) -> None:
         if not self._future.done():
+            self.border_subtitle = _NAV_HINT
             self._render_options()
 
     def _render_options(self) -> None:
@@ -184,6 +197,8 @@ class SqlConfirmation(Widget, can_focus=True):
             return
         selected = self._options[self.cursor]
         self._future.set_result(selected)
+        self.border_subtitle = None
+        self.post_message(WidgetDeactivated(self))
         # Collapse: hide everything except a brief confirmation line
         for cls_name in ("sql-warning-icon", "sql-warning-header", "sql-statement",
                          "sql-no-preview", "sql-truncation-note"):
@@ -204,3 +219,5 @@ class SqlConfirmation(Widget, can_focus=True):
         """Cancel the pending future if not yet resolved."""
         if not self._future.done():
             self._future.cancel()
+            self.border_subtitle = None
+            self.post_message(WidgetDeactivated(self))
