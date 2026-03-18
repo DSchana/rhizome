@@ -12,6 +12,7 @@ from .interrupt import InterruptWidget, InterruptWidgetBase
 from .navigable import NavigableWidgetMixin, WidgetDeactivated
 from .choices import Choices
 from .multiple_choices import MultipleChoices
+from .sql_confirmation import SqlConfirmation
 from .warning import WarningChoices
 from .logging_pane import LoggingPane
 from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
@@ -44,6 +45,7 @@ __all__ = [
     "MultipleChoices",
     "OptionsEditor",
     "RichChatMessage",
+    "SqlConfirmation",
     "StatusBar",
     "ThinkingIndicator",
     "ToolCallList",
