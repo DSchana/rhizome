@@ -682,8 +682,10 @@ class ChatPane(Widget):
             await self._cmd_new()
 
         @registry.command(name="commit", help="Select learn-mode messages to commit as knowledge")
-        async def commit():
-            await self._cmd_commit()
+        @click.option("--auto", is_flag=True, help="Skip selection; let the agent draft a proposal from the conversation.")
+        @click.argument("instructions", nargs=-1)
+        async def commit(auto, instructions):
+            await self._cmd_commit(auto=auto, instructions=" ".join(instructions) if instructions else "")
 
         @registry.command(name="logs", help="Open the logs viewer tab")
         async def logs():
@@ -1072,8 +1074,19 @@ class ChatPane(Widget):
         if isinstance(screen, MainScreen):
             await screen._add_tab()
 
-    async def _cmd_commit(self) -> None:
+    async def _cmd_commit(self, *, auto: bool = False, instructions: str = "") -> None:
         """Select learn-mode messages to commit as knowledge."""
+        if auto:
+            notification = (
+                "User requested an automatic commit. Review the conversation history and your "
+                "knowledge of the user's database, then use create_commit_proposal to draft "
+                "knowledge entries based on your own judgment. Present the proposal to the user."
+            )
+            if instructions:
+                notification += f"\n\nUser provided these additional instructions:\n{instructions}"
+            self._agent_session.add_system_notification(notification)
+            self._start_agent()
+            return
         self.enter_commit_mode()
 
     async def _cmd_logs(self) -> None:
