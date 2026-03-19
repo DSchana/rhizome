@@ -96,6 +96,14 @@ class ChatPane(Widget):
         padding: 0 1;
         background: rgb(12, 12, 12);
     }
+    #commit-instructions {
+        height: auto;
+        min-height: 3;
+        max-height: 10;
+        padding: 0 1;
+        background: rgb(12, 12, 12);
+        display: none;
+    }
     #command-palette {
         background: rgb(12, 12, 12);
     }
@@ -154,6 +162,7 @@ class ChatPane(Widget):
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="message-area")
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
+        yield ChatInput(placeholder="Add instructions for the commit (Enter to skip)...", id="commit-instructions")
         yield CommandPalette(id="command-palette")
         yield StatusBar(id="status-bar")
 
@@ -298,8 +307,6 @@ class ChatPane(Widget):
         self, event: AgentMessageHarness.InterruptResolved
     ) -> None:
         """Re-enable chat input after the user resolves an interrupt."""
-        chat_input = self.query_one("#chat-input", ChatInput)
-        chat_input.disabled = False
         self._restore_chat_input()
 
     def on_widget_deactivated(self, event: WidgetDeactivated) -> None:
@@ -360,9 +367,30 @@ class ChatPane(Widget):
             bar.verbosity = self.options.get(Options.Agent.AnswerVerbosity)
         bar.mutate_reactive(StatusBar.token_usage)
 
-    def _restore_chat_input(self) -> None:
-        """Restore focus and placeholder to the chat input."""
+    def _show_commit_instructions(self) -> None:
+        """Hide the main chat input and show the commit instructions input."""
+        self.query_one("#chat-input").styles.display = "none"
+        instructions = self.query_one("#commit-instructions", ChatInput)
+        instructions.submit_empty = True
+        instructions.suppress_history = True
+        instructions.styles.display = "block"
+        instructions.focus()
+
+    def _dismiss_commit_instructions(self) -> None:
+        """Hide the commit instructions input and restore the main chat input."""
+        instructions = self.query_one("#commit-instructions", ChatInput)
+        instructions.styles.display = "none"
+        instructions.clear()
         chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.styles.display = "block"
+        chat_input.disabled = False
+        chat_input.placeholder = "Type a message or /command ..."
+        chat_input.focus()
+
+    def _restore_chat_input(self) -> None:
+        """Restore the main chat input to its default state."""
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = False
         chat_input.placeholder = "Type a message or /command ..."
         chat_input.focus()
 
@@ -374,6 +402,12 @@ class ChatPane(Widget):
     _AGENT_GATED_COMMANDS = {"commit", "options"}
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+        # Commit instructions input — swap back and submit the commit.
+        if event.input.id == "commit-instructions":
+            self._dismiss_commit_instructions()
+            self._submit_commit(event.value.strip())
+            return
+
         self._hide_palette()
 
         text = event.value.strip()
@@ -432,6 +466,9 @@ class ChatPane(Widget):
         self._start_agent()
 
     def on_text_area_changed(self, event: ChatInput.Changed) -> None:
+        if event.text_area.id != "chat-input":
+            return
+
         text = event.text_area.text
 
         palette = self.query_one("#command-palette", CommandPalette)
@@ -1165,7 +1202,7 @@ class ChatPane(Widget):
         chat_input.placeholder = "↑↓ navigate  Space select  Ctrl+Enter confirm  Esc cancel"
 
     def confirm_commit_selection(self) -> None:
-        """Deactivate commit mode, clean up decorations, and optionally post results."""
+        """Deactivate commit mode, clean up decorations, and prompt for optional instructions."""
 
         # Clean up all commit-mode decorations and state.
         for msg in self._commit.selectable:
@@ -1175,22 +1212,24 @@ class ChatPane(Widget):
             for cb in msg.query(".commit-checkbox"):
                 cb.remove()
 
-        # Restore the chat input.
-        chat_input = self.query_one("#chat-input", ChatInput)
-        chat_input.disabled = False
-        self._restore_chat_input()
-
         # Remark: we do NOT clear the commit state until either a CommitApproved or a CommitCanceled
         # event is received. This is because the commit subagent access the commit state directly, and
-        # moreover can modify the commit selection (e.g. to deselect messages at user request) before 
+        # moreover can modify the commit selection (e.g. to deselect messages at user request) before
         # posting the final approval event.
         #
         # We merely deactivate the commit mode here to exit the selection UI and prevent further changes.
         self._commit.active = False
 
         if not self._commit.selected:
+            self._restore_chat_input()
             self.append_message(ChatMessageData(role=Role.SYSTEM, content="No messages selected for commit."))
             return
+
+        # Enter instructions phase: swap to the commit instructions input.
+        self._show_commit_instructions()
+
+    def _submit_commit(self, instructions: str = "") -> None:
+        """Build the commit payload, inject it into agent state, and start the agent."""
 
         # Build the commit payload and inject it into agent state for the
         # commit tools to read via ToolRuntime.
@@ -1214,11 +1253,16 @@ class ChatPane(Widget):
             else:
                 use_subagent = num_messages >= threshold
 
+        instructions_note = ""
+        if instructions:
+            instructions_note = f"\n\nUser provided these additional instructions for the commit:\n{instructions}"
+
         if use_subagent:
             self._agent_session.add_system_notification(
                 f"User selected {num_messages} message(s) for commit "
                 f"(~{approx_tokens} tokens). Use invoke_commit_subagent to delegate "
                 "knowledge entry extraction, then present the proposal to the user."
+                + instructions_note
             )
         else:
             self._agent_session.add_system_notification(
@@ -1226,6 +1270,7 @@ class ChatPane(Widget):
                 f"(~{approx_tokens} tokens). Use inspect_commit_payload and "
                 "create_commit_proposal to draft entries directly, then present "
                 "the proposal to the user."
+                + instructions_note
             )
         self._start_agent()
             

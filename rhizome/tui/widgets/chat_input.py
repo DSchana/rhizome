@@ -46,6 +46,8 @@ class ChatInput(TextArea):
         self._history_index: int = -1
         self._draft: str = ""
         self._last_escape: float = 0.0
+        self.submit_empty: bool = False    # post Submitted even when input is empty
+        self.suppress_history: bool = False  # disable up/down history navigation
 
     def push_history(self, text: str) -> None:
         """Record a submitted message in the history buffer."""
@@ -82,7 +84,7 @@ class ChatInput(TextArea):
                 event.prevent_default()
                 return
 
-            if text:
+            if text or self.submit_empty:
                 self.post_message(self.Submitted(input=self, value=text))
             event.stop()
             event.prevent_default()
@@ -100,7 +102,7 @@ class ChatInput(TextArea):
 
         elif event.key == "up" and not self.palette_active:
             row, col = self.cursor_location
-            if row == 0 and col == 0 and self._history:
+            if row == 0 and col == 0 and self._history and not self.suppress_history:
                 if self._history_index == -1:
                     self._draft = self.text
                     self._history_index = len(self._history) - 1
@@ -118,7 +120,7 @@ class ChatInput(TextArea):
             else:
                 super()._on_key(event)
 
-        elif event.key == "down" and not self.palette_active and self._history_index >= 0:
+        elif event.key == "down" and not self.palette_active and self._history_index >= 0 and not self.suppress_history:
             if self._history_index < len(self._history) - 1:
                 self._history_index += 1
                 self.clear()
