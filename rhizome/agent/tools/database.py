@@ -1,17 +1,7 @@
-"""LangChain @tool wrappers around rhizome.db.operations.
-
-Each tool receives its own DB session via a closure over `session_factory`,
-eliminating the need for a shared session lock. Tools needing TUI access
-(set_mode, rename_tab) capture `chat_pane` from the closure.
-"""
-
-from enum import IntEnum
+"""Database tools — topic and entry CRUD for the agent."""
 
 from langchain.tools import tool
-from langchain_core.messages import ToolMessage
-from langgraph.prebuilt.tool_node import ToolRuntime
-from langgraph.types import Command, interrupt
-from pydantic import BaseModel, Field
+from langgraph.types import interrupt
 from sqlalchemy import func, select
 
 from rhizome.db.models import KnowledgeEntry, Topic
@@ -24,61 +14,10 @@ from rhizome.db.operations import (
     get_topic,
     list_entries,
 )
-from rhizome.logs import get_logger
-from rhizome.tui.types import Mode
-
-_logger = get_logger("agent.tools")
 
 
-class Question(BaseModel):
-    """A single multiple-choice question presented to the user."""
-
-    name: str = Field(description="Short tab label (1-2 words)")
-    prompt: str = Field(description="Full question text shown to the user")
-    options: list[str] = Field(description="List of option strings to choose from")
-
-
-class ToolVisibility(IntEnum):
-    LOW = 0       # Housekeeping tools (set_mode, rename_tab) — only visible at max verbosity
-    DEFAULT = 1   # Most tools — visible at normal verbosity
-    HIGH = 2      # Important tools — always visible
-
-TOOL_VISIBILITY: dict[str, ToolVisibility] = {
-    # Anthropic server-side tools (registered here since they're dicts, not decorated functions)
-    "web_search": ToolVisibility.DEFAULT,
-    "web_fetch": ToolVisibility.DEFAULT,
-}
-
-def tool_visibility(level: ToolVisibility):
-    """Decorator that registers a tool's visibility level."""
-    def decorator(func):
-        name = getattr(func, 'name', None) or func.__name__
-        if name not in TOOL_VISIBILITY:
-            TOOL_VISIBILITY[name] = level
-        elif TOOL_VISIBILITY[name] != level:
-            _logger.info(
-                f"A new tool closure '{name}' has a different visibility level specified than a previous one. "
-                f"Previous: {TOOL_VISIBILITY[name]}, new: {level}."
-            )
-        return func
-    return decorator
-
-
-class ToolGroups:
-    """Named groups of tool names for selective inclusion via build_tools()."""
-    DB_TOPICS = ["list_all_topics", "show_topics", "create_new_topic", "delete_topics"]
-    DB_ENTRIES = ["get_entries", "create_entries"]
-    DB_SQL = ["describe_database", "run_sql_query", "run_sql_modification"]
-    DATABASE = DB_TOPICS + DB_ENTRIES
-    APP = ["set_topic", "set_mode", "rename_tab", "ask_user_input", "hint_higher_verbosity"]
-
-
-def build_tools(session_factory, chat_pane=None, included: list[str] | None = None) -> list:
-    """Build all tool functions with session_factory and chat_pane closed over.
-
-    Each tool creates its own session via ``async with session_factory() as session``,
-    so no session lock is needed. Tools needing ``chat_pane`` capture it from the closure.
-    """
+def build_database_tools(session_factory) -> dict:
+    """Build topic and entry tools with session_factory closed over."""
 
     # -----------------------------------------------------------------------
     # Topics
@@ -265,127 +204,11 @@ def build_tools(session_factory, chat_pane=None, included: list[str] | None = No
             await session.commit()
         return f"Created {len(created)} entries:\n" + "\n".join(f"  - {c}" for c in created)
 
-    # -----------------------------------------------------------------------
-    # App commands (mode switching, tab renaming, topic selection)
-    # -----------------------------------------------------------------------
-
-    @tool("set_topic", description=(
-        "Set the active topic for this chat session. "
-        "Updates the status bar and notifies the user. "
-        "Use this when the user begins learning about a specific topic."
-    ))
-    @tool_visibility(ToolVisibility.LOW)
-    async def set_topic_tool(topic_id: int) -> str:
-        if chat_pane is None:
-            return "Chat pane not available."
-        async with session_factory() as session:
-            topic = await get_topic(session, topic_id)
-            if topic is None:
-                return f"Topic {topic_id} not found."
-            # Walk up parents to build the path
-            path: list[str] = [topic.name]
-            current = topic
-            while current.parent_id is not None:
-                current = await get_topic(session, current.parent_id)
-                if current is None:
-                    break
-                path.append(current.name)
-            path.reverse()
-        chat_pane.active_topic = topic
-        chat_pane._topic_path = path
-        chat_pane.update_status_bar()
-        return f"Active topic set to: {topic.name}"
-
-    @tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
-    @tool_visibility(ToolVisibility.LOW)
-    async def set_mode_tool(mode: str, runtime: ToolRuntime) -> str | Command:
-        try:
-            target = Mode(mode)
-        except ValueError:
-            return f"Invalid mode '{mode}'. Must be one of: idle, learn, review."
-        await chat_pane._set_mode(target, silent=True, source="agent")
-        return Command(update={
-            "mode": target.value,
-            "messages": [ToolMessage(
-                content=f"Mode is now: {target.value}",
-                tool_call_id=runtime.tool_call_id,
-            )],
-        })
-
-    @tool("rename_tab", description=(
-        "Rename the active chat session tab. Keep the name short — around 20 characters, "
-        "2-3 words. The default max tab width is 20 characters (the user can change this)."
-    ))
-    @tool_visibility(ToolVisibility.LOW)
-    async def rename_tab_tool(name: str) -> str:
-        await chat_pane._cmd_rename(name)
-        return f"Tab renamed to: {name}"
-
-    # -----------------------------------------------------------------------
-    # User input (interrupt-based)
-    # -----------------------------------------------------------------------
-
-    @tool("ask_user_input", description=(
-        "Present one or more multiple-choice questions to the user and wait for "
-        "their selections. Use this when you need the user to choose between "
-        "options before proceeding.\n\n"
-        "Each question has a short tab name (1-2 words), a full prompt, and a "
-        "list of options. If only one question is provided, a simple choice "
-        "widget is shown. Multiple questions are presented as a tabbed widget "
-        "where the user answers each in turn."
-    ))
-    @tool_visibility(ToolVisibility.LOW)
-    async def ask_user_input_tool(
-        questions: list[Question],
-    ) -> str:
-        if len(questions) == 1:
-            q = questions[0]
-            result = interrupt({
-                "type": "choices",
-                "message": q.prompt,
-                "options": q.options,
-            })
-            return f"User selected: {result}"
-        else:
-            qs = [q.model_dump() for q in questions]
-            result = interrupt({
-                "type": "multiple_choice",
-                "questions": qs,
-            })
-            # result is dict[str, str] mapping question names to answers
-            lines = [f"{name}: {answer}" for name, answer in result.items()]
-            return "User selections:\n" + "\n".join(lines)
-
-    @tool("hint_higher_verbosity", description=(
-        "Hint to the user that a higher verbosity setting may be needed to properly "
-        "answer their query. Use this ONLY in 'terse' verbosity mode when the question "
-        "warrants a longer answer. Do NOT use in 'standard', 'verbose', or 'auto' mode."
-    ))
-    @tool_visibility(ToolVisibility.LOW)
-    async def hint_higher_verbosity_tool() -> str:
-        if chat_pane is not None:
-            from rhizome.tui.widgets import HintHigherVerbosity
-            chat_pane.post_message(HintHigherVerbosity())
-        return "Hint sent."
-
-    all_tools = {
+    return {
         "list_all_topics": list_all_topics_tool,
         "show_topics": show_topics_tool,
         "create_new_topic": create_new_topic_tool,
         "delete_topics": delete_topics_tool,
         "get_entries": get_entries_tool,
         "create_entries": create_entries_tool,
-        "set_topic": set_topic_tool,
-        "set_mode": set_mode_tool,
-        "rename_tab": rename_tab_tool,
-        "ask_user_input": ask_user_input_tool,
-        "hint_higher_verbosity": hint_higher_verbosity_tool,
     }
-
-    if included is None:
-        return list(all_tools.values())
-
-    missing = set(included) - set(all_tools)
-    if missing:
-        raise ValueError(f"Unknown tool names: {missing}")
-    return [all_tools[name] for name in included]

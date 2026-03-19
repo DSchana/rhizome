@@ -8,10 +8,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.graph.state import CompiledStateGraph
 
-from rhizome.agent.builder import build_agent
-from rhizome.agent.tools import build_tools
 from rhizome.logs import get_logger
-from rhizome.utils.async_map import AsyncMap
 
 _logger = get_logger("agent.subagent")
 
@@ -177,100 +174,3 @@ class StructuredSubagent(Subagent):
                 )
                 self._structured_response = None
         return response
-
-
-def build_subagent_tools(
-    session_factory,
-    chat_pane=None,
-    subagents: AsyncMap[str, Subagent] | None = None,
-) -> list:
-    """Build generic spawn/invoke tools for dynamic subagent management.
-
-    These tools allow the parent agent to create and converse with
-    subagents at runtime.  For most use cases, prefer specialized
-    subagent classes (e.g. ``CommitSubagent``) that expose
-    domain-specific tools instead.
-
-    Parameters
-    ----------
-    session_factory:
-        Async session factory for DB access (passed through to
-        ``build_tools``).
-    chat_pane:
-        Optional TUI chat pane (passed through to ``build_tools``).
-    subagents:
-        Shared ``AsyncMap`` registry of live subagents.  If ``None``,
-        a new one is created.
-    """
-    from langchain.tools import tool
-
-    if subagents is None:
-        subagents = AsyncMap()
-
-    @tool("spawn_subagent", description=(
-        "Create a new subagent with its own isolated context. "
-        "Returns the subagent name for use with invoke_subagent."
-    ))
-    async def spawn_subagent(
-        name: str,
-        system_prompt: str,
-        tools: list[str] | None = None,
-        stateful: bool = True,
-    ) -> str:
-        existing = await subagents.get(name)
-        if existing is not None:
-            return json.dumps({"error": f"Subagent '{name}' already exists."})
-
-        subagent_tools = build_tools(
-            session_factory,
-            chat_pane=chat_pane,
-            included=tools,
-        )
-
-        model, agent, _middleware = build_agent(
-            subagent_tools,
-            provider="anthropic",
-            model_name=None,
-        )
-
-        subagent = Subagent(
-            model=model,
-            agent=agent,
-            system_prompt=system_prompt,
-            stateful=stateful,
-        )
-        await subagents.set(name, subagent)
-
-        return json.dumps({"created": name, "stateful": stateful})
-
-    @tool("invoke_subagent", description=(
-        "Send a message to an existing subagent and get its response. "
-        "Pass conversation_id from a previous response to continue "
-        "the same conversation."
-    ))
-    async def invoke_subagent(
-        subagent_id: str,
-        input: str,
-        conversation_id: str | None = None,
-        output_format: str = "default",
-    ) -> str:
-        subagent = await subagents.get(subagent_id)
-        if subagent is None:
-            return json.dumps({"error": f"Subagent '{subagent_id}' not found."})
-
-        conv_id, response = await subagent.ainvoke(input, conversation_id)
-
-        output: dict[str, Any] = {}
-        if conv_id is not None:
-            output["conversation_id"] = conv_id
-
-        if output_format == "default":
-            output["response"] = response.content
-        elif output_format == "raw":
-            output["raw_response"] = response.model_dump()
-        else:
-            output["response"] = response.content
-
-        return json.dumps(output, indent=2, default=str)
-
-    return [spawn_subagent, invoke_subagent]

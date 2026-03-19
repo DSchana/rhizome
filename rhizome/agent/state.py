@@ -6,7 +6,7 @@ from langchain.agents.middleware.types import AgentState
 
 from typing import TypedDict
 
-from rhizome.agent.flashcard_proposal_tools import FlashcardProposalItem
+from rhizome.agent.tools.flashcard import FlashcardProposalItem
 from rhizome.agent.review_state import ReviewState
 
 

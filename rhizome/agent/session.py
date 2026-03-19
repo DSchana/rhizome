@@ -12,19 +12,22 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.messages.utils import count_tokens_approximately
 from langgraph.types import Command
 
-from rhizome.agent.builder import build_root_agent
 from rhizome.config import get_log_dir
-from rhizome.agent.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
+
+from rhizome.agent.builder import build_root_agent
 from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.agent_mode import AgentModeMiddleware, SYSTEM_PROMPT_MESSAGE_ID
 from rhizome.agent.modes import MODE_REGISTRY
-from rhizome.agent.subagent import Subagent
-from rhizome.agent.review_tools import build_review_tools
-from rhizome.agent.tools import build_tools
+from rhizome.agent.subagents import Subagent
+from rhizome.agent.tools.database import build_database_tools
+from rhizome.agent.tools.app import build_app_tools
+from rhizome.agent.tools.review import build_review_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
+
+from rhizome.agent.subagents.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
+
 from rhizome.logs import get_logger
 from rhizome.tui.options import Options
-from rhizome.utils.async_map import AsyncMap
 
 
 def get_agent_kwargs(options: Options) -> dict[str, Any]:
@@ -93,22 +96,17 @@ class AgentSession:
             self._dump_dir = log_dir / f"agent-stream-{max_idx + 1}"
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build tools (closed over session_factory and chat_pane) and the initial agent graph.
-        self._tools = build_tools(session_factory, chat_pane=chat_pane)
+        # Build all tool groups (each closed over session_factory and/or chat_pane).
+        from rhizome.agent.tools.flashcard import build_flashcard_proposal_tools
+        from rhizome.agent.tools.sql import build_sql_tools
 
-        # Build review-mode tools and add them to the root agent's tool list.
-        review_tool_dict = build_review_tools(session_factory)
-        self._tools.extend(review_tool_dict.values())
-
-        # Build flashcard proposal tools (available in learn + review modes).
-        from rhizome.agent.flashcard_proposal_tools import build_flashcard_proposal_tools
-        fc_proposal_tool_dict = build_flashcard_proposal_tools(session_factory)
-        self._tools.extend(fc_proposal_tool_dict.values())
-
-        # Build SQL tools and add them to the root agent's tool list.
-        from rhizome.agent.sql_tools import build_sql_tools
-        sql_tool_dict = build_sql_tools(session_factory)
-        self._tools.extend(sql_tool_dict.values())
+        self._tools: list = [
+            *build_database_tools(session_factory).values(),
+            *build_app_tools(session_factory, chat_pane).values(),
+            *build_review_tools(session_factory).values(),
+            *build_flashcard_proposal_tools(session_factory).values(),
+            *build_sql_tools(session_factory).values(),
+        ]
 
         # Build the commit subagent and add its tools to the root agent's tool list.
         commit_subagent = build_commit_subagent(
@@ -148,9 +146,6 @@ class AgentSession:
         # Pending commit payload — set by the TUI before starting a commit stream.
         self._pending_commit_payload: list[dict] | None = None
 
-        # Subagent registry — shared across all tools in this session.
-        self._subagents: AsyncMap[str, Subagent] = AsyncMap()
-        self._subagents._data[COMMIT] = commit_subagent
 
     def rebuild_agent(self, provider: str, model_name: str, agent_kwargs: dict[str, Any] | None = None) -> None:
         """Rebuild the agent graph with the given provider and model.
@@ -530,6 +525,3 @@ class AgentSession:
     def token_usage(self) -> TokenUsageData:
         return self._token_usage
 
-    @property
-    def subagents(self) -> AsyncMap[str, Subagent]:
-        return self._subagents

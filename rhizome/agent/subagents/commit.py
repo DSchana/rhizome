@@ -13,8 +13,9 @@ from langgraph.types import Command, interrupt
 from rhizome.agent.builder import build_agent
 from rhizome.agent.state import CommitProposalEntry
 from rhizome.agent.system_prompt import KNOWLEDGE_ENTRIES_GUIDE
-from rhizome.agent.subagent import StructuredSubagent
-from rhizome.agent.tools import build_tools, ToolGroups, tool_visibility, ToolVisibility
+from rhizome.agent.subagents.base import StructuredSubagent
+from rhizome.agent.tools.database import build_database_tools
+from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.models import EntryType
 from rhizome.db.operations import create_entry, get_topic
 from rhizome.logs import get_logger
@@ -70,7 +71,7 @@ class CommitProposalResponseSchema(BaseModel):
 
 def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> StructuredSubagent:
     """Build the commit StructuredSubagent with filtered DB tools."""
-    tools = build_tools(session_factory, chat_pane=chat_pane, included=ToolGroups.DATABASE)
+    tools = list(build_database_tools(session_factory).values())
 
     provider = agent_kwargs.pop("provider", "anthropic")
     model_name = agent_kwargs.pop("model_name", "claude-sonnet-4-6")
@@ -93,7 +94,11 @@ def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Structu
     )
 
 
-def build_commit_subagent_tools(session_factory, chat_pane, subagent: StructuredSubagent) -> list:
+def build_commit_subagent_tools(
+    session_factory, 
+    chat_pane, 
+    subagent: StructuredSubagent
+) -> list:
     """Build the tools the root agent sees for the commit workflow.
 
     These tools allow the root agent to invoke the commit subagent or

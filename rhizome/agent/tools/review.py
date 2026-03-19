@@ -12,7 +12,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command
 from rhizome.agent.review_state import ReviewConfig, ReviewScope, ReviewState
-from rhizome.agent.tools import ToolVisibility, tool_visibility
+from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.operations import (
     add_review_interaction,
     complete_review_session,

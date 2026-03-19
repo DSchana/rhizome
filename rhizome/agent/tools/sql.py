@@ -14,7 +14,7 @@ from langchain.tools import tool
 from langgraph.types import interrupt
 from sqlalchemy import text
 
-from rhizome.agent.tools import ToolVisibility, tool_visibility
+from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.logs import get_logger
 
 _logger = get_logger("agent.sql_tools")

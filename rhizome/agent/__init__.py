@@ -2,12 +2,11 @@
 
 from .context import AgentContext
 from .session import AgentSession
-from .subagent import StructuredSubagent, Subagent, build_subagent_tools
+from .subagents import StructuredSubagent, Subagent
 
 __all__ = [
     "AgentContext",
     "AgentSession",
     "StructuredSubagent",
     "Subagent",
-    "build_subagent_tools",
 ]

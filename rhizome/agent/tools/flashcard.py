@@ -17,7 +17,7 @@ from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
-from rhizome.agent.tools import ToolVisibility, tool_visibility
+from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.operations import create_flashcard
 from rhizome.logs import get_logger
 
