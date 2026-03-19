@@ -1354,4 +1354,5 @@ class ChatPane(Widget):
 
         elif key == "escape":
             # Cancel selection and exit commit mode.
-            self.confirm_commit_selection(None)
+            self._commit.selected.clear()
+            self.confirm_commit_selection()
