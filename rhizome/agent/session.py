@@ -145,6 +145,9 @@ class AgentSession:
         # User settings injection — persistent messages queued when settings change.
         self._last_injected_settings: dict[str, Any] | None = None
 
+        # Pending commit payload — set by the TUI before starting a commit stream.
+        self._pending_commit_payload: list[dict] | None = None
+
         # Subagent registry — shared across all tools in this session.
         self._subagents: AsyncMap[str, Subagent] = AsyncMap()
         self._subagents._data[COMMIT] = commit_subagent
@@ -188,6 +191,10 @@ class AgentSession:
 
         if provider != self._provider or model_name != self._model_name or new_kwargs != self._agent_kwargs:
             self.rebuild_agent(provider, model_name, agent_kwargs=new_kwargs)
+
+    def set_commit_payload(self, payload: list[dict]) -> None:
+        """Store a commit payload to be injected into state on the next stream() call."""
+        self._pending_commit_payload = payload
 
     async def set_pending_user_mode(self, mode_name: str) -> None:
         """Queue a user-initiated mode change to be applied on the next model call.
@@ -261,7 +268,17 @@ class AgentSession:
         # the graph.  The checkpointer restores previous state and the
         # add_messages reducer appends these new messages.
         queued = self._drain_queue()
-        next_input: dict | Command = {"messages": queued, "mode": mode, "review_state": None}
+
+        # Build the initial state input.  Only include state fields when we
+        # actually have new values — omitted keys are left untouched in the
+        # checkpoint, so nullable state (commit_payload, commit_proposal,
+        # review, etc.) persists until explicitly cleared by a tool.
+        next_input: dict | Command = {"messages": queued, "mode": mode}
+
+        # Drain pending commit payload (set by ChatPane.confirm_commit_selection).
+        if self._pending_commit_payload is not None:
+            next_input["commit_payload"] = self._pending_commit_payload
+            self._pending_commit_payload = None
 
         # Reset any pending user mode changes from the last invocation of .stream(). The graph state is provided
         # with the mode fresh at every invocation of .stream(), and the chat pane mode always takes priority. The

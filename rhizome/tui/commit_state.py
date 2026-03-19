@@ -15,7 +15,6 @@ class CommitState:
     selectable: list = field(default_factory=list)  # list[ChatMessage] at runtime
     selected: set[int] = field(default_factory=set)
     cursor: int = 0
-    commit_payload: list[dict] = field(default_factory=list)  # [{"index": int, "content": str}, ...]
 
 
 class CommitApproved(Message):

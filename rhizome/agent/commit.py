@@ -4,11 +4,14 @@ import json
 from typing import Any
 
 from langchain.agents.structured_output import ProviderStrategy
-from pydantic import BaseModel, ValidationError
+from langchain_core.messages import ToolMessage
+from pydantic import BaseModel
 from langchain.tools import tool
-from langgraph.types import interrupt
+from langgraph.prebuilt.tool_node import ToolRuntime
+from langgraph.types import Command, interrupt
 
 from rhizome.agent.builder import build_agent
+from rhizome.agent.state import CommitProposalEntry
 from rhizome.agent.subagent import StructuredSubagent
 from rhizome.agent.tools import build_tools, ToolGroups, tool_visibility, ToolVisibility
 from rhizome.db.models import EntryType
@@ -66,13 +69,6 @@ class CommitProposalResponseSchema(BaseModel):
     entries: list[KnowledgeEntryProposalSchema]
 
 
-class _ProposalRef:
-    """Mutable container for the current commit proposal, shared across commit tools."""
-    __slots__ = ("value",)
-    def __init__(self) -> None:
-        self.value: CommitProposalResponseSchema | None = None
-
-
 def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> StructuredSubagent:
     """Build the commit StructuredSubagent with filtered DB tools."""
     tools = build_tools(session_factory, chat_pane=chat_pane, included=ToolGroups.DATABASE)
@@ -103,14 +99,12 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
 
     These tools allow the root agent to invoke the commit subagent or
     propose entries directly, present proposals to the user, and write
-    approved entries to the DB.  All tools share a ``_ProposalRef`` so
-    that ``present_commit_proposal`` and ``accept_commit_proposal`` work
-    identically regardless of which path produced the proposal.
+    approved entries to the DB.  Proposal and payload state are stored
+    in ``RhizomeAgentState`` (``commit_proposal`` and ``commit_payload``
+    fields) and accessed via ``ToolRuntime``.
     """
     assert isinstance(subagent, StructuredSubagent), "Expected a StructuredSubagent"
     assert subagent.response_schema is CommitProposalResponseSchema
-
-    proposal = _ProposalRef()
 
     @tool("inspect_commit_payload", description=(
         "Return the selected conversation messages that the user chose to commit. "
@@ -118,13 +112,19 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
         "and propose appropriate knowledge entries."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def inspect_commit_payload() -> str:
-        if chat_pane is None:
-            return json.dumps({"error": "Chat pane not available."})
-        payload = chat_pane._commit.commit_payload
+    async def inspect_commit_payload(runtime: ToolRuntime) -> Command:
+        payload = runtime.state.get("commit_payload")
         if not payload:
-            return json.dumps({"error": "No commit payload available."})
-        return json.dumps({"messages": payload}, indent=2)
+            return Command(update={
+                "messages": [ToolMessage(
+                    content=json.dumps({"error": "No commit payload available."}),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+        content = json.dumps({"messages": payload}, indent=2)
+        return Command(update={
+            "messages": [ToolMessage(content=content, tool_call_id=runtime.tool_call_id)],
+        })
 
     @tool("invoke_commit_subagent", description=(
         "Send selected conversation messages to the commit subagent for knowledge extraction. "
@@ -136,15 +136,16 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def invoke_commit_subagent(
+        runtime: ToolRuntime,
         instructions: str | None = None,
         context: str | None = None,
         conversation_id: str | None = None,
-    ) -> str:
+    ) -> Command:
         # Build input from the commit payload if this is a fresh conversation.
         input_parts = []
 
-        if conversation_id is None and chat_pane is not None:
-            payload = chat_pane._commit.commit_payload
+        if conversation_id is None:
+            payload = runtime.state.get("commit_payload")
             if payload:
                 lines = []
                 for entry in payload:
@@ -163,72 +164,80 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
         input_text = "\n\n".join(input_parts)
         conv_id, response = await subagent.ainvoke(input_text, conversation_id)
 
-        output: dict[str, Any] = {}
-        if conv_id is not None:
-            output["conversation_id"] = conv_id
+        state_update: dict[str, Any] = {}
 
         if subagent.structured_response is not None:
-            proposal.value = subagent.structured_response
-            output["proposal"] = {
-                "entries": [
-                    {
-                        "title": e.title,
-                        "content": e.content,
-                        "entry_type": e.entry_type,
-                        "topic_id": e.topic_id,
-                    }
-                    for e in proposal.value.entries
-                ]
-            }
+            proposal_entries = [
+                CommitProposalEntry(
+                    title=e.title,
+                    content=e.content,
+                    entry_type=e.entry_type,
+                    topic_id=e.topic_id,
+                )
+                for e in subagent.structured_response.entries
+            ]
+            state_update["commit_proposal"] = proposal_entries
+            msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries."
+            if conv_id is not None:
+                msg += f" conversation_id={conv_id}"
+            msg += " Call present_commit_proposal to show it to the user."
         else:
-            output["error"] = "Failed to parse proposal. Check raw response content."
-            output["raw_response"] = response.content
+            msg = json.dumps({
+                "error": "Failed to parse proposal. Check raw response content.",
+                "raw_response": response.content,
+            }, indent=2, default=str)
 
-        return json.dumps(output, indent=2, default=str)
+        state_update["messages"] = [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)]
+        return Command(update=state_update)
 
     @tool("create_commit_proposal", description=(
         "Directly propose knowledge entries for commit without invoking the commit subagent. "
         "Use this when the selected messages are short and simple enough that you can propose "
-        "entries yourself. Call inspect_commit_payload first to see the selected messages. "
-        "Each entry must have: title (str), content (str), entry_type ('fact'|'exposition'|'overview'), "
-        "and topic_id (int)."
+        "entries yourself. Call inspect_commit_payload first to see the selected messages."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def create_commit_proposal(entries: list[dict]) -> str:
+    async def create_commit_proposal(
+        entries: list[KnowledgeEntryProposalSchema],
+        runtime: ToolRuntime,
+    ) -> Command:
         if not entries:
-            return json.dumps({"error": "No entries provided."})
+            return Command(update={
+                "messages": [ToolMessage(
+                    content=json.dumps({"error": "No entries provided."}),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
 
-        try:
-            parsed = [KnowledgeEntryProposalSchema(**e) for e in entries]
-        except (ValidationError, TypeError) as exc:
-            return json.dumps({"error": f"Validation failed: {exc}"})
-
-        proposal.value = CommitProposalResponseSchema(entries=parsed)
-        return json.dumps({
-            "proposal": {
-                "entries": [
-                    {
-                        "title": e.title,
-                        "content": e.content,
-                        "entry_type": e.entry_type,
-                        "topic_id": e.topic_id,
-                    }
-                    for e in proposal.value.entries
-                ]
-            }
-        }, indent=2)
+        proposal_entries = [
+            CommitProposalEntry(
+                title=e.title, content=e.content,
+                entry_type=e.entry_type, topic_id=e.topic_id,
+            )
+            for e in entries
+        ]
+        msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries. Call present_commit_proposal to show it to the user."
+        return Command(update={
+            "commit_proposal": proposal_entries,
+            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+        })
 
     @tool("present_commit_proposal", description=(
         "Display the current commit proposal to the user for review. "
         "The user can choose to accept, reject, or request revisions."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def present_commit_proposal() -> str:
-        if proposal.value is None:
-            return json.dumps({"error": "No proposal available. Create or invoke a proposal first."})
+    async def present_commit_proposal(runtime: ToolRuntime) -> Command:
+        proposal = runtime.state.get("commit_proposal")
+        if not proposal:
+            return Command(update={
+                "messages": [ToolMessage(
+                    content=json.dumps({"error": "No proposal available. Create or invoke a proposal first."}),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
 
         # Build topic name map for display
-        topic_ids = {e.topic_id for e in proposal.value.entries}
+        topic_ids = {e["topic_id"] for e in proposal}
         topic_map: dict[int, str] = {}
         async with session_factory() as session:
             for tid in topic_ids:
@@ -236,15 +245,7 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
                 if topic is not None:
                     topic_map[tid] = topic.name
 
-        entries = [
-            {
-                "title": e.title,
-                "content": e.content,
-                "entry_type": e.entry_type,
-                "topic_id": e.topic_id,
-            }
-            for e in proposal.value.entries
-        ]
+        entries = [dict(e) for e in proposal]
 
         result = interrupt({
             "type": "commit_proposal",
@@ -257,49 +258,71 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
         modified_entries = result.get("entries", [])
 
         if choice == "Approve":
-            proposal.value = CommitProposalResponseSchema(
-                entries=[KnowledgeEntryProposalSchema(**e) for e in modified_entries]
-            )
-            return "User approved the proposal."
+            new_proposal = [CommitProposalEntry(**e) for e in modified_entries]
+            return Command(update={
+                "commit_proposal": new_proposal,
+                "messages": [ToolMessage(
+                    content="User approved the proposal.",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
         elif choice == "Edit":
-            proposal.value = CommitProposalResponseSchema(
-                entries=[KnowledgeEntryProposalSchema(**e) for e in modified_entries]
-            )
+            new_proposal = [CommitProposalEntry(**e) for e in modified_entries]
             instructions = result.get("instructions", "")
-            return f"User requested edits: {instructions}"
+            return Command(update={
+                "commit_proposal": new_proposal,
+                "messages": [ToolMessage(
+                    content=f"User requested edits: {instructions}",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
         else:
-            proposal.value = None
-            return "User cancelled the proposal."
+            return Command(update={
+                "commit_proposal": None,
+                "messages": [ToolMessage(
+                    content="User cancelled the proposal.",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
 
     @tool("accept_commit_proposal", description=(
         "Write the accepted commit proposal to the database. "
         "Call this after the user has approved the proposal via present_commit_proposal."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def accept_commit_proposal() -> str:
-        if chat_pane is None:
-            return json.dumps({"error": "Chat pane not available for accessing selected messages."})
-        if proposal.value is None:
-            return json.dumps({"error": "No proposal to accept."})
+    async def accept_commit_proposal(runtime: ToolRuntime) -> Command:
+        proposal = runtime.state.get("commit_proposal")
+        if not proposal:
+            return Command(update={
+                "messages": [ToolMessage(
+                    content=json.dumps({"error": "No proposal to accept."}),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
 
         created = []
         async with session_factory() as session:
-            for e in proposal.value.entries:
-                entry_type = EntryType(e.entry_type) if e.entry_type else None
+            for e in proposal:
+                entry_type = EntryType(e["entry_type"]) if e.get("entry_type") else None
                 entry = await create_entry(
                     session,
-                    topic_id=e.topic_id,
-                    title=e.title,
-                    content=e.content,
+                    topic_id=e["topic_id"],
+                    title=e["title"],
+                    content=e["content"],
                     entry_type=entry_type,
                 )
                 created.append({"id": entry.id, "title": entry.title})
             await session.commit()
 
-        proposal.value = None
-        chat_pane.post_message(CommitApproved(count=len(created)))
+        if chat_pane is not None:
+            chat_pane.post_message(CommitApproved(count=len(created)))
 
-        return json.dumps({"created": created}, indent=2)
+        msg = f"Committed {len(created)} knowledge entry/entries to the database."
+        return Command(update={
+            "commit_proposal": None,
+            "commit_payload": None,
+            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+        })
 
     return [
         inspect_commit_payload,

@@ -238,6 +238,7 @@ class ChatPane(Widget):
                 on_interrupt=harness.on_interrupt,
                 post_chunk_handler=lambda: message_area.scroll_end(animate=False),
             )
+            
             body = await harness.finalize()
             if body:
                 self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
@@ -247,7 +248,13 @@ class ChatPane(Widget):
             body = await harness.cancel()
             if body:
                 self.messages.append(ChatMessageData(role=Role.AGENT, content=body))
+
+                # Remark: here we re-inject whatever the agent was able to produce before it was interrupted back into the message
+                # queue as a fake AI message. When asyncio.CancelledError is triggered it seems like the half-finished message doesn't
+                # actually make it into the graph's messages state - manually queueing the partial message provides it as additional 
+                # context for the agent.
                 self._agent_session.add_ai_message(body)
+
             self.append_message(
                 ChatMessageData(role=Role.SYSTEM, content="(user cancelled)")
             )
@@ -1185,18 +1192,19 @@ class ChatPane(Widget):
             self.append_message(ChatMessageData(role=Role.SYSTEM, content="No messages selected for commit."))
             return
 
-        # Build the commit payload from the selected messages so the agent layer
-        # can access message content without reaching into the view.
-        self._commit.commit_payload = [
+        # Build the commit payload and inject it into agent state for the
+        # commit tools to read via ToolRuntime.
+        commit_payload = [
             {"index": idx, "content": self._commit.selectable[idx].content_text}
             for idx in sorted(self._commit.selected)
         ]
+        self._agent_session.set_commit_payload(commit_payload)
 
-        combined = "\n".join(entry["content"] for entry in self._commit.commit_payload)
+        # Compute the approximate token count for the selected messages, and determine routing based on subagent commit options.
+        combined = "\n".join(entry["content"] for entry in commit_payload)
         approx_tokens = count_tokens_approximately([HumanMessage(content=combined)])
         num_messages = len(self._commit.selected)
 
-        # Determine routing based on subagent commit options.
         use_subagent = False
         if self.options and self.options.get(Options.Subagents.Commit.Enabled) == "enabled":
             criterion = self.options.get(Options.Subagents.Commit.RoutingCriterion)
@@ -1208,13 +1216,13 @@ class ChatPane(Widget):
 
         if use_subagent:
             self._agent_session.add_system_notification(
-                f"User approved commit of {num_messages} message(s) "
+                f"User selected {num_messages} message(s) for commit "
                 f"(~{approx_tokens} tokens). Use invoke_commit_subagent to delegate "
                 "knowledge entry extraction, then present the proposal to the user."
             )
         else:
             self._agent_session.add_system_notification(
-                f"User approved commit of {num_messages} message(s) "
+                f"User selected {num_messages} message(s) for commit "
                 f"(~{approx_tokens} tokens). Use inspect_commit_payload and "
                 "create_commit_proposal to draft entries directly, then present "
                 "the proposal to the user."
