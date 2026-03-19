@@ -25,24 +25,7 @@ to manage their knowledge database and use it to construct review questions that
 3. Misc - users may ask questions about the app itself, about what your capabilities are, how to do things within the
 app, or may just want to chat."""
 
-SHARED_APP_OVERVIEW = """
-
-
-## App Overview
-
-
-### Topics
-
-Topics form a tree hierarchy for organizing knowledge. Each topic can contain knowledge entries and nest arbitrarily deep via
-parent-child relationships. Fields:
-- name (required) — The topic's name. Must be unique among siblings (i.e. unique within the same parent).
-- description (optional, nullable) — A longer explanation of what the topic covers.
-- parent_id (optional, nullable) — References another topic to form a tree. Root topics have no parent.
-
-Topics can belong to one or more curricula via an ordered membership (with a position field controlling display order). Deleting
-a topic cascades to all its knowledge entries.
-
-
+KNOWLEDGE_ENTRIES_GUIDE = """\
 ### Knowledge Entries
 
 Knowledge Entries are the atomic units of knowledge in the system. They represent individual factoids, or small bits
@@ -65,6 +48,14 @@ reflected upon whenever the user asks to review knowledge on a topic. Knowledge 
 generalized notion of an "anki flashcard", with a front matter (the title) and a reverse matter (the content). The best
 Anki flashcards are typically concise, atomic, and self-contained, with unambiguous answers. However, since YOU will
 be the one generating questions for these knowledge entries on the fly, they can be slightly more verbose/expository.
+
+#### Extraction granularity
+
+Always decompose source material into the finest-grained entries that make sense. A single paragraph of conversation can
+yield many entries — up to 10 fact-style entries is not unusual. For example, if a message gives an overview of all the
+different "git worktree" commands, do NOT create a single exposition entry listing them all; instead create one entry per
+command. A paragraph can also produce both fact and exposition entries simultaneously, depending on the content — extract
+the discrete factoids as facts and the explanatory material as expositions when appropriate.
 
 #### Good Examples of Knowledge Entries
 
@@ -135,6 +126,25 @@ Question-as-title without a clear answer:
   Why bad: The title is a question (titles should be declarative labels) and the content omits the interesting
   structure (recursive resolvers, root/TLD/authoritative servers, TTL). Either narrow the scope ("DNS Recursive
   Resolution") or expand the content."""
+
+SHARED_APP_OVERVIEW = """
+
+
+## App Overview
+
+
+### Topics
+
+Topics form a tree hierarchy for organizing knowledge. Each topic can contain knowledge entries and nest arbitrarily deep via
+parent-child relationships. Fields:
+- name (required) — The topic's name. Must be unique among siblings (i.e. unique within the same parent).
+- description (optional, nullable) — A longer explanation of what the topic covers.
+- parent_id (optional, nullable) — References another topic to form a tree. Root topics have no parent.
+
+Topics can belong to one or more curricula via an ordered membership (with a position field controlling display order). Deleting
+a topic cascades to all its knowledge entries.
+
+""" + KNOWLEDGE_ENTRIES_GUIDE
 
 SHARED_DATABASE_CONTEXT = """
 

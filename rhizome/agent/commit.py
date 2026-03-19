@@ -12,6 +12,7 @@ from langgraph.types import Command, interrupt
 
 from rhizome.agent.builder import build_agent
 from rhizome.agent.state import CommitProposalEntry
+from rhizome.agent.system_prompt import KNOWLEDGE_ENTRIES_GUIDE
 from rhizome.agent.subagent import StructuredSubagent
 from rhizome.agent.tools import build_tools, ToolGroups, tool_visibility, ToolVisibility
 from rhizome.db.models import EntryType
@@ -35,7 +36,14 @@ You have access to database tools to query existing topics and entries so you ca
 - Avoid creating duplicate entries
 - Understand the existing knowledge structure
 
-When you are ready to propose entries, respond with a JSON object in this exact format:
+## What makes a good knowledge entry
+
+""" + KNOWLEDGE_ENTRIES_GUIDE + """
+
+## Response format
+
+Respond ONLY with a JSON object in this exact format — no additional text, no explanations,
+no commentary about your planning steps:
 {
     "entries": [
         {
@@ -46,15 +54,6 @@ When you are ready to propose entries, respond with a JSON object in this exact 
         }
     ]
 }
-
-Guidelines:
-- Each entry should be self-contained and focused on a single concept
-- Use "fact" for discrete, testable pieces of knowledge
-- Use "exposition" for explanatory content or detailed descriptions
-- Use "overview" for high-level summaries of a topic area
-- Always verify topic_id exists by querying the database first
-- Respond ONLY with the JSON object, no additional text. Do not include any explanations or commentary outside the JSON,
-  including messages explaining your own planning steps.
 """
 
 
