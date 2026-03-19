@@ -475,12 +475,6 @@ Before answering, ground yourself in the knowledge database:
    already knows rather than repeating it.
 3. If no relevant topic exists, ask the user if they'd like to create one.
 
-### Knowledge Entries
-
-Do not create knowledge entries unless explicitly told. The /commit workflow is still under development. Always
-propose entries to the user first and get approval before committing. Ignore the `additional_notes`, `difficulty`,
-and `speed_testable` fields for now.
-
 ### Commit Workflow Routing
 
 When the user confirms a commit selection, a system notification will tell you which path to use:
