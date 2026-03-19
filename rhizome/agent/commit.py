@@ -148,7 +148,11 @@ def build_commit_subagent_tools(session_factory, chat_pane, subagent: Structured
             if payload:
                 lines = []
                 for entry in payload:
-                    lines.append(f"[Message {entry['index']}]\n{entry['content']}")
+                    parts = []
+                    if entry.get("user_context"):
+                        parts.append(f"[User prompt]\n{entry['user_context']}")
+                    parts.append(f"[Message {entry['index']}]\n{entry['content']}")
+                    lines.append("\n".join(parts))
                 input_parts.append(
                     "Selected messages for knowledge extraction:\n\n"
                     + "\n\n---\n\n".join(lines)

@@ -1246,10 +1246,25 @@ class ChatPane(Widget):
 
         # Build the commit payload and inject it into agent state for the
         # commit tools to read via ToolRuntime.
-        commit_payload = [
-            {"index": idx, "content": self._commit.selectable[idx].content_text}
-            for idx in sorted(self._commit.selected)
-        ]
+        level = self.options.get(Options.CommitSelectable) if self.options else "learn_only"
+        all_messages = list(self.query_one("#message-area").query(ChatMessage))
+        commit_payload = []
+        for idx in sorted(self._commit.selected):
+            msg = self._commit.selectable[idx]
+            entry: dict = {"index": idx, "content": msg.content_text}
+
+            # For agent-only selection modes, include the preceding user message
+            # as context so the commit agent understands what prompted the response.
+            if level != "all" and msg._role == Role.AGENT:
+                msg_pos = all_messages.index(msg)
+                for prev in reversed(all_messages[:msg_pos]):
+                    if prev._role == Role.USER:
+                        entry["user_context"] = prev.content_text
+                        break
+                    if prev._role == Role.AGENT:
+                        break
+
+            commit_payload.append(entry)
         self._agent_session.set_commit_payload(commit_payload)
 
         # Compute the approximate token count for the selected messages, and determine routing based on subagent commit options.
