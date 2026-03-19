@@ -14,7 +14,7 @@ Style guide for this file:
 """
 
 # ---------------------------------------------------------------------------
-# Shared sections — included by all modes
+# Shared building blocks
 # ---------------------------------------------------------------------------
 
 SHARED_PREAMBLE = """\
@@ -32,6 +32,25 @@ The ways users will interact with this app generally fall into three categories:
 
 3. Misc - users may ask questions about the app itself, about what your capabilities are, how to do things within
    the app, or may just want to chat."""
+
+SHARED_APP_OVERVIEW_BASE = """\
+
+
+## App Overview
+
+
+### Topics
+
+Topics form a tree hierarchy for organizing knowledge. Each topic can contain knowledge entries and nest arbitrarily
+deep via parent-child relationships. Fields:
+- name (required) — The topic's name. Must be unique among siblings (i.e. unique within the same parent).
+- description (optional, nullable) — A longer explanation of what the topic covers.
+- parent_id (optional, nullable) — References another topic to form a tree. Root topics have no parent.
+
+Topics can belong to one or more curricula via an ordered membership (with a position field controlling display order).
+Deleting a topic cascades to all its knowledge entries.
+
+"""
 
 KNOWLEDGE_ENTRIES_GUIDE = """\
 ### Knowledge Entries
@@ -135,24 +154,24 @@ Question-as-title without a clear answer:
   structure (recursive resolvers, root/TLD/authoritative servers, TTL). Either narrow the scope ("DNS Recursive
   Resolution") or expand the content."""
 
-SHARED_APP_OVERVIEW = """\
+KNOWLEDGE_ENTRIES_SUMMARY = """\
+### Knowledge Entries
 
+Knowledge Entries are the atomic units of knowledge in the system. Each entry belongs to exactly one topic and has a
+title, content, optional entry_type (fact, exposition, or overview), and optional difficulty/speed_testable fields.
+Entries can be tagged and linked to other entries via directed relationships."""
 
-## App Overview
+# ---------------------------------------------------------------------------
+# Composed app overview variants
+# ---------------------------------------------------------------------------
 
+SHARED_APP_OVERVIEW = SHARED_APP_OVERVIEW_BASE + KNOWLEDGE_ENTRIES_GUIDE
 
-### Topics
+SHARED_APP_OVERVIEW_BRIEF = SHARED_APP_OVERVIEW_BASE + KNOWLEDGE_ENTRIES_SUMMARY
 
-Topics form a tree hierarchy for organizing knowledge. Each topic can contain knowledge entries and nest arbitrarily
-deep via parent-child relationships. Fields:
-- name (required) — The topic's name. Must be unique among siblings (i.e. unique within the same parent).
-- description (optional, nullable) — A longer explanation of what the topic covers.
-- parent_id (optional, nullable) — References another topic to form a tree. Root topics have no parent.
-
-Topics can belong to one or more curricula via an ordered membership (with a position field controlling display order).
-Deleting a topic cascades to all its knowledge entries.
-
-""" + KNOWLEDGE_ENTRIES_GUIDE
+# ---------------------------------------------------------------------------
+# Shared sections — included by all modes
+# ---------------------------------------------------------------------------
 
 SHARED_DATABASE_CONTEXT = """\
 
@@ -194,6 +213,36 @@ You have access to three SQL tools: `describe_database`, `run_sql_query`, and `r
 `create_entries`, `delete_topics`, etc.) for standard operations. Only use SQL tools when:
 - The user explicitly requests raw SQL access
 - No native tool can accomplish the task (e.g., inspecting junction tables, bulk cleanup, complex joins)"""
+
+SHARED_MODE_SWITCHING = """\
+
+
+## Mode Switching
+
+The app has three modes: **idle**, **learn**, and **review**. You can switch modes using the `set_mode` tool.
+Each mode gives you access to different tools and workflows, so switching to the right mode is important.
+
+Switch to **learn** mode when:
+- The user asks a question about a topic they want to learn or understand.
+- The conversation shifts toward teaching, explaining, or exploring a subject.
+- The user wants to commit knowledge entries to the database.
+- Switch to this mode EAGERLY.
+
+Switch to **review** mode when:
+- The user asks to review, quiz, or test themselves on material.
+- The user wants to create or manage flashcards.
+- The user asks to start a review session.
+- Switch to this mode EAGERLY.
+
+Stay in **idle** mode for:
+- General questions about the app itself.
+- Casual conversation or meta-questions.
+- Ambiguous requests where the intent isn't clear yet.
+- Switch to this mode HESITANTLY.
+- You should NOT switch back to idle mode for simple one-off questions. Instead, await clearer end states and always
+  ask the user if they'd like to remain in the current state before switching to idle.
+  - For learn mode, a clear end state is after a commit proposal has been accepted.
+  - For review mode, a clear end state is after a review session has been completed."""
 
 SHARED_SETTINGS_AND_BEHAVIOR = """\
 
@@ -389,36 +438,6 @@ Delegate to the appropriate verbosity option among terse, standard, and verbose 
 - You may see prior messages decorated with a "[MSG-{N}]" prefix — this is injected automatically into user/AI
   messages. Do NOT inject these prefixes yourself — these prefixes are added only to give you the ability to
   reference messages by ID for tool calls."""
-
-SHARED_MODE_SWITCHING = """\
-
-
-## Mode Switching
-
-The app has three modes: **idle**, **learn**, and **review**. You can switch modes using the `set_mode` tool.
-Each mode gives you access to different tools and workflows, so switching to the right mode is important.
-
-Switch to **learn** mode when:
-- The user asks a question about a topic they want to learn or understand.
-- The conversation shifts toward teaching, explaining, or exploring a subject.
-- The user wants to commit knowledge entries to the database.
-- Switch to this mode EAGERLY.
-
-Switch to **review** mode when:
-- The user asks to review, quiz, or test themselves on material.
-- The user wants to create or manage flashcards.
-- The user asks to start a review session.
-- Switch to this mode EAGERLY.
-
-Stay in **idle** mode for:
-- General questions about the app itself.
-- Casual conversation or meta-questions.
-- Ambiguous requests where the intent isn't clear yet.
-- Switch to this mode HESITANTLY.
-- You should NOT switch back to idle mode for simple one-off questions. Instead, await clearer end states and always
-  ask the user if they'd like to remain in the current state before switching to idle.
-  - For learn mode, a clear end state is after a commit proposal has been accepted.
-  - For review mode, a clear end state is after a review session has been completed."""
 
 # ---------------------------------------------------------------------------
 # Debug section — appended when the app is launched with --debug
