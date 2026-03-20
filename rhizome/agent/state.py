@@ -6,7 +6,7 @@ from langchain.agents.middleware.types import AgentState
 
 from typing import TypedDict
 
-from rhizome.agent.tools.flashcard import FlashcardProposalItem
+from rhizome.agent.tools.flashcard import FlashcardProposalState
 from rhizome.agent.review_state import ReviewState
 
 
@@ -22,7 +22,7 @@ class RhizomeAgentState(AgentState):
     """Extended agent state for checkpoint/replay.
 
     All fields use default last-write-wins semantics.  Nullable fields
-    (``review``, ``flashcard_proposal``, ``commit_payload``,
+    (``review``, ``flashcard_proposal_state``, ``commit_payload``,
     ``commit_proposal``) persist in the checkpoint until explicitly
     cleared by a tool via ``Command(update={...})``.  They are NOT
     reset to ``None`` in ``stream()``'s ``next_input``.
@@ -49,8 +49,9 @@ class RhizomeAgentState(AgentState):
     review: ReviewState | None
     """Review session state machine; ``None`` when no review is active."""
 
-    flashcard_proposal: list[FlashcardProposalItem] | None
-    """Staged flashcard proposal awaiting user approval."""
+    flashcard_proposal_state: FlashcardProposalState | None
+    """Consolidated flashcard proposal state: staged items, validation ID,
+    and validation attempt counter.  ``None`` when no proposal is active."""
 
     commit_payload: list[dict] | None
     """Selected conversation messages for knowledge commit (``{"index", "content"}``)."""

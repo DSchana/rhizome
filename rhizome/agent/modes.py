@@ -68,6 +68,7 @@ _DB_SQL_TOOLS = frozenset({
 
 _FLASHCARD_PROPOSAL_TOOLS = frozenset({
     "create_flashcard_proposal",
+    "validate_flashcard_proposal",
     "present_flashcard_proposal",
     "accept_flashcard_proposal",
 })

@@ -25,6 +25,11 @@ from rhizome.agent.tools.review import build_review_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 
 from rhizome.agent.subagents.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
+from rhizome.agent.subagents.flashcard_validator import (
+    build_answerer_subagent,
+    build_comparator_subagent,
+    build_flashcard_validator_tools,
+)
 
 from rhizome.logs import get_logger
 from rhizome.tui.options import Options
@@ -114,6 +119,13 @@ class AgentSession:
         )
         self._tools.extend(
             build_commit_subagent_tools(session_factory, chat_pane, commit_subagent)
+        )
+
+        # Build the flashcard validation subagents and add tools.
+        answerer = build_answerer_subagent(**dict(self._agent_kwargs))
+        comparator = build_comparator_subagent(**dict(self._agent_kwargs))
+        self._tools.extend(
+            build_flashcard_validator_tools(answerer, comparator)
         )
 
         self._model, self._agent, middleware = build_root_agent(

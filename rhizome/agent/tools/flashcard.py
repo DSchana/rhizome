@@ -3,12 +3,13 @@
 These tools are mode-independent: they can be used during learn mode
 (to create flashcards from a learning conversation) or during review mode
 (to propose flashcards as part of a review session).  Proposal state is
-stored in ``RhizomeAgentState.flashcard_proposal``, separate from
+stored in ``RhizomeAgentState.flashcard_proposal_state``, separate from
 ``ReviewState``.
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, TypedDict
 
 from langchain.tools import tool
@@ -34,6 +35,24 @@ class FlashcardProposalItem(TypedDict):
     answer_text: str
     entry_ids: list[int]
     testing_notes: str | None
+
+
+class FlashcardProposalState(TypedDict):
+    """Consolidated state for the flashcard proposal workflow.
+
+    Stored in ``RhizomeAgentState.flashcard_proposal_state``.
+    """
+    items: list[FlashcardProposalItem]
+    """The staged flashcard items."""
+
+    validation_id: str
+    """Opaque ID for the current validation cycle.  Generated fresh by
+    ``create_flashcard_proposal``; must be passed back to
+    ``validate_flashcard_proposal``."""
+
+    validation_attempts: int
+    """Number of validation attempts consumed.  Reset to 0 when a new
+    proposal is staged."""
 
 
 class FlashcardInput(BaseModel):
@@ -64,7 +83,7 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
         flashcards: list[FlashcardInput],
         runtime: ToolRuntime,
     ) -> Command:
-        proposal: list[FlashcardProposalItem] = [
+        items: list[FlashcardProposalItem] = [
             FlashcardProposalItem(
                 topic_id=fc.topic_id,
                 question_text=fc.question_text,
@@ -75,9 +94,19 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
             for fc in flashcards
         ]
 
-        msg = f"Flashcard proposal staged: {len(proposal)} card(s). Call present_flashcard_proposal to show it to the user."
+        validation_id = str(uuid.uuid4())
+        proposal_state = FlashcardProposalState(
+            items=items,
+            validation_id=validation_id,
+            validation_attempts=0,
+        )
+        msg = (
+            f"Flashcard proposal staged: {len(items)} card(s). "
+            f"validation_id={validation_id}. "
+            f"Call validate_flashcard_proposal with this validation_id before presenting to the user."
+        )
         return Command(update={
-            "flashcard_proposal": proposal,
+            "flashcard_proposal_state": proposal_state,
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
@@ -91,15 +120,17 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
     async def present_flashcard_proposal_tool(
         runtime: ToolRuntime,
     ) -> Command:
-        proposal = runtime.state.get("flashcard_proposal")
+        fp_state: FlashcardProposalState | None = runtime.state.get("flashcard_proposal_state")
 
-        if not proposal:
+        if not fp_state or not fp_state.get("items"):
             return Command(update={
                 "messages": [ToolMessage(
                     content="Error: no flashcard proposal staged. Call create_flashcard_proposal first.",
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
+
+        proposal = fp_state["items"]
 
         # Build the interrupt payload matching FlashcardProposal.from_interrupt
         interrupt_flashcards = [
@@ -140,7 +171,7 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
 
             msg = f"User approved {len(accepted_items)} flashcard(s). Call accept_flashcard_proposal to write them to the database."
             return Command(update={
-                "flashcard_proposal": accepted_items,
+                "flashcard_proposal_state": {**fp_state, "items": accepted_items},
                 "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
             })
 
@@ -154,7 +185,7 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
         else:  # Cancel
             msg = "User cancelled the flashcard proposal."
             return Command(update={
-                "flashcard_proposal": None,
+                "flashcard_proposal_state": None,
                 "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
             })
 
@@ -167,15 +198,17 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
     async def accept_flashcard_proposal_tool(
         runtime: ToolRuntime,
     ) -> Command:
-        proposal = runtime.state.get("flashcard_proposal")
+        fp_state: FlashcardProposalState | None = runtime.state.get("flashcard_proposal_state")
 
-        if not proposal:
+        if not fp_state or not fp_state.get("items"):
             return Command(update={
                 "messages": [ToolMessage(
                     content="Error: no flashcard proposal to accept. Stage and present a proposal first.",
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
+
+        proposal = fp_state["items"]
 
         # Use review session ID if one is active, otherwise None
         review_state = runtime.state.get("review")
@@ -198,7 +231,7 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
 
         msg = f"Created {len(new_ids)} flashcard(s) (IDs: {new_ids})."
         return Command(update={
-            "flashcard_proposal": None,
+            "flashcard_proposal_state": None,
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
