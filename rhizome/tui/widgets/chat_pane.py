@@ -669,7 +669,7 @@ class ChatPane(Widget):
         async def idle():
             await self._cmd_idle()
 
-        @registry.command(name="learn", help="Enter learning mode: set curriculum and topic context")
+        @registry.command(name="learn", help="Enter learning mode: set topic context")
         async def learn():
             await self._cmd_learn()
 

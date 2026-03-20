@@ -31,7 +31,7 @@ def get_default_db_path() -> Path:
     """
     if env := os.environ.get("RHIZOME_DB"):
         return Path(env)
-    return get_data_dir() / "curriculum.db"
+    return get_data_dir() / "rhizome.db"
 
 
 def get_log_dir() -> Path:

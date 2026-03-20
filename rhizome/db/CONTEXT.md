@@ -5,8 +5,6 @@ Database layer. Defines the ORM schema and provides async engine/session managem
 ## Files
 
 - **models.py** — SQLAlchemy ORM models (all use `Mapped`/`mapped_column` typed syntax):
-  - `Curriculum` — top-level subject area (unique name). Has topics via `CurriculumTopic` junction (many-to-many). Deleting a curriculum removes junction rows but not the topics themselves.
-  - `CurriculumTopic` — junction table: curriculum ↔ topic (many-to-many with `position` for ordering). Composite PK on (`curriculum_id`, `topic_id`).
   - `Topic` — knowledge area organized as a tree (adjacency list via `parent_id` self-FK). Root topics have `parent_id=NULL`. Sibling names must be unique (`UniqueConstraint("parent_id", "name")`). Owns entries via cascade delete.
   - `KnowledgeEntry` — core knowledge unit (fact/concept/definition). Has `title`, `content`, `additional_notes`, `entry_type`, `difficulty` (nullable int), `speed_testable` (bool, default false). Connected to tags (many-to-many) and other entries (directed graph).
   - `Tag` — freeform label (unique, lowercase-normalized).
@@ -35,4 +33,4 @@ This matches the ORM-level `cascade="all, delete-orphan"` on relationships, but 
 
 ## `__init__.py` exports
 
-All 15 model classes (`Base`, `Curriculum`, `CurriculumTopic`, `Topic`, `KnowledgeEntry`, `Tag`, `KnowledgeEntryTag`, `RelatedKnowledgeEntries`, `Flashcard`, `FlashcardEntry`, `ReviewSession`, `ReviewSessionTopic`, `ReviewSessionEntry`, `ReviewInteraction`, `ReviewInteractionEntry`), plus `get_engine`, `get_session_factory`, and `init_db`. Import from `rhizome.db` directly.
+All 13 model classes (`Base`, `Topic`, `KnowledgeEntry`, `Tag`, `KnowledgeEntryTag`, `RelatedKnowledgeEntries`, `Flashcard`, `FlashcardEntry`, `ReviewSession`, `ReviewSessionTopic`, `ReviewSessionEntry`, `ReviewInteraction`, `ReviewInteractionEntry`), plus `EntryType`, `get_engine`, `get_session_factory`, and `init_db`. Import from `rhizome.db` directly.

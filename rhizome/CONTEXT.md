@@ -13,13 +13,12 @@ Typical usage (programmatic):
 
 ```python
 from rhizome.db import init_db, get_session_factory
-from rhizome.db.operations import create_curriculum, create_topic, add_topic_to_curriculum
+from rhizome.db.operations import create_topic, create_entry
 
 engine = await init_db("my.db")
 factory = get_session_factory(engine)
 async with factory() as session:
-    c = await create_curriculum(session, name="vim")
     t = await create_topic(session, name="motions")
-    await add_topic_to_curriculum(session, curriculum_id=c.id, topic_id=t.id, position=0)
+    await create_entry(session, topic_id=t.id, title="Word motion", content="w moves forward one word")
     await session.commit()
 ```

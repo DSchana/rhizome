@@ -47,7 +47,6 @@ deep via parent-child relationships. Fields:
 - description (optional, nullable) — A longer explanation of what the topic covers.
 - parent_id (optional, nullable) — References another topic to form a tree. Root topics have no parent.
 
-Topics can belong to one or more curricula via an ordered membership (with a position field controlling display order).
 Deleting a topic cascades to all its knowledge entries.
 
 """
@@ -185,8 +184,6 @@ The database contains the following tables (names are exact):
 - **tag** — Normalized tags (lowercased)
 - **knowledge_entry_tag** — Junction: entry <-> tag
 - **related_knowledge_entries** — Directed graph edges between entries
-- **curriculum** — Named subject areas
-- **curriculum_topic** — Junction: curriculum <-> topic (ordered by position)
 - **flashcard** — Question/answer cards, optionally linked to a review session
 - **flashcard_entry** — Junction: flashcard <-> knowledge entry
 - **review_session** — Tracked review session metadata and summaries

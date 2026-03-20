@@ -15,7 +15,7 @@ There is no separate ViewModel layer. Screens and Widgets own their state direct
 
 The data and business logic layer:
 
-- **`db/models.py`** — SQLAlchemy ORM models (`Curriculum`, `Topic`, `KnowledgeEntry`, etc.)
+- **`db/models.py`** — SQLAlchemy ORM models (`Topic`, `KnowledgeEntry`, etc.)
 - **`db/engine.py`** — Async engine/session factory
 - **`tools/`** — Pure async functions that accept `AsyncSession` and perform CRUD, search, relation management, etc.
 
@@ -63,11 +63,10 @@ The `App` holds shared infrastructure (`session_factory`, `agent`) and provides 
 class ChatPane(Widget):
     session_mode = reactive(Mode.IDLE.value)
     session_context = reactive("")
-    active_curriculum: Curriculum | None = None
     active_topic: Topic | None = None
 ```
 
-Each `ChatPane` instance is an independent chat session with its own mode, context, curriculum/topic selection, message history, and agent worker. Multiple panes live inside `TabbedContent` tabs in `MainScreen`.
+Each `ChatPane` instance is an independent chat session with its own mode, context, topic selection, message history, and agent worker. Multiple panes live inside `TabbedContent` tabs in `MainScreen`.
 
 ### Widget-level state
 
@@ -142,7 +141,7 @@ For async operations (agent calls, DB queries):
 
 ### Step 0: Setup
 
-`RhizomeApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `MainScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, curriculum/topic).
+`RhizomeApp` holds shared infrastructure (`session_factory`, `agent`). On mount, it pushes `MainScreen`, which contains `TabbedContent` with `ChatPane` instances. Each `ChatPane` holds its own session state (`messages`, mode, context, topic).
 
 ### Step 1: Textual posts `ChatInput.Submitted`
 

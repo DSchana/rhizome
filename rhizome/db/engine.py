@@ -9,7 +9,7 @@ from .models import Base
 _logger = get_logger("db")
 
 
-def get_engine(db_path: str | Path = "curriculum.db") -> AsyncEngine:
+def get_engine(db_path: str | Path = "rhizome.db") -> AsyncEngine:
     """Create an async SQLite engine pointing at *db_path*.
 
     Registers a ``connect`` event listener that enables SQLite foreign key
@@ -90,7 +90,6 @@ def _migrate_review_tables(connection) -> None:
 # Only these tables need to be recreated to add ON DELETE CASCADE/SET NULL.
 _FK_TABLES_ORDERED = [
     "topic",
-    "curriculum_topic",
     "knowledge_entry",
     "knowledge_entry_tag",
     "related_knowledge_entries",
@@ -184,7 +183,7 @@ def _migrate_add_cascades(connection) -> None:
     _logger.info("Cascade migration complete")
 
 
-async def init_db(db_path: str | Path = "curriculum.db") -> AsyncEngine:
+async def init_db(db_path: str | Path = "rhizome.db") -> AsyncEngine:
     """Create all tables and return the engine.
 
     Intended for first-run setup.  Safe to call repeatedly — SQLAlchemy's

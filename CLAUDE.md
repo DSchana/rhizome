@@ -37,9 +37,7 @@ Each directory under `rhizome/` contains a `CONTEXT.md` describing its contents,
 ## Architecture
 
 ### Database Layer (`rhizome/db/`)
-- **models.py** — 8 SQLAlchemy ORM models using modern `Mapped`/`mapped_column` syntax:
-  - `Curriculum` — subject area, linked to topics via `CurriculumTopic` junction (many-to-many with ordering)
-  - `CurriculumTopic` — junction table with `position` for ordered curriculum-topic membership
+- **models.py** — SQLAlchemy ORM models using modern `Mapped`/`mapped_column` syntax:
   - `Topic` — tree structure via adjacency list (`parent_id` self-FK). Entries attach at any depth.
   - `KnowledgeEntry`, `Tag`, `KnowledgeEntryTag` — knowledge units with tagging
   - `RelatedKnowledgeEntries` — directed graph edges between entries (acyclic, enforced via recursive CTE)
@@ -47,7 +45,6 @@ Each directory under `rhizome/` contains a `CONTEXT.md` describing its contents,
 
 ### Database Operations (`rhizome/db/operations/`)
 Pure async functions that accept `AsyncSession` as their first argument. Each module maps to a domain:
-- **curricula.py** — CRUD for Curriculum + curriculum-topic membership (`add_topic_to_curriculum`, `remove_topic_from_curriculum`, `reorder_topic_in_curriculum`, `list_topics_in_curriculum`)
 - **topics.py** — CRUD for Topic tree (`create_topic` with optional `parent_id`, `list_root_topics`, `list_children`, `get_subtree`)
 - **entries.py** — CRUD + `search_entries()` (LIKE-based search on title/content)
 - **tags.py** — Tag CRUD, `tag_entry`/`untag_entry` (idempotent), `get_entries_by_tag`

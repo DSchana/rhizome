@@ -1,16 +1,5 @@
-"""Database operations for the curriculum knowledge base."""
+"""Database operations for the rhizome knowledge base."""
 
-from .curricula import (
-    add_topic_to_curriculum,
-    create_curriculum,
-    delete_curriculum,
-    get_curriculum,
-    list_curricula,
-    list_topics_in_curriculum,
-    remove_topic_from_curriculum,
-    reorder_topic_in_curriculum,
-    update_curriculum,
-)
 from .entries import (
     count_entries,
     create_entry,
@@ -67,16 +56,6 @@ from .topics import (
 )
 
 __all__ = [
-    # curricula
-    "create_curriculum",
-    "get_curriculum",
-    "list_curricula",
-    "update_curriculum",
-    "delete_curriculum",
-    "add_topic_to_curriculum",
-    "remove_topic_from_curriculum",
-    "reorder_topic_in_curriculum",
-    "list_topics_in_curriculum",
     # topics
     "create_topic",
     "get_topic",

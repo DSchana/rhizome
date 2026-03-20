@@ -15,15 +15,11 @@ from rhizome.db.models import EntryType
 from rhizome.db.operations import (
     CycleError,
     add_relation,
-    add_topic_to_curriculum,
-    create_curriculum,
     create_entry,
     create_tag,
     create_topic,
-    delete_curriculum,
     delete_entry,
     delete_topic,
-    get_curriculum,
     get_dependency_chain,
     get_entries_by_tag,
     get_entry,
@@ -31,18 +27,13 @@ from rhizome.db.operations import (
     get_subtree,
     get_topic,
     list_children,
-    list_curricula,
     list_entries,
     list_root_topics,
     list_tags,
-    list_topics_in_curriculum,
     remove_relation,
-    remove_topic_from_curriculum,
-    reorder_topic_in_curriculum,
     search_entries,
     tag_entry,
     untag_entry,
-    update_curriculum,
     update_entry,
     update_topic,
 )
@@ -78,29 +69,6 @@ async def main() -> None:
     DB_PATH.unlink(missing_ok=True)
     engine = await init_db(DB_PATH)
     factory = get_session_factory(engine)
-
-    # ── Curricula ───────────────────────────────────────────────
-    print("\n=== Curricula ===")
-    async with factory() as s:
-        c = await create_curriculum(s, name="vim", description="The Vim editor")
-        check(c.id is not None, "create_curriculum returns id")
-        check(c.name == "vim", "create_curriculum sets name")
-
-        fetched = await get_curriculum(s, c.id)
-        check(fetched is not None and fetched.name == "vim", "get_curriculum")
-
-        check(await get_curriculum(s, 9999) is None, "get_curriculum returns None for missing")
-
-        await create_curriculum(s, name="aws")
-        curricula = await list_curricula(s)
-        check(len(curricula) == 2, f"list_curricula returns 2 (got {len(curricula)})")
-
-        updated = await update_curriculum(s, c.id, name="Vim", description="Vim editor")
-        check(updated.name == "Vim", "update_curriculum changes name")
-        check(updated.description == "Vim editor", "update_curriculum changes description")
-
-        vim_id = c.id
-        await s.commit()
 
     # ── Topics (tree structure) ──────────────────────────────────
     print("\n=== Topics ===")
@@ -145,30 +113,6 @@ async def main() -> None:
 
         await s.commit()
 
-    # ── Curriculum-Topic membership ──────────────────────────────
-    print("\n=== Curriculum-Topic Membership ===")
-    async with factory() as s:
-        ct = await add_topic_to_curriculum(s, curriculum_id=vim_id, topic_id=motions_id, position=0)
-        check(ct.curriculum_id == vim_id, "add_topic_to_curriculum")
-
-        await add_topic_to_curriculum(s, curriculum_id=vim_id, topic_id=operators_id, position=1)
-
-        topics_in = await list_topics_in_curriculum(s, vim_id)
-        check(len(topics_in) == 2, f"list_topics_in_curriculum returns 2 (got {len(topics_in)})")
-        check(topics_in[0].name == "motions", "list_topics_in_curriculum respects position order")
-
-        await reorder_topic_in_curriculum(s, curriculum_id=vim_id, topic_id=operators_id, new_position=-1)
-        reordered = await list_topics_in_curriculum(s, vim_id)
-        check(reordered[0].name == "operators", "reorder_topic_in_curriculum changes order")
-
-        await remove_topic_from_curriculum(s, curriculum_id=vim_id, topic_id=operators_id)
-        after_remove = await list_topics_in_curriculum(s, vim_id)
-        check(len(after_remove) == 1, f"remove_topic_from_curriculum (got {len(after_remove)})")
-
-        # Re-add for later tests
-        await add_topic_to_curriculum(s, curriculum_id=vim_id, topic_id=operators_id, position=1)
-        await s.commit()
-
     # ── Entries ──────────────────────────────────────────────────
     print("\n=== Entries ===")
     async with factory() as s:
@@ -195,9 +139,6 @@ async def main() -> None:
         results = await search_entries(s, "delete", topic_id=operators_id)
         check(len(results) >= 1, f"search_entries scoped to topic (got {len(results)})")
 
-        results = await search_entries(s, "word", curriculum_id=vim_id)
-        check(len(results) >= 1, f"search_entries scoped to curriculum (got {len(results)})")
-
         await s.commit()
 
     # ── Tags ────────────────────────────────────────────────────
@@ -215,9 +156,6 @@ async def main() -> None:
 
         tagged = await get_entries_by_tag(s, "beginner")
         check(len(tagged) == 2, f"get_entries_by_tag('beginner') returns 2 (got {len(tagged)})")
-
-        tagged_scoped = await get_entries_by_tag(s, "beginner", curriculum_id=vim_id)
-        check(len(tagged_scoped) == 2, f"get_entries_by_tag scoped to curriculum (got {len(tagged_scoped)})")
 
         await untag_entry(s, entry_id=e1.id, tag_name="beginner")
         tagged_after = await get_entries_by_tag(s, "beginner")
@@ -281,13 +219,6 @@ async def main() -> None:
         check(await get_topic(s, operators_id) is None, "delete_topic removes topic")
         entries_after = await list_entries(s, operators_id)
         check(len(entries_after) == 0, "delete_topic cascades to entries")
-
-        # Delete curriculum — topics should survive
-        await delete_curriculum(s, vim_id)
-        check(await get_curriculum(s, vim_id) is None, "delete_curriculum removes curriculum")
-
-        # motions topic should still exist (not cascade-deleted)
-        check(await get_topic(s, motions_id) is not None, "delete_curriculum does not delete topics")
 
         await s.commit()
 

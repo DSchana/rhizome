@@ -4,8 +4,8 @@ Usage:
     uv run python examples/seed_sample_db.py
 
 This creates (or recreates) ``explore.db`` in the project root with a handful
-of curricula, topics, knowledge entries, and tags so you have real data to
-poke at with the ``sqlite3`` CLI.
+of topics, knowledge entries, and tags so you have real data to poke at with
+the ``sqlite3`` CLI.
 """
 
 import asyncio
@@ -16,8 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rhizome.db import (
-    Curriculum,
-    CurriculumTopic,
     KnowledgeEntry,
     KnowledgeEntryTag,
     RelatedKnowledgeEntries,
@@ -39,12 +37,6 @@ async def main() -> None:
     factory = get_session_factory(engine)
 
     async with factory() as session:
-        # -- Curricula --
-        vim = Curriculum(name="vim", description="The Vim text editor")
-        aws = Curriculum(name="aws", description="Amazon Web Services")
-        session.add_all([vim, aws])
-        await session.flush()
-
         # -- Topics (depth 1: roots) --
         motions = Topic(name="motions", description="Moving the cursor around")
         operators = Topic(name="operators", description="Actions that operate on text")
@@ -73,14 +65,6 @@ async def main() -> None:
         policy_structure = Topic(parent_id=iam_policies.id, name="policy structure", description="Effect, Action, Resource")
         policy_conditions = Topic(parent_id=iam_policies.id, name="conditions", description="Condition keys and operators")
         session.add_all([w_motion, b_motion, e_motion, f_search, slash_search, policy_structure, policy_conditions])
-        await session.flush()
-
-        # -- Link root topics to curricula --
-        session.add_all([
-            CurriculumTopic(curriculum_id=vim.id, topic_id=motions.id, position=0),
-            CurriculumTopic(curriculum_id=vim.id, topic_id=operators.id, position=1),
-            CurriculumTopic(curriculum_id=aws.id, topic_id=iam.id, position=0),
-        ])
         await session.flush()
 
         # -- Knowledge entries --

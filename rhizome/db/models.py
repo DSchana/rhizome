@@ -31,44 +31,6 @@ class Base(DeclarativeBase):
     pass
 
 
-class Curriculum(Base):
-    __tablename__ = "curriculum"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    curriculum_topics: Mapped[list["CurriculumTopic"]] = relationship(
-        cascade="all, delete-orphan"
-    )
-
-    def __repr__(self) -> str:
-        return f"<Curriculum id={self.id} name={self.name!r}>"
-
-
-class CurriculumTopic(Base):
-    __tablename__ = "curriculum_topic"
-    __table_args__ = (UniqueConstraint("curriculum_id", "topic_id"),)
-
-    curriculum_id: Mapped[int] = mapped_column(
-        ForeignKey("curriculum.id", ondelete="CASCADE"), primary_key=True
-    )
-    topic_id: Mapped[int] = mapped_column(
-        ForeignKey("topic.id", ondelete="CASCADE"), primary_key=True
-    )
-    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-
-    def __repr__(self) -> str:
-        return (
-            f"<CurriculumTopic curriculum={self.curriculum_id} "
-            f"topic={self.topic_id} pos={self.position}>"
-        )
-
-
 class Topic(Base):
     __tablename__ = "topic"
     __table_args__ = (UniqueConstraint("parent_id", "name"),)

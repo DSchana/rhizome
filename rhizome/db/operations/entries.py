@@ -3,7 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rhizome.db import CurriculumTopic, KnowledgeEntry, Topic
+from rhizome.db import KnowledgeEntry
 from rhizome.db.models import EntryType
 from rhizome.logs import get_logger
 
@@ -119,11 +119,10 @@ async def search_entries(
     query: str,
     *,
     topic_id: int | None = None,
-    curriculum_id: int | None = None,
 ) -> list[KnowledgeEntry]:
     """Search entries by LIKE on title + content.
 
-    Optionally scope to a specific topic or curriculum.
+    Optionally scope to a specific topic.
     """
     pattern = f"%{query}%"
     stmt = select(KnowledgeEntry).where(
@@ -131,13 +130,6 @@ async def search_entries(
     )
     if topic_id is not None:
         stmt = stmt.where(KnowledgeEntry.topic_id == topic_id)
-    if curriculum_id is not None:
-        stmt = (
-            stmt
-            .join(Topic, KnowledgeEntry.topic_id == Topic.id)
-            .join(CurriculumTopic, Topic.id == CurriculumTopic.topic_id)
-            .where(CurriculumTopic.curriculum_id == curriculum_id)
-        )
     result = await session.execute(stmt)
     entries = list(result.scalars().all())
     _logger.debug("Search: query=%r, results=%d", query, len(entries))

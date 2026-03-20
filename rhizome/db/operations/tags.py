@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from rhizome.db import CurriculumTopic, KnowledgeEntry, KnowledgeEntryTag, Tag, Topic
+from rhizome.db import KnowledgeEntry, KnowledgeEntryTag, Tag
 from rhizome.logs import get_logger
 
 _logger = get_logger("tools.tags")
@@ -80,10 +80,8 @@ async def untag_entry(
 async def get_entries_by_tag(
     session: AsyncSession,
     tag_name: str,
-    *,
-    curriculum_id: int | None = None,
 ) -> list[KnowledgeEntry]:
-    """Return all entries with a given tag. Optionally scoped to a curriculum."""
+    """Return all entries with a given tag."""
     tag_name = tag_name.lower()
 
     stmt = (
@@ -92,12 +90,5 @@ async def get_entries_by_tag(
         .join(Tag, KnowledgeEntryTag.tag_id == Tag.id)
         .where(Tag.name == tag_name)
     )
-    if curriculum_id is not None:
-        stmt = (
-            stmt
-            .join(Topic, KnowledgeEntry.topic_id == Topic.id)
-            .join(CurriculumTopic, Topic.id == CurriculumTopic.topic_id)
-            .where(CurriculumTopic.curriculum_id == curriculum_id)
-        )
     result = await session.execute(stmt)
     return list(result.scalars().all())

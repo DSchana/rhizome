@@ -25,7 +25,7 @@ _VERBOSITY_COLORS: dict[str, str] = {
 
 
 class StatusBar(Static):
-    """Displays the current mode and active curriculum/topic context."""
+    """Displays the current mode and active topic context."""
 
     mode: reactive[str] = reactive("idle")
     topic_path: reactive[list[str]] = reactive(list)

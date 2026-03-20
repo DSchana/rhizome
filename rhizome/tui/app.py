@@ -20,7 +20,7 @@ from rhizome.tui.widgets import ChatPane
 
 
 class RhizomeApp(App):
-    """Curriculum-app TUI — a chat-based interface for learning and review."""
+    """Rhizome TUI — a chat-based interface for learning and review."""
 
     TITLE = "rhizome"
 

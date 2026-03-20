@@ -54,7 +54,7 @@ Or for box-drawn tables (nicer but wider):
 **See the structure of a single table:**
 
 ```
-.schema curriculum
+.schema topic
 ```
 
 **See every table's structure at once:**
@@ -68,7 +68,7 @@ Or for box-drawn tables (nicer but wider):
 **Everything in a table:**
 
 ```sql
-SELECT * FROM curriculum;
+SELECT * FROM topic;
 ```
 
 **Specific columns:**
@@ -85,13 +85,12 @@ SELECT title, entry_type FROM knowledge_entry WHERE entry_type = 'definition';
 
 ## JOINs — connecting tables
 
-**Entries with their topic and curriculum:**
+**Entries with their topic:**
 
 ```sql
-SELECT c.name AS curriculum, t.name AS topic, ke.title, ke.entry_type
+SELECT t.name AS topic, ke.title, ke.entry_type
 FROM knowledge_entry ke
-JOIN topic t ON ke.topic_id = t.id
-JOIN curriculum c ON t.curriculum_id = c.id;
+JOIN topic t ON ke.topic_id = t.id;
 ```
 
 **Which tags are on which entries:**
