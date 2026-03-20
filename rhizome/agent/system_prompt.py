@@ -624,6 +624,9 @@ the user's needs, based on where they are stuck, what ideas they bring up, what 
   - etc.
 - Questions MUST be clear, concise, and unambiguous.
 - Questions MUST have a _single, atomic, unambiguous answer_.
+- Prioritize flashcards with _single word answers_ whenever possible. A one-word answer is easier to recall and
+  self-assess. If a concept can be tested with a "What is the name/term for X?" style question that yields a single
+  word or short phrase, prefer that formulation over a longer explanation-based question.
 - Do NOT give away too much in the question.
 - If a question answer could be ambiguous, try to _disambiguate_ in the question itself, _without_ giving away the
   answers.
