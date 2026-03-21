@@ -12,7 +12,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import Static, TextArea
 
 from .navigable import NavigableWidgetMixin
 
@@ -24,6 +24,7 @@ _HINT = "rgb(80,80,80)"
 _RATING_DIM = "rgb(100,100,100)"
 _RATING_HIGHLIGHT = "rgb(255,220,80)"
 _SCORED_DIM = "rgb(60,60,60)"
+_USER_ANSWER = "rgb(180,180,220)"
 
 
 # ---------------------------------------------------------------------------
@@ -54,11 +55,41 @@ _RATINGS: list[tuple[int, str]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Answer input
+# ---------------------------------------------------------------------------
+class _AnswerInput(TextArea):
+    """Single-line text area for typing a flashcard answer.
+
+    Enter submits (reveals the answer); the text is preserved for display.
+    """
+
+    class Submitted(Message):
+        def __init__(self, value: str) -> None:
+            super().__init__()
+            self.value = value
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(show_line_numbers=False, **kwargs)
+
+    def _on_key(self, event) -> None:
+        if event.key == "enter":
+            self.post_message(self.Submitted(value=self.text.strip()))
+            event.stop()
+            event.prevent_default()
+        elif event.key == "ctrl+j":
+            # Ignore ctrl+enter — keep it single-line
+            event.stop()
+            event.prevent_default()
+        else:
+            super()._on_key(event)
+
+
 class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
     """Interactive flashcard study widget with reveal and self-rating."""
 
     BINDINGS = [
-        Binding("space", "reveal_or_rate", "Reveal / Rate good", show=False),
+        Binding("enter", "reveal_or_rate", "Reveal / Rate good", show=False),
         Binding("0", "rate_0", show=False),
         Binding("1", "rate_1", show=False),
         Binding("2", "rate_2", show=False),
@@ -92,6 +123,32 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
     FlashcardViewer #fs-question {
         margin: 0 0 1 0;
         color: rgb(200,200,220);
+    }
+    FlashcardViewer #fs-answer-input-label {
+        text-style: bold;
+        color: rgb(100,100,100);
+        margin: 0 0 0 0;
+    }
+    FlashcardViewer #fs-answer-input {
+        height: 3;
+        margin: 0 0 0 0;
+        border: solid rgb(20,20,30);
+        background: transparent;
+        & .text-area--cursor-line {
+            background: transparent;
+        }
+    }
+    FlashcardViewer #fs-answer-input:focus {
+        border: solid rgb(50,50,60);
+    }
+    FlashcardViewer #fs-user-answer-label {
+        text-style: bold;
+        color: rgb(100,100,100);
+        margin: 0 0 0 0;
+    }
+    FlashcardViewer #fs-user-answer {
+        margin: 0 0 1 0;
+        color: rgb(180,180,220);
     }
     FlashcardViewer #fs-separator {
         height: 1;
@@ -145,6 +202,8 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
     class CardRated(Message):
         """Posted when the user rates a card."""
         question: str
+        answer: str
+        user_answer: str
         rating: int
         rating_label: str
 
@@ -160,6 +219,7 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         self._cards: list[FlashcardItem] = []
         self._states: list[CardState] = []
         self._scores: list[int | None] = []  # rating per card, None if unscored
+        self._user_answers: list[str] = []    # user's typed answer per card
         self._index: int = 0
         self._total_original: int = 0
 
@@ -169,6 +229,10 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         with Vertical(id="fs-card"):
             yield Static("Question", id="fs-question-label")
             yield Static("", id="fs-question")
+            yield Static("Your answer", id="fs-answer-input-label")
+            yield _AnswerInput(id="fs-answer-input")
+            yield Static("Your answer", id="fs-user-answer-label")
+            yield Static("", id="fs-user-answer")
             yield Static("", id="fs-separator")
             yield Static("Answer", id="fs-answer-label")
             yield Static("", id="fs-answer")
@@ -181,6 +245,11 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         self._setup_navigable()
         self._refresh_view()
 
+    def on_focus(self) -> None:
+        super().on_focus()
+        if self._cards and self._states[self._index] == CardState.HIDDEN:
+            self.query_one("#fs-answer-input", _AnswerInput).focus()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -190,6 +259,7 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         self._cards = list(flashcards)
         self._states = [CardState.HIDDEN] * len(flashcards)
         self._scores = [None] * len(flashcards)
+        self._user_answers = [""] * len(flashcards)
         self._index = 0
         self._total_original = len(flashcards)
         self._refresh_view()
@@ -256,7 +326,26 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
 
         self.query_one("#fs-question", Static).update(card["question"])
 
-        # Separator
+        # Answer input — visible only when hidden (not yet revealed)
+        answer_input = self.query_one("#fs-answer-input", _AnswerInput)
+        input_label = self.query_one("#fs-answer-input-label", Static)
+        input_label.display = state == CardState.HIDDEN
+        answer_input.display = state == CardState.HIDDEN
+
+        if state == CardState.HIDDEN:
+            answer_input.clear()
+            answer_input.focus()
+
+        # User's submitted answer — visible after reveal
+        user_answer_label = self.query_one("#fs-user-answer-label", Static)
+        user_answer_display = self.query_one("#fs-user-answer", Static)
+        show_user_answer = state in (CardState.REVEALED, CardState.SCORED) and bool(self._user_answers[self._index])
+        user_answer_label.display = show_user_answer
+        user_answer_display.display = show_user_answer
+        if show_user_answer:
+            user_answer_display.update(self._user_answers[self._index])
+
+        # Separator and correct answer
         card_width = self.query_one("#fs-card", Vertical).size.width
         sep_width = max(card_width - 6, 20)
         self.query_one("#fs-separator", Static).update("─" * sep_width)
@@ -274,7 +363,8 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
 
         if state == CardState.HIDDEN:
             self.query_one("#fs-reveal-hint", Static).update(
-                "Press [bold]space[/bold] to reveal answer"
+                "Type your answer and press [bold]enter[/bold] to reveal, "
+                "or press [bold]enter[/bold] to reveal directly"
             )
 
         elif state == CardState.REVEALED:
@@ -285,7 +375,7 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
                 text.append(f"{num}", style=f"bold {_RATING_HIGHLIGHT}")
                 text.append(f" - {label}", style=_RATING_DIM)
             text.append("    ")
-            text.append("[space = good]", style=_HINT)
+            text.append("[enter = good]", style=_HINT)
             self.query_one("#fs-ratings", Static).update(text)
 
         elif state == CardState.SCORED:
@@ -307,11 +397,18 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
 
         state = self._states[self._index]
         if state == CardState.HIDDEN:
-            self._states[self._index] = CardState.REVEALED
-            self._refresh_view()
+            self._reveal_current()
         elif state == CardState.REVEALED:
             self._rate(2)  # "good"
-        # SCORED: space does nothing
+        # SCORED: enter does nothing
+
+    def _reveal_current(self) -> None:
+        """Capture the user's typed answer and reveal the correct one."""
+        answer_input = self.query_one("#fs-answer-input", _AnswerInput)
+        self._user_answers[self._index] = answer_input.text.strip()
+        self._states[self._index] = CardState.REVEALED
+        self.focus()
+        self._refresh_view()
 
     def action_rate_0(self) -> None:
         if self._cards and self._states[self._index] == CardState.REVEALED:
@@ -344,6 +441,15 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------
+    # Child events
+    # ------------------------------------------------------------------
+
+    def on__answer_input_submitted(self, event: _AnswerInput.Submitted) -> None:
+        """Handle enter from the answer input — reveal the card."""
+        if self._cards and self._states[self._index] == CardState.HIDDEN:
+            self._reveal_current()
+
+    # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
@@ -352,7 +458,11 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         card = self._cards[self._index]
         label = dict(_RATINGS).get(rating, "?")
         self.post_message(self.CardRated(
-            question=card["question"], rating=rating, rating_label=label,
+            question=card["question"],
+            answer=card["answer"],
+            user_answer=self._user_answers[self._index],
+            rating=rating,
+            rating_label=label,
         ))
 
         if rating == 0:
@@ -362,6 +472,8 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
             self._states.pop(self._index)
             self._scores.append(None)
             self._scores.pop(self._index)
+            self._user_answers.append("")
+            self._user_answers.pop(self._index)
             # Index now points to the next card (which slid into this position)
             if self._index >= len(self._cards):
                 self._index = 0
