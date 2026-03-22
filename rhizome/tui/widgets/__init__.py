@@ -8,7 +8,7 @@ from .entry_list import EntryList
 from .explorer_viewer import ExplorerViewer
 from .flashcard_list import FlashcardList
 from .flashcard_viewer import FlashcardViewer
-from .interrupt import InterruptWidget, InterruptWidgetBase
+from .interrupt import InterruptWidgetBase
 from .navigable import NavigableWidgetMixin, WidgetDeactivated
 from .choices import Choices
 from .multiple_choices import MultipleChoices
@@ -37,7 +37,6 @@ __all__ = [
     "FlashcardList",
     "FlashcardViewer",
     "HintHigherVerbosity",
-    "InterruptWidget",
     "InterruptWidgetBase",
     "LoggingPane",
     "MarkdownChatMessage",

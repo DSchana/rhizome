@@ -16,7 +16,7 @@ from rhizome.tui.types import Mode, Role
 
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
-from .interrupt import InterruptWidget
+from .interrupt import InterruptWidgetBase
 from .choices import Choices
 from .multiple_choices import MultipleChoices
 from .sql_confirmation import SqlConfirmation
@@ -52,7 +52,7 @@ class AgentMessageHarness(Widget):
         self._thinking: ThinkingIndicator | None = None
         self._segments: list[ChatMessage | ToolCallList | Widget] = []
         self._active_stream: MarkdownStream | None = None
-        self._interrupt_widget: InterruptWidget | None = None
+        self._interrupt_widget: InterruptWidgetBase | None = None
         self._finalized: bool = False
 
     @property
