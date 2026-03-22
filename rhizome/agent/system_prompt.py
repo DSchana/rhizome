@@ -575,18 +575,21 @@ Goal: prepare the question sequence before starting the review.
 2. If flashcard style: use `list_flashcards` to check for existing flashcards. Use `get_flashcards` to inspect their
    content. Use `add_flashcards_to_review` to queue existing flashcard IDs. For entries that need new flashcards,
    follow the proposal workflow:
-   a. `create_flashcard_proposal` — stage the flashcards for user review.
-   b. `validate_flashcard_proposal` — test each flashcard for clarity by having an independent agent answer the
-      questions without context. If any cards fail validation, revise and re-stage with `create_flashcard_proposal`,
-      then validate again. Only proceed once all cards pass. IMPORTANT: Run the entire create → validate → revise
-      loop SILENTLY. Do NOT narrate validation results, failures, or revision steps to the user. Just keep
-      iterating until all cards pass (or the attempt limit is reached), then move on.
-   c. `present_flashcard_proposal` — show the proposal to the user for review. They can approve, request edits, or
-      cancel. If they request edits, re-stage with `create_flashcard_proposal` and present again. Do NOT
-      re-validate after user-requested edits unless the user explicitly asks for validation or you are adding
-      new flashcards that were not in the original proposal.
-   d. `accept_flashcard_proposal` — write the approved flashcards to the database.
-   e. `add_flashcards_to_review` — add the created flashcard IDs to the review queue.
+   a. `create_flashcard_proposal(flashcards, validate=True)` — stage the flashcards and run an automated clarity
+      check by having an independent agent answer each question without context. If any cards fail validation,
+      revise the failed cards and re-stage with `create_flashcard_proposal(validate=True)`. You have a maximum of
+      2 validation attempts — if cards still fail after 2 attempts, drop the failing cards and re-stage with
+      `create_flashcard_proposal(validate=False)` containing only the passing cards. IMPORTANT: Run the entire
+      create → revise loop SILENTLY. Do NOT narrate validation results, failures, or revision steps to the user.
+      Just keep iterating until all cards pass (or the attempt limit is reached), then move on to
+      `present_flashcard_proposal`. Do NOT narrate validation success either (e.g. "all cards passed") —
+      just silently proceed to presenting.
+   b. `present_flashcard_proposal` — show the proposal to the user for review. They can approve, request edits, or
+      cancel. If they request edits, re-stage and present again. Use your discretion on whether to re-validate
+      (`validate=True` vs `validate=False`): if the edits are minor wording tweaks to existing cards, skip
+      validation; if the user is requesting new cards or substantially different concepts, re-validate.
+   c. `accept_flashcard_proposal` — write the approved flashcards to the database.
+   d. `add_flashcards_to_review` — add the created flashcard IDs to the review queue.
 3. If conversational: mentally organize entries into a concept map / discussion flow.
 4. Call `start_review` (with an optional plan string) to advance to REVIEWING.
 
@@ -676,7 +679,7 @@ This is the core review loop where we test the user's knowledge on their chosen 
 6. When done, call `complete_review_session` to compute stats and move to SUMMARIZING.
 
 You can also create new flashcards on-the-fly during the REVIEWING phase using the proposal flow
-(`create_flashcard_proposal` -> `validate_flashcard_proposal` -> `present_flashcard_proposal` ->
+(`create_flashcard_proposal(validate=True)` -> `present_flashcard_proposal` ->
 `accept_flashcard_proposal` -> `add_flashcards_to_review`).
 
 Record your critiques as ReviewInteractions using the `record_review_interaction` tool. You should always judge the

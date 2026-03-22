@@ -9,7 +9,7 @@ stored in ``RhizomeAgentState.flashcard_proposal_state``, separate from
 
 from __future__ import annotations
 
-import uuid
+import json
 from typing import Any, TypedDict
 
 from langchain.tools import tool
@@ -45,14 +45,10 @@ class FlashcardProposalState(TypedDict):
     items: list[FlashcardProposalItem]
     """The staged flashcard items."""
 
-    validation_id: str
-    """Opaque ID for the current validation cycle.  Generated fresh by
-    ``create_flashcard_proposal``; must be passed back to
-    ``validate_flashcard_proposal``."""
-
     validation_attempts: int
-    """Number of validation attempts consumed.  Reset to 0 when a new
-    proposal is staged."""
+    """Number of validation attempts consumed.  Persists across re-stages
+    so that the attempt budget is enforced across the full proposal
+    lifecycle."""
 
 
 class FlashcardInput(BaseModel):
@@ -69,19 +65,39 @@ class FlashcardInput(BaseModel):
 # Tool builder
 # ---------------------------------------------------------------------------
 
-def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
-    """Build flashcard proposal tools with session_factory closed over."""
+def build_flashcard_proposal_tools(
+    session_factory,
+    answerer=None,
+    comparator=None,
+    *,
+    max_validation_attempts: int = 2,
+) -> dict[str, Any]:
+    """Build flashcard proposal tools with session_factory closed over.
+
+    Parameters
+    ----------
+    answerer, comparator:
+        Optional ``StructuredSubagent`` instances for flashcard validation.
+        Required if the ``validate`` flag on ``create_flashcard_proposal``
+        is to be used.
+    max_validation_attempts:
+        Maximum number of validation attempts per proposal before failing
+        cards are dropped.
+    """
 
     @tool("create_flashcard_proposal", description=(
         "Stage flashcards for user review without writing to the database. "
         "Stores the proposal in agent state. Call present_flashcard_proposal "
         "next to show it to the user. Each flashcard needs: topic_id, "
-        "question_text, answer_text, entry_ids, and optionally testing_notes."
+        "question_text, answer_text, entry_ids, and optionally testing_notes. "
+        "Set validate=True to run an automated clarity check before presenting "
+        "to the user (required on first call; optional on subsequent re-stages)."
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def create_flashcard_proposal_tool(
         flashcards: list[FlashcardInput],
         runtime: ToolRuntime,
+        validate: bool = False,
     ) -> Command:
         items: list[FlashcardProposalItem] = [
             FlashcardProposalItem(
@@ -94,20 +110,177 @@ def build_flashcard_proposal_tools(session_factory) -> dict[str, Any]:
             for fc in flashcards
         ]
 
-        validation_id = str(uuid.uuid4())
+        # Read prior attempt count from existing state (persists across re-stages).
+        fp_state: FlashcardProposalState | None = runtime.state.get("flashcard_proposal_state")
+        prior_attempts = (fp_state.get("validation_attempts") or 0) if fp_state else 0
+
         proposal_state = FlashcardProposalState(
             items=items,
-            validation_id=validation_id,
-            validation_attempts=0,
+            validation_attempts=prior_attempts,
         )
-        msg = (
-            f"Flashcard proposal staged: {len(items)} card(s). "
-            f"validation_id={validation_id}. "
-            f"Call validate_flashcard_proposal with this validation_id before presenting to the user."
+
+        if not validate:
+            msg = (
+                f"Flashcard proposal staged: {len(items)} card(s). "
+                f"Call present_flashcard_proposal to show it to the user."
+            )
+            return Command(update={
+                "flashcard_proposal_state": proposal_state,
+                "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+            })
+
+        # --- Inline validation ---
+        if answerer is None or comparator is None:
+            return Command(update={
+                "flashcard_proposal_state": proposal_state,
+                "messages": [ToolMessage(
+                    content="Error: validation subagents not configured. Stage without validate=True.",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        attempts = prior_attempts + 1
+        is_final_attempt = attempts >= max_validation_attempts
+
+        # Step 1: Build question list for the answerer
+        questions_payload = [
+            {"index": i, "question": fc["question_text"]}
+            for i, fc in enumerate(items)
+        ]
+
+        answerer_input = (
+            "Answer each of the following flashcard questions:\n\n"
+            + "\n".join(f"{q['index']}. {q['question']}" for q in questions_payload)
         )
+
+        _logger.debug("Invoking answerer subagent with %d question(s)", len(questions_payload))
+        _, answerer_response = await answerer.ainvoke(answerer_input)
+
+        if answerer.structured_response is None:
+            return Command(update={
+                "flashcard_proposal_state": {**proposal_state, "validation_attempts": attempts},
+                "messages": [ToolMessage(
+                    content=json.dumps({
+                        "error": "Answerer subagent failed to produce structured output.",
+                        "raw_response": answerer_response.content,
+                    }, indent=2, default=str),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        answerer_answers: dict[int, str] = {
+            a.question_index: a.answer
+            for a in answerer.structured_response.answers
+        }
+
+        # Step 2: Build comparison payload
+        comparison_items = [
+            {
+                "index": i,
+                "question": fc["question_text"],
+                "expected_answer": fc["answer_text"],
+                "test_taker_answer": answerer_answers.get(i, "(no answer provided)"),
+                "testing_notes": fc.get("testing_notes"),
+            }
+            for i, fc in enumerate(items)
+        ]
+
+        comparator_input = (
+            "Evaluate the following flashcards for clarity and unambiguity:\n\n"
+            + "\n---\n".join(
+                f"Card {item['index']}:\n"
+                f"  Question: {item['question']}\n"
+                f"  Expected answer: {item['expected_answer']}\n"
+                f"  Test-taker answer: {item['test_taker_answer']}\n"
+                + (f"  Testing notes: {item['testing_notes']}\n" if item["testing_notes"] else "")
+                for item in comparison_items
+            )
+        )
+
+        _logger.debug("Invoking comparator subagent with %d card(s)", len(comparison_items))
+        _, comparator_response = await comparator.ainvoke(comparator_input)
+
+        if comparator.structured_response is None:
+            return Command(update={
+                "flashcard_proposal_state": {**proposal_state, "validation_attempts": attempts},
+                "messages": [ToolMessage(
+                    content=json.dumps({
+                        "error": "Comparator subagent failed to produce structured output.",
+                        "raw_response": comparator_response.content,
+                    }, indent=2, default=str),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        # Step 3: Build result summary
+        results = []
+        all_passed = True
+        for card_result in comparator.structured_response.results:
+            idx = card_result.question_index
+            fc = items[idx] if idx < len(items) else None
+            result_entry: dict[str, Any] = {
+                "question_index": idx,
+                "question": fc["question_text"] if fc else "(unknown)",
+                "expected_answer": fc["answer_text"] if fc else "(unknown)",
+                "test_taker_answer": answerer_answers.get(idx, "(no answer)"),
+                "passed": card_result.passed,
+                "feedback": card_result.feedback,
+            }
+            results.append(result_entry)
+            if not card_result.passed:
+                all_passed = False
+
+        passed_count = sum(1 for r in results if r["passed"])
+        failed_count = len(results) - passed_count
+        remaining_attempts = max_validation_attempts - attempts
+
+        summary: dict[str, Any] = {
+            "all_passed": all_passed,
+            "passed": passed_count,
+            "failed": failed_count,
+            "total": len(results),
+            "attempt": attempts,
+            "max_attempts": max_validation_attempts,
+            "remaining_attempts": remaining_attempts,
+            "results": results,
+        }
+
+        if all_passed:
+            msg = (
+                f"Flashcard proposal staged and validated (attempt {attempts}/{max_validation_attempts}): "
+                f"all {len(results)} card(s) are clear and unambiguous. "
+                f"Proceed with present_flashcard_proposal."
+            )
+        elif is_final_attempt:
+            failed_indices = [r["question_index"] for r in results if not r["passed"]]
+            msg = (
+                f"Flashcard proposal staged. Final validation attempt ({attempts}/{max_validation_attempts}): "
+                f"{passed_count}/{len(results)} passed, {failed_count} still failing. "
+                f"Maximum revision attempts exhausted. Drop the failing card(s) "
+                f"(indices: {failed_indices}) from the proposal by re-staging with "
+                f"create_flashcard_proposal (validate=False) containing only the passing cards, "
+                f"then proceed directly to present_flashcard_proposal."
+            )
+        else:
+            msg = (
+                f"Flashcard proposal staged. Validation attempt {attempts}/{max_validation_attempts}: "
+                f"{passed_count}/{len(results)} passed, {failed_count} failed. "
+                f"{remaining_attempts} attempt(s) remaining. "
+                f"Review the feedback, revise failed cards, and re-stage with "
+                f"create_flashcard_proposal(validate=True)."
+            )
+
+        _logger.info(
+            "Flashcard validation attempt %d/%d: %d/%d passed",
+            attempts, max_validation_attempts, passed_count, len(results),
+        )
+
         return Command(update={
-            "flashcard_proposal_state": proposal_state,
-            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+            "flashcard_proposal_state": {**proposal_state, "validation_attempts": attempts},
+            "messages": [ToolMessage(
+                content=json.dumps({"summary": msg, **summary}, indent=2),
+                tool_call_id=runtime.tool_call_id,
+            )],
         })
 
     @tool("present_flashcard_proposal", description=(

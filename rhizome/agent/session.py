@@ -28,7 +28,6 @@ from rhizome.agent.subagents.commit import COMMIT, build_commit_subagent, build_
 from rhizome.agent.subagents.flashcard_validator import (
     build_answerer_subagent,
     build_comparator_subagent,
-    build_flashcard_validator_tools,
 )
 
 from rhizome.logs import get_logger
@@ -105,11 +104,16 @@ class AgentSession:
         from rhizome.agent.tools.flashcard import build_flashcard_proposal_tools
         from rhizome.agent.tools.sql import build_sql_tools
 
+        # Build the flashcard validation subagents so create_flashcard_proposal
+        # can run inline validation when validate=True.
+        answerer = build_answerer_subagent(**dict(self._agent_kwargs))
+        comparator = build_comparator_subagent(**dict(self._agent_kwargs))
+
         self._tools: list = [
             *build_database_tools(session_factory).values(),
             *build_app_tools(session_factory, chat_pane).values(),
             *build_review_tools(session_factory).values(),
-            *build_flashcard_proposal_tools(session_factory).values(),
+            *build_flashcard_proposal_tools(session_factory, answerer, comparator).values(),
             *build_sql_tools(session_factory).values(),
         ]
 
@@ -119,13 +123,6 @@ class AgentSession:
         )
         self._tools.extend(
             build_commit_subagent_tools(session_factory, chat_pane, commit_subagent)
-        )
-
-        # Build the flashcard validation subagents and add tools.
-        answerer = build_answerer_subagent(**dict(self._agent_kwargs))
-        comparator = build_comparator_subagent(**dict(self._agent_kwargs))
-        self._tools.extend(
-            build_flashcard_validator_tools(answerer, comparator)
         )
 
         self._model, self._agent, middleware = build_root_agent(
