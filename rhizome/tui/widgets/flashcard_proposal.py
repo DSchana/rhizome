@@ -33,6 +33,7 @@ _RED = ENTRY_ACCENT
 _DIM = ENTRY_DIM
 _EXCLUDED_DIM = "rgb(60,60,60)"
 _HINT = ENTRY_HINT
+_FOCUS_GREEN = "rgb(100,200,100)"
 
 
 class _State(Enum):
@@ -49,7 +50,25 @@ class _EditInstructions(TextArea):
             super().__init__()
             self.value = value
 
+    class NavigatedUp(Message):
+        """Posted when the user presses up at the very start of the text area."""
+
+    class FocusToggled(Message):
+        """Posted when ctrl+e is pressed to toggle focus back to the list."""
+
     def _on_key(self, event) -> None:
+        if event.key == "ctrl+e":
+            self.post_message(self.FocusToggled())
+            event.stop()
+            event.prevent_default()
+            return
+        if event.key == "up":
+            row, col = self.cursor_location
+            if row == 0 and col == 0:
+                self.post_message(self.NavigatedUp())
+                event.stop()
+                event.prevent_default()
+                return
         if event.key == "enter":
             text = self.text.strip()
             if text:
@@ -195,6 +214,11 @@ class FlashcardProposal(InterruptWidgetBase):
         min-height: 3;
         max-height: 8;
         padding: 0 1;
+        border-title-align: right;
+        border-title-color: rgb(80,80,80);
+    }
+    FlashcardProposal #fp-edit-instructions:focus {
+        border: solid rgb(120,120,140);
     }
     """
 
@@ -269,6 +293,7 @@ class FlashcardProposal(InterruptWidgetBase):
         edit_inst = self.query_one("#fp-edit-instructions", _EditInstructions)
         edit_inst.display = False
         edit_inst.placeholder = "Describe what changes you'd like..."
+        edit_inst.border_title = "ctrl+e to toggle focus"
         self.query_one("#fp-question", TextArea).cursor_blink = False
         self.query_one("#fp-answer", TextArea).cursor_blink = False
         self.query_one("#fp-testing-notes", TextArea).cursor_blink = False
@@ -297,22 +322,28 @@ class FlashcardProposal(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def watch_cursor(self) -> None:
-        if self._state == _State.BROWSE:
+        if self._state in (_State.BROWSE, _State.EDIT_INSTRUCTIONS):
             self._render_list()
             self._render_detail()
             self._render_choices()
             self.call_after_refresh(self._scroll_choices_visible)
+
+    def on_focus(self) -> None:
+        self.call_after_refresh(self._render_list)
+
+    def on_blur(self) -> None:
+        self.call_after_refresh(self._render_list)
 
     # ------------------------------------------------------------------
     # Action gating
     # ------------------------------------------------------------------
 
     def check_action(self, action: str, parameters: tuple) -> bool:
-        browse_only = {
-            "cursor_up", "cursor_down", "select", "toggle_exclude",
-        }
+        browse_only = {"select", "toggle_exclude"}
         if action in browse_only:
             return self._state == _State.BROWSE
+        if action in ("cursor_up", "cursor_down"):
+            return self._state in (_State.BROWSE, _State.EDIT_INSTRUCTIONS)
         return True
 
     # ------------------------------------------------------------------
@@ -365,6 +396,9 @@ class FlashcardProposal(InterruptWidgetBase):
 
         num_width = len(str(self._card_count)) + 2
 
+        focused = self.has_focus
+        selected_style = f"bold {_FOCUS_GREEN}" if focused else "bold"
+
         text = Text()
         for i, fc in enumerate(self._flashcards):
             if i > 0:
@@ -380,11 +414,11 @@ class FlashcardProposal(InterruptWidgetBase):
             if is_excluded:
                 style = f"{_EXCLUDED_DIM} strike"
             elif is_selected:
-                style = "bold"
+                style = selected_style
             else:
                 style = ""
 
-            text.append(marker, style="bold" if is_selected else "")
+            text.append(marker, style=selected_style if is_selected else "")
             text.append(num, style=style)
             text.append(title, style=style)
 
@@ -401,7 +435,7 @@ class FlashcardProposal(InterruptWidgetBase):
         else:
             panel.border_subtitle = None
 
-        if self._state == _State.BROWSE:
+        if self._state != _State.EDIT_DETAIL:
             q_area = self.query_one("#fp-question", TextArea)
             q_area.clear()
             q_area.insert(fc["question"])
@@ -426,6 +460,10 @@ class FlashcardProposal(InterruptWidgetBase):
                 self.query_one("#fp-entry-ids", Static).update("")
 
     def _render_choices(self) -> None:
+        if self._state == _State.EDIT_INSTRUCTIONS:
+            self._render_choices_edit_mode()
+            return
+
         prefix_lengths = [
             2 + len(c) + 1 + len(f"({h})")
             for c, h in zip(_CHOICES, _CHOICE_HINTS)
@@ -450,6 +488,16 @@ class FlashcardProposal(InterruptWidgetBase):
             text.append(" " * padding + desc, style=_HINT)
         self.query_one("#fp-choices", Static).update(text)
 
+    def _render_choices_edit_mode(self) -> None:
+        """Render the reduced choice set shown during EDIT_INSTRUCTIONS."""
+        edit_choices = [("Reset", "ctrl+r"), ("Cancel", "ctrl+c")]
+        text = Text()
+        text.append("  enter to submit edit instructions\n", style=_HINT)
+        for choice, hint in edit_choices:
+            text.append(f"\n  {choice}", style=_DIM)
+            text.append(f" ({hint})", style=_HINT)
+        self.query_one("#fp-choices", Static).update(text)
+
     # ------------------------------------------------------------------
     # Browse actions
     # ------------------------------------------------------------------
@@ -459,7 +507,12 @@ class FlashcardProposal(InterruptWidgetBase):
             self.cursor -= 1
 
     def action_cursor_down(self) -> None:
-        if self.cursor < self._total_items - 1:
+        if self._state == _State.EDIT_INSTRUCTIONS:
+            if self.cursor >= self._card_count - 1:
+                self.query_one("#fp-edit-instructions", _EditInstructions).focus()
+                return
+            self.cursor += 1
+        elif self.cursor < self._total_items - 1:
             self.cursor += 1
 
     def action_select(self) -> None:
@@ -516,6 +569,13 @@ class FlashcardProposal(InterruptWidgetBase):
         notes = self.query_one("#fp-testing-notes", TextArea).text.strip()
         fc["testing_notes"] = notes if notes else None
 
+    def on__edit_instructions_navigated_up(self, event: _EditInstructions.NavigatedUp) -> None:
+        self.cursor = self._card_count - 1  # last card
+        self.focus()
+
+    def on__edit_instructions_focus_toggled(self, event: _EditInstructions.FocusToggled) -> None:
+        self.focus()
+
     def on__edit_instructions_submitted(self, event: _EditInstructions.Submitted) -> None:
         self._resolve_edit(event.value)
 
@@ -530,10 +590,15 @@ class FlashcardProposal(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def action_approve(self) -> None:
-        self._handle_choice("Approve")
+        if self._state != _State.EDIT_INSTRUCTIONS:
+            self._handle_choice("Approve")
 
     def action_edit_instructions(self) -> None:
-        self._handle_choice("Edit")
+        if self._state == _State.EDIT_INSTRUCTIONS:
+            # Toggle: refocus the text area from list browsing
+            self.query_one("#fp-edit-instructions", _EditInstructions).focus()
+        else:
+            self._handle_choice("Edit")
 
     def action_reset_proposal(self) -> None:
         self._handle_choice("Reset")
@@ -546,6 +611,7 @@ class FlashcardProposal(InterruptWidgetBase):
             self._resolve(choice)
         elif choice == "Edit":
             self._state = _State.EDIT_INSTRUCTIONS
+            self._render_choices()
             instructions_input = self.query_one("#fp-edit-instructions", _EditInstructions)
             instructions_input.display = True
             instructions_input.focus()
@@ -555,8 +621,14 @@ class FlashcardProposal(InterruptWidgetBase):
         elif choice == "Reset":
             self._flashcards = copy.deepcopy(self._original_flashcards)
             self._excluded.clear()
+            if self._state == _State.EDIT_INSTRUCTIONS:
+                instructions_input = self.query_one("#fp-edit-instructions", _EditInstructions)
+                instructions_input.display = False
+                instructions_input.clear()
+            self._state = _State.BROWSE
             self.cursor = 0
             self._render_all()
+            self.focus()
         elif choice == "Cancel":
             self._resolve(choice)
 

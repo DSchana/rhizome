@@ -32,6 +32,7 @@ _RED = ENTRY_ACCENT
 _DIM = ENTRY_DIM
 _EXCLUDED_DIM = "rgb(60,60,60)"
 _HINT = ENTRY_HINT
+_FOCUS_GREEN = "rgb(100,200,100)"
 
 
 class _State(Enum):
@@ -48,7 +49,25 @@ class _EditInstructions(TextArea):
             super().__init__()
             self.value = value
 
+    class NavigatedUp(Message):
+        """Posted when the user presses up at the very start of the text area."""
+
+    class FocusToggled(Message):
+        """Posted when ctrl+e is pressed to toggle focus back to the list."""
+
     def _on_key(self, event) -> None:
+        if event.key == "ctrl+e":
+            self.post_message(self.FocusToggled())
+            event.stop()
+            event.prevent_default()
+            return
+        if event.key == "up":
+            row, col = self.cursor_location
+            if row == 0 and col == 0:
+                self.post_message(self.NavigatedUp())
+                event.stop()
+                event.prevent_default()
+                return
         if event.key == "enter":
             text = self.text.strip()
             if text:
@@ -145,6 +164,11 @@ class CommitProposal(InterruptWidgetBase):
         min-height: 3;
         max-height: 8;
         padding: 0 1;
+        border-title-align: right;
+        border-title-color: rgb(80,80,80);
+    }
+    CommitProposal #edit-instructions:focus {
+        border: solid rgb(120,120,140);
     }
     """
 
@@ -226,6 +250,7 @@ class CommitProposal(InterruptWidgetBase):
         edit_inst = self.query_one("#edit-instructions", _EditInstructions)
         edit_inst.display = False
         edit_inst.placeholder = "Describe what changes you'd like..."
+        edit_inst.border_title = "ctrl+e to toggle focus"
         # Disable cursor blink on the TextArea until it's focused
         self.query_one("#detail-content", TextArea).cursor_blink = False
         self._render_all()
@@ -236,11 +261,17 @@ class CommitProposal(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def watch_cursor(self) -> None:
-        if self._state == _State.BROWSE:
+        if self._state in (_State.BROWSE, _State.EDIT_INSTRUCTIONS):
             self._render_entry_list()
             self._render_detail()
             self._render_choices()
             self.call_after_refresh(self._scroll_choices_visible)
+
+    def on_focus(self) -> None:
+        self.call_after_refresh(self._render_entry_list)
+
+    def on_blur(self) -> None:
+        self.call_after_refresh(self._render_entry_list)
 
     # ------------------------------------------------------------------
     # Action gating — disable browse-only bindings during editing
@@ -248,12 +279,13 @@ class CommitProposal(InterruptWidgetBase):
 
     def check_action(self, action: str, parameters: tuple) -> bool:
         browse_only = {
-            "cursor_up", "cursor_down", "select",
-            "toggle_exclude", "cycle_type", "select_topic",
-            "select_topic_all",
+            "select", "toggle_exclude", "cycle_type",
+            "select_topic", "select_topic_all",
         }
         if action in browse_only:
             return self._state == _State.BROWSE
+        if action in ("cursor_up", "cursor_down"):
+            return self._state in (_State.BROWSE, _State.EDIT_INSTRUCTIONS)
         return True
 
     # ------------------------------------------------------------------
@@ -314,11 +346,13 @@ class CommitProposal(InterruptWidgetBase):
         else:
             topic_label = "(mixed)"
         topic_all_selected = self.cursor == 0
+        focused = self.has_focus
+        selected_style = f"bold {_FOCUS_GREEN}" if focused else "bold"
         marker = "► " if topic_all_selected else "  "
-        text.append(marker, style="bold" if topic_all_selected else "")
+        text.append(marker, style=selected_style if topic_all_selected else "")
         # Pad to align with numbered entries: use same num_width but with spaces
         text.append(" " * (num_width + 1), style=_DIM)
-        text.append(f"Topic (all): {topic_label}", style="bold" if topic_all_selected else _DIM)
+        text.append(f"Topic (all): {topic_label}", style=selected_style if topic_all_selected else _DIM)
 
         # Entry rows — cursor positions 1..N
         text.append("\n")
@@ -340,13 +374,13 @@ class CommitProposal(InterruptWidgetBase):
                 style = f"{_EXCLUDED_DIM} strike"
                 right_style = f"{_EXCLUDED_DIM} strike"
             elif is_selected:
-                style = "bold"
+                style = selected_style
                 right_style = _DIM
             else:
                 style = ""
                 right_style = _DIM
 
-            text.append(marker, style="bold" if is_selected else "")
+            text.append(marker, style=selected_style if is_selected else "")
             text.append(num, style=style)
             text.append(title, style=style)
             text.append(gap)
@@ -361,8 +395,8 @@ class CommitProposal(InterruptWidgetBase):
         panel = self.query_one("#detail-panel", Vertical)
         panel.border_title = f"Entry {idx + 1}"
 
-        # Only update widget values in browse mode to avoid clobbering edits.
-        if self._state == _State.BROWSE:
+        # Only update widget values outside detail-edit mode to avoid clobbering edits.
+        if self._state != _State.EDIT_DETAIL:
             self.query_one("#detail-title", Input).value = entry["title"]
             content_area = self.query_one("#detail-content", TextArea)
             content_area.clear()
@@ -382,6 +416,10 @@ class CommitProposal(InterruptWidgetBase):
         )
 
     def _render_choices(self) -> None:
+        if self._state == _State.EDIT_INSTRUCTIONS:
+            self._render_choices_edit_mode()
+            return
+
         # Compute column width so descriptions align
         prefix_lengths = [
             2 + len(c) + 1 + len(f"({h})")  # "► " or "  " + choice + " " + "(hint)"
@@ -407,6 +445,17 @@ class CommitProposal(InterruptWidgetBase):
             text.append(" " * padding + desc, style=_HINT)
         self.query_one("#proposal-choices", Static).update(text)
 
+    def _render_choices_edit_mode(self) -> None:
+        """Render the reduced choice set shown during EDIT_INSTRUCTIONS."""
+        # Only Reset and Cancel, plus a submit hint
+        edit_choices = [("Reset", "ctrl+r"), ("Cancel", "ctrl+c")]
+        text = Text()
+        text.append("  enter to submit edit instructions\n", style=_HINT)
+        for choice, hint in edit_choices:
+            text.append(f"\n  {choice}", style=_DIM)
+            text.append(f" ({hint})", style=_HINT)
+        self.query_one("#proposal-choices", Static).update(text)
+
     # ------------------------------------------------------------------
     # Browse actions
     # ------------------------------------------------------------------
@@ -416,7 +465,12 @@ class CommitProposal(InterruptWidgetBase):
             self.cursor -= 1
 
     def action_cursor_down(self) -> None:
-        if self.cursor < self._total_items - 1:
+        if self._state == _State.EDIT_INSTRUCTIONS:
+            if self.cursor >= self._entry_count:
+                self.query_one("#edit-instructions", _EditInstructions).focus()
+                return
+            self.cursor += 1
+        elif self.cursor < self._total_items - 1:
             self.cursor += 1
 
     def action_select(self) -> None:
@@ -521,6 +575,13 @@ class CommitProposal(InterruptWidgetBase):
             # Enter in title → move to content
             self.query_one("#detail-content", TextArea).focus()
 
+    def on__edit_instructions_navigated_up(self, event: _EditInstructions.NavigatedUp) -> None:
+        self.cursor = self._entry_count  # last entry
+        self.focus()
+
+    def on__edit_instructions_focus_toggled(self, event: _EditInstructions.FocusToggled) -> None:
+        self.focus()
+
     def on__edit_instructions_submitted(self, event: _EditInstructions.Submitted) -> None:
         self._resolve_edit(event.value)
 
@@ -535,10 +596,15 @@ class CommitProposal(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def action_approve(self) -> None:
-        self._handle_choice("Approve")
+        if self._state != _State.EDIT_INSTRUCTIONS:
+            self._handle_choice("Approve")
 
     def action_edit_instructions(self) -> None:
-        self._handle_choice("Edit")
+        if self._state == _State.EDIT_INSTRUCTIONS:
+            # Toggle: refocus the text area from list browsing
+            self.query_one("#edit-instructions", _EditInstructions).focus()
+        else:
+            self._handle_choice("Edit")
 
     def action_reset_proposal(self) -> None:
         self._handle_choice("Reset")
@@ -551,6 +617,7 @@ class CommitProposal(InterruptWidgetBase):
             self._resolve(choice)
         elif choice == "Edit":
             self._state = _State.EDIT_INSTRUCTIONS
+            self._render_choices()
             instructions_input = self.query_one("#edit-instructions", _EditInstructions)
             instructions_input.display = True
             instructions_input.focus()
@@ -562,8 +629,14 @@ class CommitProposal(InterruptWidgetBase):
             self._topic_map = copy.deepcopy(self._original_topic_map)
             self._excluded.clear()
             self._max_content_lines = 0
+            if self._state == _State.EDIT_INSTRUCTIONS:
+                instructions_input = self.query_one("#edit-instructions", _EditInstructions)
+                instructions_input.display = False
+                instructions_input.clear()
+            self._state = _State.BROWSE
             self.cursor = 1
             self._render_all()
+            self.focus()
         elif choice == "Cancel":
             self._resolve(choice)
 
