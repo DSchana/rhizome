@@ -149,11 +149,18 @@ class AgentMessageHarness(Widget):
         if not chat._collapsed and self._active_stream:
             await self._active_stream.write(token.text)
 
+    async def _mount_segment(self, widget: Widget) -> None:
+        """Mount a segment, keeping the ThinkingIndicator at the bottom."""
+        if self._thinking is not None:
+            await self.mount(widget, before=self._thinking)
+        else:
+            await self.mount(widget)
+
     async def _start_chat_segment(self) -> None:
         """Create and mount a new ChatMessage segment, opening a fresh stream."""
         chat = MarkdownChatMessage(role=Role.AGENT, mode=self._session_mode)
         self._segments.append(chat)
-        await self.mount(chat)
+        await self._mount_segment(chat)
         self._active_stream = Markdown.get_stream(chat.inner_markdown)
 
     async def post_update(self, chunk: dict) -> None:
@@ -196,7 +203,7 @@ class AgentMessageHarness(Widget):
                         await self._close_active_stream()
                         tool_list = ToolCallList(classes=f"{self._session_mode.value}-mode")
                         self._segments.append(tool_list)
-                        await self.mount(tool_list)
+                        await self._mount_segment(tool_list)
                     last = self._segments[-1]
                     assert isinstance(last, ToolCallList)
                     args = block.get("input") or {}
@@ -277,7 +284,7 @@ class AgentMessageHarness(Widget):
             raise ValueError(f"Unknown interrupt type: {itype!r}")
         self._interrupt_widget = widget
         self._segments.append(widget)
-        await self.mount(widget)
+        await self._mount_segment(widget)
 
         # Tell ChatPane to disable its input and focus the choices widget
         self.post_message(self.InterruptPending(widget=self._interrupt_widget))
