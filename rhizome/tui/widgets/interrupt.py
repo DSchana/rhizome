@@ -22,9 +22,9 @@ class InterruptWidgetBase(NavigableWidgetMixin, Widget, can_focus=True):
         self._future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
 
     def on_mount(self) -> None:
-        self._setup_navigable()
+        self.setup_navigation()
 
-    def _is_navigable(self) -> bool:
+    def is_navigable(self) -> bool:
         return not self._future.done()
 
     def resolve(self, result: Any) -> None:
@@ -32,7 +32,7 @@ class InterruptWidgetBase(NavigableWidgetMixin, Widget, can_focus=True):
         if self._future.done():
             return
         self._future.set_result(result)
-        self.deactivate()
+        self.deactivate_navigation()
 
     async def wait_for_selection(self) -> Any:
         """Block until the user resolves the interrupt. Returns the result value."""
@@ -42,4 +42,4 @@ class InterruptWidgetBase(NavigableWidgetMixin, Widget, can_focus=True):
         """Cancel the pending future if not yet resolved."""
         if not self._future.done():
             self._future.cancel()
-            self.deactivate()
+            self.deactivate_navigation()

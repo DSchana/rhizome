@@ -242,7 +242,7 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
         yield Static("", id="fs-done")
 
     def on_mount(self) -> None:
-        self._setup_navigable()
+        self.setup_navigation()
         self._refresh_view()
 
     def on_focus(self) -> None:
@@ -437,7 +437,7 @@ class FlashcardViewer(NavigableWidgetMixin, Widget, can_focus=True):
             self._refresh_view()
 
     def action_dismiss(self) -> None:
-        self.deactivate()
+        self.deactivate_navigation()
         self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------

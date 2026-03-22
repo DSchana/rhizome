@@ -30,25 +30,25 @@ class NavigableWidgetMixin:
 
     Widgets using this mixin should:
 
-    1. Call ``_setup_navigable()`` in ``on_mount`` (or inherit from a base
+    1. Call ``setup_navigation()`` in ``on_mount`` (or inherit from a base
        that does so).
-    2. Call ``deactivate()`` when they are no longer interactable.
-    3. Override ``_is_navigable()`` to gate subtitle restoration on blur
+    2. Call ``deactivate_navigation()`` when they are no longer interactable.
+    3. Override ``is_navigable()`` to gate subtitle restoration on blur
        (e.g. return ``False`` once a future has resolved).
     4. Call ``super().on_focus()`` / ``super().on_blur()`` if overriding
        those handlers.
     """
 
-    def _is_navigable(self) -> bool:
+    def is_navigable(self) -> bool:
         """Return ``True`` while the widget is still accepting input."""
         return True
 
-    def _setup_navigable(self) -> None:
+    def setup_navigation(self) -> None:
         """Initialize the navigable border and hint.  Call from ``on_mount``."""
         self.add_class("navigable")
         self.border_subtitle = _NAV_HINT
 
-    def deactivate(self) -> None:
+    def deactivate_navigation(self) -> None:
         """Clear the navigation hint and notify ChatPane."""
         self.border_subtitle = None
         self.post_message(WidgetDeactivated(self))
@@ -58,17 +58,17 @@ class NavigableWidgetMixin:
     # ------------------------------------------------------------------
 
     def on_focus(self) -> None:
-        if self._is_navigable():
+        if self.is_navigable():
             self.border_subtitle = None
 
     def on_blur(self) -> None:
-        if self._is_navigable():
+        if self.is_navigable():
             self.border_subtitle = _NAV_HINT
 
     def on_descendant_focus(self, event) -> None:
-        if self._is_navigable():
+        if self.is_navigable():
             self.border_subtitle = None
 
     def on_descendant_blur(self, event) -> None:
-        if self._is_navigable():
+        if self.is_navigable():
             self.border_subtitle = _NAV_HINT

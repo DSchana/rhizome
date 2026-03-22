@@ -260,7 +260,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
                 yield FlashcardList(id="explorer-flashcard-viewer")
 
     def on_mount(self) -> None:
-        self._setup_navigable()
+        self.setup_navigation()
         self.border_title = "Explore"
         self._update_help_text()
 
@@ -543,7 +543,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
                 path.append(current.data.name)
             current = current.parent
         path.reverse()
-        self.deactivate()
+        self.deactivate_navigation()
         self.post_message(self.TopicSelected(node.data, path))
 
     # ------------------------------------------------------------------
@@ -571,7 +571,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
     # ------------------------------------------------------------------
 
     def action_dismiss_viewer(self) -> None:
-        self.deactivate()
+        self.deactivate_navigation()
         self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------
@@ -580,7 +580,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "explorer-dismiss":
-            self.deactivate()
+            self.deactivate_navigation()
             self.post_message(self.Dismissed())
 
     # ------------------------------------------------------------------
