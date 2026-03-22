@@ -183,14 +183,31 @@ class SqlConfirmation(InterruptWidgetBase):
             return
         selected = self._options[self.cursor]
         self.resolve(selected)
-        # Collapse: hide everything except a brief confirmation line
-        for cls_name in ("sql-warning-icon", "sql-warning-header", "sql-statement",
+        # Collapse: hide everything except a compact summary
+        for cls_name in ("sql-warning-icon", "sql-warning-header",
                          "sql-no-preview", "sql-truncation-note"):
             for widget in self.query(f".{cls_name}"):
                 widget.display = False
         for table in self.query("#sql-preview-table"):
             table.display = False
-        display = Text()
-        display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
-        self.query_one("#sql-options", Static).update(display)
-        self.query_one("#sql-hint", Static).update("")
+
+        # Show a compact collapsed view: sql snippet + decision
+        approved = selected == "Approve"
+        status_style = "rgb(100,180,100)" if approved else "rgb(200,100,100)"
+        status_label = "approved" if approved else "denied"
+
+        # Truncate SQL to a single-line snippet
+        sql_oneline = " ".join(self._sql.split())
+        if len(sql_oneline) > 60:
+            sql_oneline = sql_oneline[:59] + "\u2026"
+
+        self.query_one(".sql-statement", Static).update(
+            Text.assemble(
+                ("  ", ""),
+                (sql_oneline, "rgb(140,140,150)"),
+                ("  \u2014 ", "rgb(100,100,100)"),
+                (status_label, status_style),
+            )
+        )
+        self.query_one("#sql-options", Static).display = False
+        self.query_one("#sql-hint", Static).display = False
