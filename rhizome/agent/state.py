@@ -1,4 +1,8 @@
-"""Custom graph state schema for the root agent."""
+"""Custom graph state schema for the root agent.
+
+All proposal and session state types are defined here so the full state
+shape is visible in one place.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +10,70 @@ from langchain.agents.middleware.types import AgentState
 
 from typing import TypedDict
 
-from rhizome.agent.review_state import ReviewState
 
+# ---------------------------------------------------------------------------
+# Review state
+# ---------------------------------------------------------------------------
+
+class ReviewScope(TypedDict):
+    """Which topics and entries are in scope for a review session."""
+    topic_ids: list[int]
+    entry_ids: list[int]
+
+
+class ReviewConfig(TypedDict):
+    """User-selected configuration for a review session."""
+    style: str
+    """Review style: ``"flashcard"``, ``"conversation"``, or ``"mixed"``."""
+
+    critique_timing: str
+    """When to deliver critique: ``"during"`` or ``"after"``."""
+
+    question_source: str
+    """Where questions come from: ``"existing"``, ``"generated"``, or ``"both"``."""
+
+    ephemeral: bool
+    """If ``True``, the session is not persisted for long-term tracking."""
+
+    user_instructions: str | None
+    """Free-form instructions from the user for this review session."""
+
+
+class ReviewState(TypedDict):
+    """State machine for an active review session.
+
+    Stored in ``RhizomeAgentState.review``.  ``None`` when no review
+    session is active.
+    """
+    phase: str
+    """Current phase: ``"scoping"``, ``"configuring"``, ``"planning"``,
+    ``"reviewing"``, or ``"summarizing"``."""
+
+    session_id: int
+    """Database session ID.  Always set — ephemeral sessions still get a DB record."""
+
+    scope: ReviewScope | None
+    """Selected topics and entries for review."""
+
+    config: ReviewConfig | None
+    """User-selected review configuration."""
+
+    flashcard_queue: list[int]
+    """Flashcard DB IDs to present, popped as used."""
+
+    entry_coverage: dict[int, int]
+    """Map of entry_id to touch count, incremented by ``record_review_interaction``."""
+
+    interaction_count: int
+    """Total number of review interactions recorded this session."""
+
+    discussion_plan: str | None
+    """Agent-generated plan for conversational review flow."""
+
+
+# ---------------------------------------------------------------------------
+# Flashcard proposal state
+# ---------------------------------------------------------------------------
 
 class FlashcardProposalItem(TypedDict):
     """A single proposed flashcard, stored in agent state."""
