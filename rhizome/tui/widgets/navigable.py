@@ -48,9 +48,20 @@ class NavigableWidgetMixin:
         self.add_class("navigable")
         self.border_subtitle = _NAV_HINT
 
+    DISABLE_CHILDREN_ON_DEACTIVATE: bool = True
+    """When ``True`` (the default), ``deactivate_navigation()`` sets
+    ``can_focus = False`` on every descendant widget.  Subclasses that need
+    certain children to remain focusable after deactivation (e.g. a collapse
+    toggle) can set this to ``False`` and manage descendants themselves."""
+
     def deactivate_navigation(self) -> None:
         """Clear the navigation hint and notify ChatPane."""
         self.border_subtitle = None
+        self.remove_class("navigable")
+        self.can_focus = False
+        if self.DISABLE_CHILDREN_ON_DEACTIVATE:
+            for child in self.query("*"):
+                child.can_focus = False
         self.post_message(WidgetDeactivated(self))
 
     # ------------------------------------------------------------------

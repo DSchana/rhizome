@@ -12,7 +12,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.reactive import reactive
 from textual.message import Message
-from textual.widgets import Input, Static, TextArea
+from textual.widgets import Button, Input, Static, TextArea
 
 from .entry_list import ENTRY_ACCENT, ENTRY_DIM, ENTRY_HINT
 from .interrupt import InterruptWidgetBase
@@ -90,6 +90,8 @@ class CommitProposal(InterruptWidgetBase):
     ``N+1 .. N+3`` are choices.
     """
 
+    DISABLE_CHILDREN_ON_DEACTIVATE = False
+
     BINDINGS = [
         Binding("up", "cursor_up", show=False),
         Binding("down", "cursor_down", show=False),
@@ -114,6 +116,19 @@ class CommitProposal(InterruptWidgetBase):
     }
     CommitProposal #proposal-header {
         margin-bottom: 0;
+    }
+    CommitProposal #proposal-collapse {
+        dock: right;
+        width: auto;
+        min-width: 3;
+        height: 1;
+        background: transparent;
+        border: none;
+        color: $text-muted;
+        display: none;
+    }
+    CommitProposal #proposal-collapse:hover {
+        color: $text;
     }
     CommitProposal #proposal-hints {
         color: rgb(80,80,80);
@@ -177,6 +192,10 @@ class CommitProposal(InterruptWidgetBase):
         margin: 1 0 0 0;
         height: auto;
     }
+    CommitProposal #collapsed-summary {
+        display: none;
+        margin: 1 0 0 0;
+    }
     """
 
     cursor: reactive[int] = reactive(1)
@@ -195,6 +214,9 @@ class CommitProposal(InterruptWidgetBase):
         self._excluded: set[int] = set()
         self._state = _State.BROWSE
         self._max_content_lines: int = 0
+        self._resolved_choice: str | None = None
+        self._resolved_instructions: str | None = None
+        self._collapsed = False
 
     @classmethod
     def from_interrupt(cls, value: dict[str, Any]) -> CommitProposal:
@@ -213,6 +235,9 @@ class CommitProposal(InterruptWidgetBase):
 
     @property
     def _total_items(self) -> int:
+        if self._resolved_choice is not None:
+            # In resolved-expanded mode: topic-all + entries only (no choices)
+            return 1 + self._entry_count
         # 1 (topic-all) + entries + choices
         return 1 + self._entry_count + len(_CHOICES)
 
@@ -240,7 +265,9 @@ class CommitProposal(InterruptWidgetBase):
 
     def compose(self) -> ComposeResult:
         yield Static(id="proposal-header")
+        yield Button("▼", id="proposal-collapse")
         yield Static(id="proposal-hints")
+        yield Static(id="collapsed-summary")
         yield Static(id="entry-list")
         with Vertical(id="detail-panel"):
             yield Input(id="detail-title")
@@ -273,7 +300,8 @@ class CommitProposal(InterruptWidgetBase):
         if self._state in (_State.BROWSE, _State.EDIT_INSTRUCTIONS):
             self._render_entry_list()
             self._render_detail()
-            self._render_choices()
+            if self._resolved_choice is None:
+                self._render_choices()
             self.call_after_refresh(self._scroll_choices_visible)
 
     def on_focus(self) -> None:
@@ -287,6 +315,10 @@ class CommitProposal(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def check_action(self, action: str, parameters: tuple) -> bool:
+        # After resolution, only allow cursor movement
+        if self._resolved_choice is not None:
+            return action in ("cursor_up", "cursor_down")
+
         browse_only = {
             "select", "toggle_exclude", "cycle_type",
             "select_topic", "select_topic_all",
@@ -296,6 +328,61 @@ class CommitProposal(InterruptWidgetBase):
         if action in ("cursor_up", "cursor_down"):
             return self._state in (_State.BROWSE, _State.EDIT_INSTRUCTIONS)
         return True
+
+    # ------------------------------------------------------------------
+    # Collapse / expand (post-resolution only)
+    # ------------------------------------------------------------------
+
+    def _build_summary_text(self) -> Text:
+        """Build the collapsed summary: 'N entries for M topics: topic1, topic2, ...'"""
+        included = [
+            self._entries[i]
+            for i in range(self._entry_count)
+            if i not in self._excluded
+        ]
+        topic_ids = {e["topic_id"] for e in included}
+        topic_names = [
+            self._topic_map.get(tid, f"#{tid}") for tid in sorted(topic_ids)
+        ]
+        n_entries = len(included)
+        n_topics = len(topic_names)
+        entry_word = "entry" if n_entries == 1 else "entries"
+        topic_word = "topic" if n_topics == 1 else "topics"
+        summary = Text()
+        summary.append(
+            f"  {n_entries} {entry_word} for {n_topics} {topic_word}: ",
+            style=_DIM,
+        )
+        summary.append(", ".join(topic_names), style=_DIM)
+        return summary
+
+    def _set_collapsed(self, collapsed: bool) -> None:
+        """Toggle between collapsed and expanded resolved states."""
+        self._collapsed = collapsed
+        btn = self.query_one("#proposal-collapse", Button)
+        btn.label = "▶" if collapsed else "▼"
+
+        summary_widget = self.query_one("#collapsed-summary", Static)
+        entry_list = self.query_one("#entry-list", Static)
+        detail_panel = self.query_one("#detail-panel", Vertical)
+
+        if collapsed:
+            summary_widget.update(self._build_summary_text())
+            summary_widget.display = True
+            entry_list.display = False
+            detail_panel.display = False
+        else:
+            summary_widget.display = False
+            entry_list.display = True
+            detail_panel.display = True
+            # Re-render in read-only browse mode
+            self._render_entry_list()
+            self._render_detail()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "proposal-collapse":
+            event.stop()
+            self._set_collapsed(not self._collapsed)
 
     # ------------------------------------------------------------------
     # Scrolling
@@ -406,10 +493,15 @@ class CommitProposal(InterruptWidgetBase):
 
         # Only update widget values outside detail-edit mode to avoid clobbering edits.
         if self._state != _State.EDIT_DETAIL:
-            self.query_one("#detail-title", Input).value = entry["title"]
+            title_input = self.query_one("#detail-title", Input)
+            title_input.value = entry["title"]
+            if self._resolved_choice is not None:
+                title_input.read_only = True
             content_area = self.query_one("#detail-content", TextArea)
             content_area.clear()
             content_area.insert(entry["content"])
+            if self._resolved_choice is not None:
+                content_area.read_only = True
             # Ratchet min-height so the panel never shrinks
             line_count = content_area.document.line_count
             if line_count > self._max_content_lines:
@@ -660,6 +752,8 @@ class CommitProposal(InterruptWidgetBase):
         result: dict[str, Any] = {"choice": choice, "entries": included}
         if instructions:
             result["instructions"] = instructions
+        self._resolved_choice = choice
+        self._resolved_instructions = instructions
         self.resolve(result)
         self._render_resolved(choice, instructions)
 
@@ -667,9 +761,11 @@ class CommitProposal(InterruptWidgetBase):
         self._resolve("Edit", instructions=instructions)
 
     def _render_resolved(self, choice: str, instructions: str | None = None) -> None:
-        """Dim the widget after resolution."""
+        """Transition the widget into collapsed resolved state."""
         # Disable cursor blink on resolution
         self.query_one("#detail-content", TextArea).cursor_blink = False
+
+        # Build and display the resolved action label
         resolved = Text()
         if choice == "Approve":
             resolved.append("  Approved", style=_DIM)
@@ -680,10 +776,21 @@ class CommitProposal(InterruptWidgetBase):
         else:
             resolved.append(f"  {choice}", style=_DIM)
         self.query_one("#proposal-choices", Static).update(resolved)
+
+        # Hide interactive elements
         self.query_one("#proposal-hints", Static).update("")
         self.query_one("#edit-instructions", _EditInstructions).display = False
+
+        # Show user instructions if present
         if instructions:
             user_msg = self.query_one("#user-instructions", Static)
             user_msg.update(Text(f"user: {instructions}", style=_DIM))
             user_msg.display = True
 
+        # Re-enable focus on the widget itself so arrow-key browsing works
+        # in expanded mode (deactivate_navigation sets can_focus=False).
+        self.can_focus = True
+
+        # Show the collapse button and enter collapsed state
+        self.query_one("#proposal-collapse", Button).display = True
+        self._set_collapsed(True)
