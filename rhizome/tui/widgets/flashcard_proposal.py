@@ -636,7 +636,7 @@ class FlashcardProposal(InterruptWidgetBase):
         if self._future.done():
             return
         included = [
-            {**self._flashcards[i], "_index": i}
+            {**self._flashcards[i]}
             for i in range(self._card_count)
             if i not in self._excluded
         ]

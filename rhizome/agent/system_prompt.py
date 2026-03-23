@@ -480,7 +480,10 @@ When the user confirms a commit selection, a system notification will tell you w
 - **Direct path**: Call `inspect_commit_payload`, then `create_commit_proposal`.
 - **Subagent path**: Call `invoke_commit_subagent` for larger selections.
 
-After either path, call `present_commit_proposal` to show the proposal, then `accept_commit_proposal` if approved."""
+After either path, call `present_commit_proposal` to show the proposal, then `accept_commit_proposal` if approved.
+If the user requests edits, use `edit_commit_proposal` to make targeted changes (this preserves any direct edits
+the user made in the widget), then call `present_commit_proposal` again. Do NOT use `create_commit_proposal` to
+revise — that overwrites the entire proposal including any user edits."""
 
 REVIEW_MODE_SECTION = """\
 
@@ -585,9 +588,11 @@ Goal: prepare the question sequence before starting the review.
       `present_flashcard_proposal`. Do NOT narrate validation success either (e.g. "all cards passed") —
       just silently proceed to presenting.
    b. `present_flashcard_proposal` — show the proposal to the user for review. They can approve, request edits, or
-      cancel. If they request edits, re-stage and present again. Use your discretion on whether to re-validate
-      (`validate=True` vs `validate=False`): if the edits are minor wording tweaks to existing cards, skip
-      validation; if the user is requesting new cards or substantially different concepts, re-validate.
+      cancel. If they request edits, use `edit_flashcard_proposal` to make targeted changes (this preserves any
+      direct edits the user made in the widget), then present again. Do NOT use `create_flashcard_proposal` to
+      revise — that overwrites the entire proposal including any user edits. Use your discretion on whether to
+      re-validate after editing: if the edits are minor wording tweaks, skip validation; if adding new cards or
+      substantially different concepts, re-validate by re-staging only the new/changed cards.
    c. `accept_flashcard_proposal` — write the approved flashcards to the database.
    d. `add_flashcards_to_review` — add the created flashcard IDs to the review queue.
 3. If conversational: mentally organize entries into a concept map / discussion flow.

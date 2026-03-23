@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain.agents.structured_output import ProviderStrategy
 from langchain_core.messages import ToolMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from langchain.tools import tool
 from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command, interrupt
@@ -67,6 +67,57 @@ class KnowledgeEntryProposalSchema(BaseModel):
 
 class CommitProposalResponseSchema(BaseModel):
     entries: list[KnowledgeEntryProposalSchema]
+
+
+class CommitEntryEdit(BaseModel):
+    """Partial update to a single entry in the commit proposal."""
+    id: int = Field(description="Stable ID of the entry to edit")
+    title: str | None = Field(default=None, description="New title (omit to keep current)")
+    content: str | None = Field(default=None, description="New content (omit to keep current)")
+    entry_type: str | None = Field(default=None, description="New entry type: fact, exposition, or overview (omit to keep current)")
+    topic_id: int | None = Field(default=None, description="New topic ID (omit to keep current)")
+
+
+def _build_commit_diff(
+    original: list[dict],
+    returned: list[dict],
+    originals_by_id: dict[int, dict],
+) -> list[str]:
+    """Compare original proposal entries against widget-returned entries.
+
+    Returns a list of human-readable lines describing exclusions and edits.
+    """
+    returned_ids = {e["id"] for e in returned}
+    original_ids = {e["id"] for e in original}
+
+    parts: list[str] = []
+
+    # Exclusions
+    excluded_ids = sorted(original_ids - returned_ids)
+    if excluded_ids:
+        labels = [f"entry {eid} ({originals_by_id[eid]['title']!r})" for eid in excluded_ids]
+        parts.append(f"Excluded by user: {', '.join(labels)}")
+
+    # Per-entry edits
+    for entry in returned:
+        entry_id = entry["id"]
+        orig = originals_by_id[entry_id]
+        changed: list[str] = []
+        if entry["title"] != orig["title"]:
+            changed.append("title")
+        if entry["content"] != orig["content"]:
+            changed.append("content")
+        if entry["entry_type"] != orig["entry_type"]:
+            changed.append("entry_type")
+        if entry["topic_id"] != orig["topic_id"]:
+            changed.append("topic_id")
+        if changed:
+            parts.append(f"Entry {entry_id}: user edited {', '.join(changed)}")
+
+    if not parts:
+        parts.append("No direct edits or exclusions by user.")
+
+    return parts
 
 
 def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> StructuredSubagent:
@@ -177,12 +228,13 @@ def build_commit_subagent_tools(
         if subagent.structured_response is not None:
             proposal_entries = [
                 CommitProposalEntry(
+                    id=i,
                     title=e.title,
                     content=e.content,
                     entry_type=e.entry_type,
                     topic_id=e.topic_id,
                 )
-                for e in subagent.structured_response.entries
+                for i, e in enumerate(subagent.structured_response.entries)
             ]
             state_update["commit_proposal"] = proposal_entries
             msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries."
@@ -218,10 +270,10 @@ def build_commit_subagent_tools(
 
         proposal_entries = [
             CommitProposalEntry(
-                title=e.title, content=e.content,
+                id=i, title=e.title, content=e.content,
                 entry_type=e.entry_type, topic_id=e.topic_id,
             )
-            for e in entries
+            for i, e in enumerate(entries)
         ]
         msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries. Call present_commit_proposal to show it to the user."
         return Command(update={
@@ -231,7 +283,9 @@ def build_commit_subagent_tools(
 
     @tool("present_commit_proposal", description=(
         "Display the current commit proposal to the user for review. "
-        "The user can choose to accept, reject, or request revisions."
+        "The user can approve, request edits, reset, or cancel. "
+        "If edits requested, use edit_commit_proposal to make targeted "
+        "changes (preserving any direct edits the user made), then present again."
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def present_commit_proposal(runtime: ToolRuntime) -> Command:
@@ -264,23 +318,38 @@ def build_commit_subagent_tools(
         # Result is a dict: {choice, entries, instructions?}
         choice = result["choice"]
         modified_entries = result.get("entries", [])
+        new_proposal = [CommitProposalEntry(**e) for e in modified_entries]
+
+        # Build diff summary
+        originals_by_id = {e["id"]: e for e in proposal}
+        diff_parts = _build_commit_diff(proposal, modified_entries, originals_by_id)
 
         if choice == "Approve":
-            new_proposal = [CommitProposalEntry(**e) for e in modified_entries]
+            msg_lines = [
+                f"User approved {len(new_proposal)} entry/entries.",
+                *diff_parts,
+                "Call accept_commit_proposal to write them to the database.",
+            ]
             return Command(update={
                 "commit_proposal": new_proposal,
                 "messages": [ToolMessage(
-                    content="User approved the proposal.",
+                    content="\n".join(msg_lines),
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
         elif choice == "Edit":
-            new_proposal = [CommitProposalEntry(**e) for e in modified_entries]
             instructions = result.get("instructions", "")
+            msg_lines = [
+                f"User requested edits: {instructions}",
+                *diff_parts,
+                f"Proposal state updated ({len(new_proposal)} entry/entries remaining).",
+                "Use edit_commit_proposal to make further changes, then "
+                "present_commit_proposal to show the revised proposal.",
+            ]
             return Command(update={
                 "commit_proposal": new_proposal,
                 "messages": [ToolMessage(
-                    content=f"User requested edits: {instructions}",
+                    content="\n".join(msg_lines),
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
@@ -292,6 +361,76 @@ def build_commit_subagent_tools(
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
+
+    @tool("edit_commit_proposal", description=(
+        "Make targeted edits to the current commit proposal without overwriting it. "
+        "Supports in-place edits (partial field updates by stable ID), deletions (by ID), "
+        "and additions (new entries appended with auto-assigned IDs). "
+        "Processing order: edits, then deletions, then additions. "
+        "Call present_commit_proposal afterwards to show the revised proposal to the user."
+    ))
+    @tool_visibility(ToolVisibility.LOW)
+    async def edit_commit_proposal(
+        runtime: ToolRuntime,
+        edits: list[CommitEntryEdit] | None = None,
+        additions: list[KnowledgeEntryProposalSchema] | None = None,
+        deletions: list[int] | None = None,
+    ) -> Command:
+        proposal = runtime.state.get("commit_proposal")
+        if not proposal:
+            return Command(update={
+                "messages": [ToolMessage(
+                    content=json.dumps({"error": "No commit proposal to edit. Create one first."}),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        entries = [dict(e) for e in proposal]
+        entries_by_id = {e["id"]: e for e in entries}
+        changes: list[str] = []
+
+        # 1. Apply edits (by stable id)
+        for edit in (edits or []):
+            entry = entries_by_id.get(edit.id)
+            if entry is None:
+                continue
+            if edit.title is not None:
+                entry["title"] = edit.title
+            if edit.content is not None:
+                entry["content"] = edit.content
+            if edit.entry_type is not None:
+                entry["entry_type"] = edit.entry_type
+            if edit.topic_id is not None:
+                entry["topic_id"] = edit.topic_id
+            changes.append(f"edited entry {edit.id}")
+
+        # 2. Apply deletions (by stable id)
+        delete_ids = set(deletions or [])
+        for did in sorted(delete_ids):
+            if did in entries_by_id:
+                changes.append(f"deleted entry {did} ({entries_by_id[did]['title']!r})")
+        entries = [e for e in entries if e["id"] not in delete_ids]
+
+        # 3. Append additions (assign next available id)
+        next_id = max((e["id"] for e in proposal), default=-1) + 1
+        for addition in (additions or []):
+            entries.append(CommitProposalEntry(
+                id=next_id,
+                title=addition.title,
+                content=addition.content,
+                entry_type=addition.entry_type,
+                topic_id=addition.topic_id,
+            ))
+            changes.append(f"added entry {next_id} ({addition.title!r})")
+            next_id += 1
+
+        new_proposal = [CommitProposalEntry(**e) for e in entries]
+        summary = "; ".join(changes) if changes else "no changes applied"
+        msg = f"Commit proposal updated ({len(new_proposal)} entry/entries): {summary}."
+        return Command(update={
+            "commit_proposal": new_proposal,
+            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+        })
 
     @tool("accept_commit_proposal", description=(
         "Write the accepted commit proposal to the database. "
@@ -337,5 +476,6 @@ def build_commit_subagent_tools(
         invoke_commit_subagent,
         create_commit_proposal,
         present_commit_proposal,
+        edit_commit_proposal,
         accept_commit_proposal,
     ]

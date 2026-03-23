@@ -12,6 +12,7 @@ from rhizome.agent.review_state import ReviewState
 
 class CommitProposalEntry(TypedDict):
     """A single proposed knowledge entry, stored in agent state."""
+    id: int
     title: str
     content: str
     entry_type: str

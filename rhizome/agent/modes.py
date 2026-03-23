@@ -52,6 +52,7 @@ _COMMIT_TOOLS = frozenset({
     "create_commit_proposal",
     "invoke_commit_subagent",
     "present_commit_proposal",
+    "edit_commit_proposal",
     "accept_commit_proposal",
 })
 
@@ -69,6 +70,7 @@ _DB_SQL_TOOLS = frozenset({
 _FLASHCARD_PROPOSAL_TOOLS = frozenset({
     "create_flashcard_proposal",
     "present_flashcard_proposal",
+    "edit_flashcard_proposal",
     "accept_flashcard_proposal",
 })
 
