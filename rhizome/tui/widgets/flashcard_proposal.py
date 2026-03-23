@@ -220,6 +220,13 @@ class FlashcardProposal(InterruptWidgetBase):
     FlashcardProposal #fp-edit-instructions:focus {
         border: solid rgb(120,120,140);
     }
+    FlashcardProposal #fp-user-instructions {
+        background: $surface-lighten-1;
+        border: none;
+        padding: 0 1;
+        margin: 1 0 0 0;
+        height: auto;
+    }
     """
 
     cursor: reactive[int] = reactive(0)
@@ -283,6 +290,7 @@ class FlashcardProposal(InterruptWidgetBase):
                     yield TextArea(id="fp-testing-notes", show_line_numbers=False)
                     yield Static(id="fp-entry-ids")
         yield Static(id="fp-choices")
+        yield Static(id="fp-user-instructions")
         yield _EditInstructions(
             id="fp-edit-instructions",
             show_line_numbers=False,
@@ -294,6 +302,7 @@ class FlashcardProposal(InterruptWidgetBase):
         edit_inst.display = False
         edit_inst.placeholder = "Describe what changes you'd like..."
         edit_inst.border_title = "ctrl+e to toggle focus"
+        self.query_one("#fp-user-instructions", Static).display = False
         self.query_one("#fp-question", TextArea).cursor_blink = False
         self.query_one("#fp-answer", TextArea).cursor_blink = False
         self.query_one("#fp-testing-notes", TextArea).cursor_blink = False
@@ -655,10 +664,19 @@ class FlashcardProposal(InterruptWidgetBase):
         self.query_one("#fp-answer", TextArea).cursor_blink = False
         self.query_one("#fp-testing-notes", TextArea).cursor_blink = False
         resolved = Text()
-        resolved.append(f"  you selected: {choice}", style=_DIM)
-        if instructions:
-            resolved.append(f"\n  instructions: {instructions}", style=_DIM)
+        if choice == "Approve":
+            resolved.append("  Approved", style=_DIM)
+        elif choice == "Cancel":
+            resolved.append("  Cancelled", style=_DIM)
+        elif choice == "Edit":
+            resolved.append("  Editing...", style=_DIM)
+        else:
+            resolved.append(f"  {choice}", style=_DIM)
         self.query_one("#fp-choices", Static).update(resolved)
         self.query_one("#fp-hints", Static).update("")
         self.query_one("#fp-edit-instructions", _EditInstructions).display = False
+        if instructions:
+            user_msg = self.query_one("#fp-user-instructions", Static)
+            user_msg.update(Text(f"user: {instructions}", style=_DIM))
+            user_msg.display = True
 

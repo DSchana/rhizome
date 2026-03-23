@@ -170,6 +170,13 @@ class CommitProposal(InterruptWidgetBase):
     CommitProposal #edit-instructions:focus {
         border: solid rgb(120,120,140);
     }
+    CommitProposal #user-instructions {
+        background: $surface-lighten-1;
+        border: none;
+        padding: 0 1;
+        margin: 1 0 0 0;
+        height: auto;
+    }
     """
 
     cursor: reactive[int] = reactive(1)
@@ -240,6 +247,7 @@ class CommitProposal(InterruptWidgetBase):
             yield Static(id="detail-meta")
             yield TextArea(id="detail-content", show_line_numbers=False)
         yield Static(id="proposal-choices")
+        yield Static(id="user-instructions")
         yield _EditInstructions(
             id="edit-instructions",
             show_line_numbers=False,
@@ -251,6 +259,7 @@ class CommitProposal(InterruptWidgetBase):
         edit_inst.display = False
         edit_inst.placeholder = "Describe what changes you'd like..."
         edit_inst.border_title = "ctrl+e to toggle focus"
+        self.query_one("#user-instructions", Static).display = False
         # Disable cursor blink on the TextArea until it's focused
         self.query_one("#detail-content", TextArea).cursor_blink = False
         self._render_all()
@@ -662,10 +671,19 @@ class CommitProposal(InterruptWidgetBase):
         # Disable cursor blink on resolution
         self.query_one("#detail-content", TextArea).cursor_blink = False
         resolved = Text()
-        resolved.append(f"  you selected: {choice}", style=_DIM)
-        if instructions:
-            resolved.append(f"\n  instructions: {instructions}", style=_DIM)
+        if choice == "Approve":
+            resolved.append("  Approved", style=_DIM)
+        elif choice == "Cancel":
+            resolved.append("  Cancelled", style=_DIM)
+        elif choice == "Edit":
+            resolved.append("  Editing...", style=_DIM)
+        else:
+            resolved.append(f"  {choice}", style=_DIM)
         self.query_one("#proposal-choices", Static).update(resolved)
         self.query_one("#proposal-hints", Static).update("")
         self.query_one("#edit-instructions", _EditInstructions).display = False
+        if instructions:
+            user_msg = self.query_one("#user-instructions", Static)
+            user_msg.update(Text(f"user: {instructions}", style=_DIM))
+            user_msg.display = True
 
