@@ -44,6 +44,7 @@ from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
+from .flashcard_review import AgainBehaviour, FlashcardReview
 from .flashcard_viewer import FlashcardViewer
 from .navigable import WidgetDeactivated
 
@@ -696,9 +697,20 @@ class ChatPane(Widget):
             await self._cmd_close()
 
         if getattr(self.app, "debug_logging", False):
-            @registry.command(name="test-flashcards", help="Open flashcard study widget with sample data")
-            async def test_flashcards():
-                await self._cmd_test_flashcards()
+            @registry.command(name="test-flashcards", help="Open flashcard review widget with sample data")
+            @click.option("--enable-input/--no-input", default=True, help="Enable/disable user answer input")
+            @click.option("--auto-score", is_flag=True, default=False, help="Enter auto-scores instead of rating")
+            @click.option("--again-mark", is_flag=True, default=False, help="'Again' marks score instead of re-queuing")
+            @click.option("--counter-start", type=int, default=None, help="Override counter start number")
+            @click.option("--counter-total", type=int, default=None, help="Override counter total")
+            async def test_flashcards(enable_input, auto_score, again_mark, counter_start, counter_total):
+                await self._cmd_test_flashcards(
+                    user_input_enabled=enable_input,
+                    auto_score=auto_score,
+                    again_mark=again_mark,
+                    counter_start=counter_start,
+                    counter_total=counter_total,
+                )
 
             @registry.command(name="test-flashcard-proposal", help="Open flashcard proposal widget with sample data")
             async def test_flashcard_proposal():
@@ -835,23 +847,39 @@ class ChatPane(Widget):
             "Ctrl+l to refocus chat input"
         )
 
-    async def _cmd_test_flashcards(self) -> None:
-        """Open the flashcard study widget with sample data."""
+    async def _cmd_test_flashcards(
+        self,
+        *,
+        user_input_enabled: bool = True,
+        auto_score: bool = False,
+        again_mark: bool = False,
+        counter_start: int | None = None,
+        counter_total: int | None = None,
+    ) -> None:
+        """Open the flashcard review widget with sample data."""
         sample_cards = [
-            {"question": "What is the time complexity of binary search?", "answer": "O(log n) — each comparison halves the remaining search space."},
-            {"question": "Explain the difference between a stack and a queue.", "answer": "A stack is LIFO (Last In, First Out): the most recently added element is removed first.\n\nA queue is FIFO (First In, First Out): the earliest added element is removed first."},
+            {"id": 101, "question": "What is the time complexity of binary search?", "answer": "O(log n) — each comparison halves the remaining search space."},
+            {"id": 102, "question": "Explain the difference between a stack and a queue.", "answer": "A stack is LIFO (Last In, First Out): the most recently added element is removed first.\n\nA queue is FIFO (First In, First Out): the earliest added element is removed first."},
             {"question": "What is a hash collision and how is it typically resolved?", "answer": "A hash collision occurs when two different keys produce the same hash value.\n\nCommon resolution strategies:\n• Chaining — each bucket holds a linked list of entries\n• Open addressing — probe for the next available slot (linear, quadratic, or double hashing)"},
-            {"question": "What does the CAP theorem state?", "answer": "A distributed system can provide at most two of the following three guarantees simultaneously:\n\n• Consistency — every read returns the most recent write\n• Availability — every request receives a response\n• Partition tolerance — the system operates despite network partitions"},
+            {"id": 204, "question": "What does the CAP theorem state?", "answer": "A distributed system can provide at most two of the following three guarantees simultaneously:\n\n• Consistency — every read returns the most recent write\n• Availability — every request receives a response\n• Partition tolerance — the system operates despite network partitions"},
             {"question": "What is the difference between concurrency and parallelism?", "answer": "Concurrency is about dealing with multiple tasks at once (structure).\nParallelism is about doing multiple tasks at once (execution).\n\nConcurrency is possible on a single core via interleaving; parallelism requires multiple cores."},
         ]
 
+        again_behaviour = AgainBehaviour.MARK if again_mark else AgainBehaviour.QUEUE
+
         area = self.query_one("#message-area")
-        study = FlashcardViewer()
-        await area.mount(study)
-        study.set_flashcards(sample_cards)
+        review = FlashcardReview(
+            sample_cards,
+            user_input_enabled=user_input_enabled,
+            auto_score=auto_score,
+            again_behaviour=again_behaviour,
+            counter_start=counter_start,
+            counter_total=counter_total,
+        )
+        await area.mount(review)
         area.scroll_end(animate=False)
-        self._active_widgets.append(study)
-        study.focus()
+        self._active_widgets.append(review)
+        review.focus()
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
         )
@@ -1130,6 +1158,14 @@ class ChatPane(Widget):
 
     def on_flashcard_viewer_session_complete(self, event: FlashcardViewer.SessionComplete) -> None:
         self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard session complete."))
+        self._restore_chat_input()
+
+    def on_flashcard_review_session_complete(self, event: FlashcardReview.SessionComplete) -> None:
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard review session complete."))
+        self._restore_chat_input()
+
+    def on_flashcard_review_session_cancelled(self, event: FlashcardReview.SessionCancelled) -> None:
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard review session cancelled."))
         self._restore_chat_input()
 
     def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:

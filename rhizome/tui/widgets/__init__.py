@@ -7,6 +7,7 @@ from .flashcard_proposal import FlashcardProposal
 from .entry_list import EntryList
 from .explorer_viewer import ExplorerViewer
 from .flashcard_list import FlashcardList
+from .flashcard_review import FlashcardReview
 from .flashcard_viewer import FlashcardViewer
 from .interrupt import InterruptWidgetBase
 from .navigable import NavigableWidgetMixin, WidgetDeactivated
@@ -35,6 +36,7 @@ __all__ = [
     "FlashcardProposal",
     "ExplorerViewer",
     "FlashcardList",
+    "FlashcardReview",
     "FlashcardViewer",
     "HintHigherVerbosity",
     "InterruptWidgetBase",
