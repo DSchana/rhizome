@@ -58,6 +58,7 @@ class NavigableWidgetMixin:
         """Clear the navigation hint and notify ChatPane."""
         self.border_subtitle = None
         self.remove_class("navigable")
+        self.add_class("deactivated")
         self.can_focus = False
         if self.DISABLE_CHILDREN_ON_DEACTIVATE:
             for child in self.query("*"):

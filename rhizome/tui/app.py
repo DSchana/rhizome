@@ -37,6 +37,9 @@ class RhizomeApp(App):
     .navigable:focus-within {
         border: solid rgb(86,126,160);
     }
+    .deactivated {
+        border: solid rgb(30,30,30);
+    }
     """
 
     def __init__(self, db_path: str | Path | None = None, debug: bool = False) -> None:
