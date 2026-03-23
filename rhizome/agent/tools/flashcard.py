@@ -10,7 +10,7 @@ stored in ``RhizomeAgentState.flashcard_proposal_state``, separate from
 from __future__ import annotations
 
 import json
-from typing import Any, TypedDict
+from typing import Any
 
 from langchain.tools import tool
 from langchain_core.messages import ToolMessage
@@ -18,33 +18,12 @@ from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
+from rhizome.agent.state import FlashcardProposalItem, FlashcardProposalState
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.operations import create_flashcard
 from rhizome.logs import get_logger
 
 _logger = get_logger("agent.flashcard_proposal_tools")
-
-
-# ---------------------------------------------------------------------------
-# State types
-# ---------------------------------------------------------------------------
-
-class FlashcardProposalItem(TypedDict):
-    id: int
-    topic_id: int
-    question_text: str
-    answer_text: str
-    entry_ids: list[int]
-    testing_notes: str | None
-
-
-class FlashcardProposalState(TypedDict):
-    """Consolidated state for the flashcard proposal workflow.
-
-    Stored in ``RhizomeAgentState.flashcard_proposal_state``.
-    """
-    items: list[FlashcardProposalItem]
-    """The staged flashcard items."""
 
 
 class FlashcardInput(BaseModel):

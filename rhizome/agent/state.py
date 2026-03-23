@@ -6,8 +6,26 @@ from langchain.agents.middleware.types import AgentState
 
 from typing import TypedDict
 
-from rhizome.agent.tools.flashcard import FlashcardProposalState
 from rhizome.agent.review_state import ReviewState
+
+
+class FlashcardProposalItem(TypedDict):
+    """A single proposed flashcard, stored in agent state."""
+    id: int
+    topic_id: int
+    question_text: str
+    answer_text: str
+    entry_ids: list[int]
+    testing_notes: str | None
+
+
+class FlashcardProposalState(TypedDict):
+    """Consolidated state for the flashcard proposal workflow.
+
+    Stored in ``RhizomeAgentState.flashcard_proposal_state``.
+    """
+    items: list[FlashcardProposalItem]
+    """The staged flashcard items."""
 
 
 class CommitProposalEntry(TypedDict):
