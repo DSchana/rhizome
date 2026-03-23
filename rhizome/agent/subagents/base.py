@@ -68,12 +68,20 @@ class Subagent:
         self,
         input: str,
         conversation_id: str | None = None,
-    ) -> tuple[str | None, AIMessage]:
+        extra_state: dict[str, Any] | None = None,
+    ) -> tuple[str | None, AIMessage, dict[str, Any]]:
         """Invoke the subagent with a human message.
 
-        Returns a ``(conversation_id, ai_message)`` tuple.  The caller
-        should pass the returned ``conversation_id`` back on subsequent
-        calls to continue the same conversation.
+        Returns a ``(conversation_id, ai_message, state)`` tuple.  The
+        caller should pass the returned ``conversation_id`` back on
+        subsequent calls to continue the same conversation.
+
+        Parameters
+        ----------
+        extra_state:
+            Additional state fields to pass to the graph alongside
+            messages.  Used by subagents with custom state schemas
+            (e.g. the commit subagent passes ``commit_proposal``).
         """
         if (
             conversation_id is None
@@ -88,8 +96,12 @@ class Subagent:
 
         messages = self.preinvoke_hook(messages)
 
+        graph_input: dict[str, Any] = {"messages": messages}
+        if extra_state:
+            graph_input.update(extra_state)
+
         _logger.debug("Invoking subagent with messages:\n\n%s", "\n\n".join(m.content for m in messages))
-        response = await self.agent.ainvoke({"messages": messages}, config=self.config)
+        response = await self.agent.ainvoke(graph_input, config=self.config)
 
         ai_message = response["messages"][-1]
         ai_message = self.postinvoke_hook(ai_message)
@@ -97,7 +109,10 @@ class Subagent:
         if self.stateful:
             self._history.append(ai_message)
 
-        return self._conversation_id, ai_message
+        # Return all non-message state fields
+        result_state = {k: v for k, v in response.items() if k != "messages"}
+
+        return self._conversation_id, ai_message, result_state
 
     def _reset_conversation(self, conversation_id: str | None = None) -> None:
         self._history = [SystemMessage(content=self.system_prompt)]

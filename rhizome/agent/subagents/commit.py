@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from langchain.agents.structured_output import ProviderStrategy
+from langchain.agents.middleware.types import AgentState
 from langchain_core.messages import ToolMessage
 from pydantic import BaseModel, Field
 from langchain.tools import tool
@@ -11,9 +11,9 @@ from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command, interrupt
 
 from rhizome.agent.builder import build_agent
-from rhizome.agent.state import CommitProposalEntry
+from rhizome.agent.state import CommitProposalEntry, CommitProposalState
+from rhizome.agent.subagents.base import Subagent
 from rhizome.agent.system_prompt import KNOWLEDGE_ENTRIES_GUIDE
-from rhizome.agent.subagents.base import StructuredSubagent
 from rhizome.agent.tools.database import build_database_tools
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.models import EntryType
@@ -37,36 +37,34 @@ You have access to database tools to query existing topics and entries so you ca
 - Avoid creating duplicate entries
 - Understand the existing knowledge structure
 
-## What makes a good knowledge entry
-
 """ + KNOWLEDGE_ENTRIES_GUIDE + """
 
-## Response format
+## How to propose entries
 
-Respond ONLY with a JSON object in this exact format — no additional text, no explanations,
-no commentary about your planning steps:
-{
-    "entries": [
-        {
-            "title": "Short descriptive title",
-            "content": "Full content of the knowledge entry",
-            "entry_type": "fact|exposition|overview",
-            "topic_id": <integer topic ID>
-        }
-    ]
-}
+Use the `stage_entries` tool to create your initial proposal. Each entry needs:
+- `title`: short descriptive title
+- `content`: full content of the knowledge entry
+- `entry_type`: one of "fact", "exposition", or "overview"
+- `topic_id`: integer topic ID (use database tools to find the right one)
+
+If you are revising an existing proposal (e.g. after user feedback), use `edit_entries`
+to make targeted changes by stable ID. Do NOT use `stage_entries` to replace the entire
+proposal — that would discard user edits.
+
+Once you have staged or edited entries, respond with a brief summary of what you proposed
+or changed. Do NOT include the full entry content in your response.
 """
 
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas (used by both subagent and root-agent tools)
+# ---------------------------------------------------------------------------
 
 class KnowledgeEntryProposalSchema(BaseModel):
     title: str
     content: str
     entry_type: str
     topic_id: int
-
-
-class CommitProposalResponseSchema(BaseModel):
-    entries: list[KnowledgeEntryProposalSchema]
 
 
 class CommitEntryEdit(BaseModel):
@@ -77,6 +75,20 @@ class CommitEntryEdit(BaseModel):
     entry_type: str | None = Field(default=None, description="New entry type: fact, exposition, or overview (omit to keep current)")
     topic_id: int | None = Field(default=None, description="New topic ID (omit to keep current)")
 
+
+# ---------------------------------------------------------------------------
+# Subagent state
+# ---------------------------------------------------------------------------
+
+class CommitSubagentState(AgentState):
+    """State for the commit subagent graph, mirroring the root agent's
+    commit_proposal field so the subagent can operate on the same data."""
+    commit_proposal: list[CommitProposalEntry]
+
+
+# ---------------------------------------------------------------------------
+# Diff helper
+# ---------------------------------------------------------------------------
 
 def _build_commit_diff(
     original: list[dict],
@@ -120,35 +132,146 @@ def _build_commit_diff(
     return parts
 
 
-def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> StructuredSubagent:
-    """Build the commit StructuredSubagent with filtered DB tools."""
-    tools = list(build_database_tools(session_factory).values())
+# ---------------------------------------------------------------------------
+# Subagent builder
+# ---------------------------------------------------------------------------
+
+def _build_subagent_tools():
+    """Build tools that the commit subagent uses internally to modify its own
+    proposal state.  These are NOT exposed to the root agent."""
+
+    @tool("stage_entries", description=(
+        "Stage a fresh set of knowledge entries as the commit proposal. "
+        "Use this for initial proposal creation. Each entry is auto-assigned "
+        "a stable ID. Do NOT use this to revise an existing proposal — use "
+        "edit_entries instead to preserve user edits."
+    ))
+    async def stage_entries(
+        entries: list[KnowledgeEntryProposalSchema],
+        runtime: ToolRuntime,
+    ) -> Command:
+        if not entries:
+            return Command(update={
+                "messages": [ToolMessage(
+                    content="Error: no entries provided.",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        proposal = [
+            CommitProposalEntry(
+                id=i, title=e.title, content=e.content,
+                entry_type=e.entry_type, topic_id=e.topic_id,
+            )
+            for i, e in enumerate(entries)
+        ]
+        msg = f"Staged {len(proposal)} entry/entries."
+        return Command(update={
+            "commit_proposal": proposal,
+            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+        })
+
+    @tool("edit_entries", description=(
+        "Make targeted edits to the current commit proposal. "
+        "Supports in-place edits (partial field updates by stable ID), "
+        "deletions (by ID), and additions (auto-assigned IDs). "
+        "Processing order: edits, then deletions, then additions."
+    ))
+    async def edit_entries(
+        runtime: ToolRuntime,
+        edits: list[CommitEntryEdit] | None = None,
+        additions: list[KnowledgeEntryProposalSchema] | None = None,
+        deletions: list[int] | None = None,
+    ) -> Command:
+        proposal = runtime.state.get("commit_proposal") or []
+        if not proposal and not additions:
+            return Command(update={
+                "messages": [ToolMessage(
+                    content="Error: no proposal to edit and no additions provided.",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        entries = [dict(e) for e in proposal]
+        entries_by_id = {e["id"]: e for e in entries}
+        changes: list[str] = []
+
+        for edit in (edits or []):
+            entry = entries_by_id.get(edit.id)
+            if entry is None:
+                continue
+            if edit.title is not None:
+                entry["title"] = edit.title
+            if edit.content is not None:
+                entry["content"] = edit.content
+            if edit.entry_type is not None:
+                entry["entry_type"] = edit.entry_type
+            if edit.topic_id is not None:
+                entry["topic_id"] = edit.topic_id
+            changes.append(f"edited entry {edit.id}")
+
+        delete_ids = set(deletions or [])
+        for did in sorted(delete_ids):
+            if did in entries_by_id:
+                changes.append(f"deleted entry {did} ({entries_by_id[did]['title']!r})")
+        entries = [e for e in entries if e["id"] not in delete_ids]
+
+        next_id = max((e["id"] for e in proposal), default=-1) + 1
+        for addition in (additions or []):
+            entries.append(CommitProposalEntry(
+                id=next_id, title=addition.title, content=addition.content,
+                entry_type=addition.entry_type, topic_id=addition.topic_id,
+            ))
+            changes.append(f"added entry {next_id} ({addition.title!r})")
+            next_id += 1
+
+        new_proposal = [CommitProposalEntry(**e) for e in entries]
+        summary = "; ".join(changes) if changes else "no changes applied"
+        msg = f"Proposal updated ({len(new_proposal)} entry/entries): {summary}."
+        return Command(update={
+            "commit_proposal": new_proposal,
+            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+        })
+
+    return [stage_entries, edit_entries]
+
+
+def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Subagent:
+    """Build the commit subagent with DB tools and proposal-editing tools.
+
+    Returns a ``Subagent`` whose graph uses ``CommitSubagentState`` so its
+    tools can read/write ``commit_proposal`` via ``extra_state``.
+    """
+    db_tools = list(build_database_tools(session_factory).values())
+    proposal_tools = _build_subagent_tools()
 
     provider = agent_kwargs.pop("provider", "anthropic")
     model_name = agent_kwargs.pop("model_name", "claude-sonnet-4-6")
 
     model, agent, _middleware = build_agent(
-        tools,
+        db_tools + proposal_tools,
         provider=provider,
         model_name=model_name,
-        response_format=ProviderStrategy(CommitProposalResponseSchema),
+        state_schema=CommitSubagentState,
         **{**agent_kwargs, "temperature": 0.1},
     )
 
-    return StructuredSubagent(
+    return Subagent(
         model=model,
         agent=agent,
         system_prompt=COMMIT_SYSTEM_PROMPT,
         stateful=True,
-        config=None,
-        response_schema=CommitProposalResponseSchema,
     )
 
 
+# ---------------------------------------------------------------------------
+# Root-agent tools (invoke subagent, direct create, present, edit, accept)
+# ---------------------------------------------------------------------------
+
 def build_commit_subagent_tools(
-    session_factory, 
-    chat_pane, 
-    subagent: StructuredSubagent
+    session_factory,
+    chat_pane,
+    subagent: Subagent,
 ) -> list:
     """Build the tools the root agent sees for the commit workflow.
 
@@ -158,8 +281,6 @@ def build_commit_subagent_tools(
     in ``RhizomeAgentState`` (``commit_proposal`` and ``commit_payload``
     fields) and accessed via ``ToolRuntime``.
     """
-    assert isinstance(subagent, StructuredSubagent), "Expected a StructuredSubagent"
-    assert subagent.response_schema is CommitProposalResponseSchema
 
     @tool("inspect_commit_payload", description=(
         "Return the selected conversation messages that the user chose to commit. "
@@ -168,7 +289,8 @@ def build_commit_subagent_tools(
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def inspect_commit_payload(runtime: ToolRuntime) -> Command:
-        payload = runtime.state.get("commit_payload")
+        commit_state = runtime.state.get("commit_proposal_state")
+        payload = commit_state.get("payload") if commit_state else None
         if not payload:
             return Command(update={
                 "messages": [ToolMessage(
@@ -187,7 +309,8 @@ def build_commit_subagent_tools(
         "Use this for larger or more complex selections that benefit from dedicated processing. "
         "Pass 'context' to include relevant parent conversation context (e.g. the current topic). "
         "Pass 'conversation_id' from a previous response to continue refining the proposal. "
-        "Additional instructions are typically only necessary in follow-ups."
+        "When revising after user edits, the current proposal state (with user changes) and "
+        "the user's diff are automatically passed to the subagent."
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def invoke_commit_subagent(
@@ -196,11 +319,12 @@ def build_commit_subagent_tools(
         context: str | None = None,
         conversation_id: str | None = None,
     ) -> Command:
-        # Build input from the commit payload if this is a fresh conversation.
+        commit_state = runtime.state.get("commit_proposal_state")
         input_parts = []
 
         if conversation_id is None:
-            payload = runtime.state.get("commit_payload")
+            # Fresh invocation — include the commit payload
+            payload = commit_state.get("payload") if commit_state else None
             if payload:
                 lines = []
                 for entry in payload:
@@ -214,38 +338,48 @@ def build_commit_subagent_tools(
                     + "\n\n---\n\n".join(lines)
                 )
 
+        # Include the user edit diff if available
+        proposal_diff = commit_state.get("proposal_diff") if commit_state else None
+        if proposal_diff:
+            input_parts.append(f"User edit summary:\n{proposal_diff}")
+
         if context:
             input_parts.append(f"Additional context:\n{context}")
 
         if instructions:
-            input_parts.append(f"Additional Instructions:\n{instructions}")
+            input_parts.append(f"Instructions:\n{instructions}")
 
         input_text = "\n\n".join(input_parts)
-        conv_id, response = await subagent.ainvoke(input_text, conversation_id)
 
-        state_update: dict[str, Any] = {}
+        # Pass the current proposal so the subagent can see/edit user changes
+        current_proposal = commit_state.get("proposal") if commit_state else None
 
-        if subagent.structured_response is not None:
-            proposal_entries = [
-                CommitProposalEntry(
-                    id=i,
-                    title=e.title,
-                    content=e.content,
-                    entry_type=e.entry_type,
-                    topic_id=e.topic_id,
-                )
-                for i, e in enumerate(subagent.structured_response.entries)
-            ]
-            state_update["commit_proposal"] = proposal_entries
-            msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries."
-            if conv_id is not None:
-                msg += f" conversation_id={conv_id}"
-            msg += " Call present_commit_proposal to show it to the user."
+        conv_id, ai_message, result_state = await subagent.ainvoke(
+            input_text,
+            conversation_id=conversation_id,
+            extra_state={"commit_proposal": current_proposal or []},
+        )
+
+        proposal = result_state.get("commit_proposal")
+
+        if proposal:
+            state_update = {"commit_proposal_state": CommitProposalState(
+                payload=commit_state["payload"] if commit_state else [],
+                proposal=proposal,
+                proposal_diff=None,
+            )}
+            msg = (
+                f"Commit proposal staged: {len(proposal)} entry/entries. "
+                f"conversation_id={conv_id}. "
+                f"Call present_commit_proposal to show it to the user."
+            )
         else:
-            msg = json.dumps({
-                "error": "Failed to parse proposal. Check raw response content.",
-                "raw_response": response.content,
-            }, indent=2, default=str)
+            state_update = {}
+            msg = (
+                f"Subagent responded but produced no proposal entries. "
+                f"conversation_id={conv_id}. "
+                f"Response: {ai_message.content}"
+            )
 
         state_update["messages"] = [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)]
         return Command(update=state_update)
@@ -275,9 +409,14 @@ def build_commit_subagent_tools(
             )
             for i, e in enumerate(entries)
         ]
+        commit_state = runtime.state.get("commit_proposal_state")
         msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries. Call present_commit_proposal to show it to the user."
         return Command(update={
-            "commit_proposal": proposal_entries,
+            "commit_proposal_state": CommitProposalState(
+                payload=commit_state["payload"] if commit_state else [],
+                proposal=proposal_entries,
+                proposal_diff=None,
+            ),
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
@@ -285,11 +424,15 @@ def build_commit_subagent_tools(
         "Display the current commit proposal to the user for review. "
         "The user can approve, request edits, reset, or cancel. "
         "If edits requested, use edit_commit_proposal to make targeted "
-        "changes (preserving any direct edits the user made), then present again."
+        "changes (preserving any direct edits the user made), then present again. "
+        "If the proposal was originally created by the subagent, you can also "
+        "call invoke_commit_subagent with the conversation_id and instructions "
+        "to have the subagent revise it."
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def present_commit_proposal(runtime: ToolRuntime) -> Command:
-        proposal = runtime.state.get("commit_proposal")
+        commit_state = runtime.state.get("commit_proposal_state")
+        proposal = commit_state.get("proposal") if commit_state else None
         if not proposal:
             return Command(update={
                 "messages": [ToolMessage(
@@ -315,7 +458,6 @@ def build_commit_subagent_tools(
             "topic_map": topic_map,
         })
 
-        # Result is a dict: {choice, entries, instructions?}
         choice = result["choice"]
         modified_entries = result.get("entries", [])
         new_proposal = [CommitProposalEntry(**e) for e in modified_entries]
@@ -323,6 +465,7 @@ def build_commit_subagent_tools(
         # Build diff summary
         originals_by_id = {e["id"]: e for e in proposal}
         diff_parts = _build_commit_diff(proposal, modified_entries, originals_by_id)
+        diff_text = "\n".join(diff_parts)
 
         if choice == "Approve":
             msg_lines = [
@@ -331,7 +474,11 @@ def build_commit_subagent_tools(
                 "Call accept_commit_proposal to write them to the database.",
             ]
             return Command(update={
-                "commit_proposal": new_proposal,
+                "commit_proposal_state": CommitProposalState(
+                    payload=commit_state["payload"] if commit_state else [],
+                    proposal=new_proposal,
+                    proposal_diff=None,
+                ),
                 "messages": [ToolMessage(
                     content="\n".join(msg_lines),
                     tool_call_id=runtime.tool_call_id,
@@ -344,10 +491,17 @@ def build_commit_subagent_tools(
                 *diff_parts,
                 f"Proposal state updated ({len(new_proposal)} entry/entries remaining).",
                 "Use edit_commit_proposal to make further changes, then "
-                "present_commit_proposal to show the revised proposal.",
+                "present_commit_proposal to show the revised proposal. "
+                "Alternatively, if the proposal was created by the subagent, "
+                "call invoke_commit_subagent with the conversation_id and "
+                "instructions to have the subagent revise it.",
             ]
             return Command(update={
-                "commit_proposal": new_proposal,
+                "commit_proposal_state": CommitProposalState(
+                    payload=commit_state["payload"] if commit_state else [],
+                    proposal=new_proposal,
+                    proposal_diff=diff_text,
+                ),
                 "messages": [ToolMessage(
                     content="\n".join(msg_lines),
                     tool_call_id=runtime.tool_call_id,
@@ -355,7 +509,7 @@ def build_commit_subagent_tools(
             })
         else:
             return Command(update={
-                "commit_proposal": None,
+                "commit_proposal_state": None,
                 "messages": [ToolMessage(
                     content="User cancelled the proposal.",
                     tool_call_id=runtime.tool_call_id,
@@ -376,7 +530,8 @@ def build_commit_subagent_tools(
         additions: list[KnowledgeEntryProposalSchema] | None = None,
         deletions: list[int] | None = None,
     ) -> Command:
-        proposal = runtime.state.get("commit_proposal")
+        commit_state = runtime.state.get("commit_proposal_state")
+        proposal = commit_state.get("proposal") if commit_state else None
         if not proposal:
             return Command(update={
                 "messages": [ToolMessage(
@@ -389,7 +544,6 @@ def build_commit_subagent_tools(
         entries_by_id = {e["id"]: e for e in entries}
         changes: list[str] = []
 
-        # 1. Apply edits (by stable id)
         for edit in (edits or []):
             entry = entries_by_id.get(edit.id)
             if entry is None:
@@ -404,22 +558,17 @@ def build_commit_subagent_tools(
                 entry["topic_id"] = edit.topic_id
             changes.append(f"edited entry {edit.id}")
 
-        # 2. Apply deletions (by stable id)
         delete_ids = set(deletions or [])
         for did in sorted(delete_ids):
             if did in entries_by_id:
                 changes.append(f"deleted entry {did} ({entries_by_id[did]['title']!r})")
         entries = [e for e in entries if e["id"] not in delete_ids]
 
-        # 3. Append additions (assign next available id)
         next_id = max((e["id"] for e in proposal), default=-1) + 1
         for addition in (additions or []):
             entries.append(CommitProposalEntry(
-                id=next_id,
-                title=addition.title,
-                content=addition.content,
-                entry_type=addition.entry_type,
-                topic_id=addition.topic_id,
+                id=next_id, title=addition.title, content=addition.content,
+                entry_type=addition.entry_type, topic_id=addition.topic_id,
             ))
             changes.append(f"added entry {next_id} ({addition.title!r})")
             next_id += 1
@@ -428,7 +577,11 @@ def build_commit_subagent_tools(
         summary = "; ".join(changes) if changes else "no changes applied"
         msg = f"Commit proposal updated ({len(new_proposal)} entry/entries): {summary}."
         return Command(update={
-            "commit_proposal": new_proposal,
+            "commit_proposal_state": CommitProposalState(
+                payload=commit_state["payload"] if commit_state else [],
+                proposal=new_proposal,
+                proposal_diff=commit_state.get("proposal_diff") if commit_state else None,
+            ),
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
@@ -438,7 +591,8 @@ def build_commit_subagent_tools(
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def accept_commit_proposal(runtime: ToolRuntime) -> Command:
-        proposal = runtime.state.get("commit_proposal")
+        commit_state = runtime.state.get("commit_proposal_state")
+        proposal = commit_state.get("proposal") if commit_state else None
         if not proposal:
             return Command(update={
                 "messages": [ToolMessage(
@@ -466,8 +620,7 @@ def build_commit_subagent_tools(
 
         msg = f"Committed {len(created)} knowledge entry/entries to the database."
         return Command(update={
-            "commit_proposal": None,
-            "commit_payload": None,
+            "commit_proposal_state": None,
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 

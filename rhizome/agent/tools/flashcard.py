@@ -188,7 +188,7 @@ def build_flashcard_proposal_tools(
         )
 
         _logger.debug("Invoking answerer subagent with %d question(s)", len(questions_payload))
-        _, answerer_response = await answerer.ainvoke(answerer_input)
+        _, answerer_response, _ = await answerer.ainvoke(answerer_input)
 
         if answerer.structured_response is None:
             return Command(update={
@@ -232,7 +232,7 @@ def build_flashcard_proposal_tools(
         )
 
         _logger.debug("Invoking comparator subagent with %d card(s)", len(comparison_items))
-        _, comparator_response = await comparator.ainvoke(comparator_input)
+        _, comparator_response, _ = await comparator.ainvoke(comparator_input)
 
         if comparator.structured_response is None:
             return Command(update={

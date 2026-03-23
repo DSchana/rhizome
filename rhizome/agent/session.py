@@ -275,13 +275,19 @@ class AgentSession:
 
         # Build the initial state input.  Only include state fields when we
         # actually have new values — omitted keys are left untouched in the
-        # checkpoint, so nullable state (commit_payload, commit_proposal,
-        # review, etc.) persists until explicitly cleared by a tool.
+        # checkpoint, so nullable state (commit_proposal_state,
+        # flashcard_proposal_state, review, etc.) persists until explicitly
+        # cleared by a tool.
         next_input: dict | Command = {"messages": queued, "mode": mode}
 
         # Drain pending commit payload (set by ChatPane.confirm_commit_selection).
         if self._pending_commit_payload is not None:
-            next_input["commit_payload"] = self._pending_commit_payload
+            from rhizome.agent.state import CommitProposalState
+            next_input["commit_proposal_state"] = CommitProposalState(
+                payload=self._pending_commit_payload,
+                proposal=[],
+                proposal_diff=None,
+            )
             self._pending_commit_payload = None
 
         # Reset any pending user mode changes from the last invocation of .stream(). The graph state is provided

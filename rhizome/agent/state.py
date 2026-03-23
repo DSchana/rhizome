@@ -19,14 +19,31 @@ class CommitProposalEntry(TypedDict):
     topic_id: int
 
 
+class CommitProposalState(TypedDict):
+    """Consolidated state for the commit proposal workflow.
+
+    Stored in ``RhizomeAgentState.commit_proposal_state``.
+    """
+    payload: list[dict]
+    """Selected conversation messages for knowledge commit (``{"index", "content"}``)."""
+
+    proposal: list[CommitProposalEntry]
+    """Proposed knowledge entries awaiting user approval."""
+
+    proposal_diff: str | None
+    """Human-readable diff summary from the most recent user edit session.
+    Written by ``present_commit_proposal`` on Edit; read by
+    ``invoke_commit_subagent`` to inform the subagent of user changes."""
+
+
 class RhizomeAgentState(AgentState):
     """Extended agent state for checkpoint/replay.
 
     All fields use default last-write-wins semantics.  Nullable fields
-    (``review``, ``flashcard_proposal_state``, ``commit_payload``,
-    ``commit_proposal``) persist in the checkpoint until explicitly
-    cleared by a tool via ``Command(update={...})``.  They are NOT
-    reset to ``None`` in ``stream()``'s ``next_input``.
+    (``review``, ``flashcard_proposal_state``, ``commit_proposal_state``)
+    persist in the checkpoint until explicitly cleared by a tool via
+    ``Command(update={...})``.  They are NOT reset to ``None`` in
+    ``stream()``'s ``next_input``.
     """
 
     mode: str
@@ -54,8 +71,6 @@ class RhizomeAgentState(AgentState):
     """Consolidated flashcard proposal state: staged items.
     ``None`` when no proposal is active."""
 
-    commit_payload: list[dict] | None
-    """Selected conversation messages for knowledge commit (``{"index", "content"}``)."""
-
-    commit_proposal: list[CommitProposalEntry] | None
-    """Proposed knowledge entries awaiting user approval."""
+    commit_proposal_state: CommitProposalState | None
+    """Consolidated commit proposal state: payload, proposal entries, and
+    diff summary.  ``None`` when no commit workflow is active."""
