@@ -51,8 +51,8 @@ class RhizomeAgentState(AgentState):
     """Review session state machine; ``None`` when no review is active."""
 
     flashcard_proposal_state: FlashcardProposalState | None
-    """Consolidated flashcard proposal state: staged items, validation ID,
-    and validation attempt counter.  ``None`` when no proposal is active."""
+    """Consolidated flashcard proposal state: staged items.
+    ``None`` when no proposal is active."""
 
     commit_payload: list[dict] | None
     """Selected conversation messages for knowledge commit (``{"index", "content"}``)."""

@@ -580,11 +580,11 @@ Goal: prepare the question sequence before starting the review.
    follow the proposal workflow:
    a. `create_flashcard_proposal(flashcards, validate=True)` — stage the flashcards and run an automated clarity
       check by having an independent agent answer each question without context. If any cards fail validation,
-      revise the failed cards and re-stage with `create_flashcard_proposal(validate=True)`. You have a maximum of
-      2 validation attempts — if cards still fail after 2 attempts, drop the failing cards and re-stage with
-      `create_flashcard_proposal(validate=False)` containing only the passing cards. IMPORTANT: Run the entire
-      create → revise loop SILENTLY. Do NOT narrate validation results, failures, or revision steps to the user.
-      Just keep iterating until all cards pass (or the attempt limit is reached), then move on to
+      revise the failed cards and re-stage with `create_flashcard_proposal(validate=True)`. Do not call with
+      `validate=True` more than twice in a row — if cards still fail after 2 attempts, drop the failing cards
+      and re-stage with `create_flashcard_proposal(validate=False)` containing only the passing cards. IMPORTANT:
+      Run the entire create → revise loop SILENTLY. Do NOT narrate validation results, failures, or revision steps
+      to the user. Just keep iterating until all cards pass (or 2 attempts are exhausted), then move on to
       `present_flashcard_proposal`. Do NOT narrate validation success either (e.g. "all cards passed") —
       just silently proceed to presenting.
    b. `present_flashcard_proposal` — show the proposal to the user for review. They can approve, request edits, or

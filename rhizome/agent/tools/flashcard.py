@@ -46,11 +46,6 @@ class FlashcardProposalState(TypedDict):
     items: list[FlashcardProposalItem]
     """The staged flashcard items."""
 
-    validation_attempts: int
-    """Number of validation attempts consumed.  Persists across re-stages
-    so that the attempt budget is enforced across the full proposal
-    lifecycle."""
-
 
 class FlashcardInput(BaseModel):
     """Input schema for creating a single flashcard."""
@@ -122,8 +117,6 @@ def build_flashcard_proposal_tools(
     session_factory,
     answerer=None,
     comparator=None,
-    *,
-    max_validation_attempts: int = 2,
 ) -> dict[str, Any]:
     """Build flashcard proposal tools with session_factory closed over.
 
@@ -133,9 +126,6 @@ def build_flashcard_proposal_tools(
         Optional ``StructuredSubagent`` instances for flashcard validation.
         Required if the ``validate`` flag on ``create_flashcard_proposal``
         is to be used.
-    max_validation_attempts:
-        Maximum number of validation attempts per proposal before failing
-        cards are dropped.
     """
 
     @tool("create_flashcard_proposal", description=(
@@ -164,14 +154,7 @@ def build_flashcard_proposal_tools(
             for i, fc in enumerate(flashcards)
         ]
 
-        # Read prior attempt count from existing state (persists across re-stages).
-        fp_state: FlashcardProposalState | None = runtime.state.get("flashcard_proposal_state")
-        prior_attempts = (fp_state.get("validation_attempts") or 0) if fp_state else 0
-
-        proposal_state = FlashcardProposalState(
-            items=items,
-            validation_attempts=prior_attempts,
-        )
+        proposal_state = FlashcardProposalState(items=items)
 
         if not validate:
             msg = (
@@ -193,9 +176,6 @@ def build_flashcard_proposal_tools(
                 )],
             })
 
-        attempts = prior_attempts + 1
-        is_final_attempt = attempts >= max_validation_attempts
-
         # Step 1: Build question list for the answerer
         questions_payload = [
             {"index": i, "question": fc["question_text"]}
@@ -212,7 +192,7 @@ def build_flashcard_proposal_tools(
 
         if answerer.structured_response is None:
             return Command(update={
-                "flashcard_proposal_state": {**proposal_state, "validation_attempts": attempts},
+                "flashcard_proposal_state": proposal_state,
                 "messages": [ToolMessage(
                     content=json.dumps({
                         "error": "Answerer subagent failed to produce structured output.",
@@ -256,7 +236,7 @@ def build_flashcard_proposal_tools(
 
         if comparator.structured_response is None:
             return Command(update={
-                "flashcard_proposal_state": {**proposal_state, "validation_attempts": attempts},
+                "flashcard_proposal_state": proposal_state,
                 "messages": [ToolMessage(
                     content=json.dumps({
                         "error": "Comparator subagent failed to produce structured output.",
@@ -286,51 +266,36 @@ def build_flashcard_proposal_tools(
 
         passed_count = sum(1 for r in results if r["passed"])
         failed_count = len(results) - passed_count
-        remaining_attempts = max_validation_attempts - attempts
 
         summary: dict[str, Any] = {
             "all_passed": all_passed,
             "passed": passed_count,
             "failed": failed_count,
             "total": len(results),
-            "attempt": attempts,
-            "max_attempts": max_validation_attempts,
-            "remaining_attempts": remaining_attempts,
             "results": results,
         }
 
         if all_passed:
             msg = (
-                f"Flashcard proposal staged and validated (attempt {attempts}/{max_validation_attempts}): "
+                f"Flashcard proposal staged and validated: "
                 f"all {len(results)} card(s) are clear and unambiguous. "
                 f"Proceed with present_flashcard_proposal."
             )
-        elif is_final_attempt:
-            failed_indices = [r["question_index"] for r in results if not r["passed"]]
-            msg = (
-                f"Flashcard proposal staged. Final validation attempt ({attempts}/{max_validation_attempts}): "
-                f"{passed_count}/{len(results)} passed, {failed_count} still failing. "
-                f"Maximum revision attempts exhausted. Drop the failing card(s) "
-                f"(indices: {failed_indices}) from the proposal by re-staging with "
-                f"create_flashcard_proposal (validate=False) containing only the passing cards, "
-                f"then proceed directly to present_flashcard_proposal."
-            )
         else:
             msg = (
-                f"Flashcard proposal staged. Validation attempt {attempts}/{max_validation_attempts}: "
+                f"Flashcard proposal staged. Validation: "
                 f"{passed_count}/{len(results)} passed, {failed_count} failed. "
-                f"{remaining_attempts} attempt(s) remaining. "
                 f"Review the feedback, revise failed cards, and re-stage with "
                 f"create_flashcard_proposal(validate=True)."
             )
 
         _logger.info(
-            "Flashcard validation attempt %d/%d: %d/%d passed",
-            attempts, max_validation_attempts, passed_count, len(results),
+            "Flashcard validation: %d/%d passed",
+            passed_count, len(results),
         )
 
         return Command(update={
-            "flashcard_proposal_state": {**proposal_state, "validation_attempts": attempts},
+            "flashcard_proposal_state": proposal_state,
             "messages": [ToolMessage(
                 content=json.dumps({"summary": msg, **summary}, indent=2),
                 tool_call_id=runtime.tool_call_id,
