@@ -312,6 +312,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
 
         # Load data for current topic in the new mode
         self.call_after_refresh(self._load_data_for_current_topic)
+        self.call_after_refresh(self.scroll_visible)
 
     def action_cycle_mode(self) -> None:
         next_val = (self.view_mode + 1) % len(ViewMode)

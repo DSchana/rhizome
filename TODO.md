@@ -26,14 +26,12 @@
 - Multiple instances of "ask_user_input" cannot be posted at once - langchain needs us to specify the interrupt ID
     - could also address this by just automatically merging the two interrupts into a single widget and routing the answers accordingly? Seems very finnicky tho - we should probably just disallow this behaviour entirely.
 
-### Escape from a commit selection with no selected messages causes an error
-- ChatPane.confirm_commit_selection() takes 1 positional argument but 2 were given
-
 ## Major Issues & Refactors
 
 ### Lag during long conversations
 - Becomes very laggy during long conversations - python limitation with a lot of widgets
 - Could possibly "off-load" early conversational widgets after a while? Add a "conversation continues above (click to expand)" at the top of the conversation area?
+- One idea: switch to rust and ratatui? (Is rust worth the pain?)
 
 ### Refactor Concurrent Mode-Switching Handlers
 - address the code resolving concurrent UI/agent updates to the mode
@@ -52,9 +50,30 @@
 
 ## Minor Issues
 
-### Make text in certain widgets selectable and copyable
-- Can select text in user/agent messages, but can't copy
-- Can't even select text in the logs pane
+### Need to update the flashcard presentation in review mode now that we have a proper flashcard practice widget
+- Additionally, let's allow the user to type before revealing an answer
+
+### Wire up the subagents to the options widget
+- Commit subagent.enabled/disabled is available, but model choice isn't
+- Flashcard validator subagents aren't wired at all
+- Default models should be the up-to-date ones, not the specific timestamped ones
+
+### Propagate user changes in commit/flashcard proposal widgets to the agent response
+
+### MessageID Middleware still sometimes shows up in the token stream when it shouldn't
+- Still seeing some messages that start "[MSG-N]" in the UI when that should be entirely hidden.
+- Actually looking at the message dump - the issue seems a little stranger than that, almost wonder if the agent is inserting the "[MSG-N]" itself since sometimes it differs in format from the _injected_ metadata?
+- The latest agent message has not been decorated with the metadata in "additional_kwargs", and yet has a "[MSG-10]" prefix - that probably indicates that it's the agent doing this itself.
+- System prompt alone isn't preventing this - maybe just make it harsher
+
+### Remove rhizome.agent.middleware.message_ids log messages
+- Tend to flood the output
+
+### Move the thinking indicator below the most recent item in the agent message harness container
+- Think it's a little more noticeable at the bottom than at the top.
+
+### Add options editor to the "active widgets" list
+- needs to post a WidgetDisabled message
 
 ### Delete topic cascades to UI state
 - when we delete a topic that's currently selected, maybe the status bar should update to?
@@ -73,7 +92,6 @@
     - maybe just veto this one
 
 ### Commit Worfklow
-- commit payload should contain the user message directly above by default? Otherwise the subagent might struggle with context
 - commit subagent tools that modify the selectables also modify the payload, forcing a rewrite of the conversation
     - e.g. deselect certain messages
     - maybe just do this through instructions, like "ignore this message"
