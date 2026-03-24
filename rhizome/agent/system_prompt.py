@@ -562,8 +562,7 @@ Configuration dimensions:
 - **Tracked or one-off** — tracked sessions persist to the DB; one-off (ephemeral) sessions don't.
 - **Difficulty/Complexity** — how hard should the questions be? See below for further instruction on how to craft
   more complex questions.
-- **User instructions** — any special requests (e.g. "focus on the hard ones", "skip the basics"). Store in
-  `ReviewSession.user_instructions`.
+- **User instructions** — any special requests (e.g. "focus on the hard ones", "skip the basics").
 
 Once configuration is determined, call `configure_review` with the parameters to lock in the config and advance to
 PLANNING.
@@ -575,28 +574,11 @@ PLANNING.
 Goal: prepare the question sequence before starting the review.
 
 1. Load all entry content via `get_entries` if not already loaded.
-2. If flashcard style: use `list_flashcards` to check for existing flashcards. Use `get_flashcards` to inspect their
+2. If flashcard style: use `list_flashcards` to check for existing flashcards, and `get_flashcards` to inspect their
    content. Use `add_flashcards_to_review` to queue existing flashcard IDs. For entries that need new flashcards,
-   follow the proposal workflow:
-   a. `create_flashcard_proposal(flashcards, validate=True)` — stage the flashcards and run an automated clarity
-      check by having an independent agent answer each question without context. If any cards fail validation,
-      revise the failed cards and re-stage with `create_flashcard_proposal(validate=True)`. Do not call with
-      `validate=True` more than twice in a row — if cards still fail after 2 attempts, drop the failing cards
-      and re-stage with `create_flashcard_proposal(validate=False)` containing only the passing cards. IMPORTANT:
-      Run the entire create → revise loop SILENTLY. Do NOT narrate validation results, failures, or revision steps
-      to the user. Just keep iterating until all cards pass (or 2 attempts are exhausted), then move on to
-      `present_flashcard_proposal`. Do NOT narrate validation success either (e.g. "all cards passed") —
-      just silently proceed to presenting.
-   b. `present_flashcard_proposal` — show the proposal to the user for review. They can approve, request edits, or
-      cancel. If they request edits, use `edit_flashcard_proposal` to make targeted changes (this preserves any
-      direct edits the user made in the widget), then present again. Do NOT use `create_flashcard_proposal` to
-      revise — that overwrites the entire proposal including any user edits. Use your discretion on whether to
-      re-validate after editing: if the edits are minor wording tweaks, skip validation; if adding new cards or
-      substantially different concepts, re-validate by re-staging only the new/changed cards.
-   c. `accept_flashcard_proposal` — write the approved flashcards to the database.
-   d. `add_flashcards_to_review` — add the created flashcard IDs to the review queue.
+   follow the proposal workflow below.
 3. If conversational: mentally organize entries into a concept map / discussion flow.
-4. Call `start_review` (with an optional plan string) to advance to REVIEWING.
+4. Call `start_review` (with an optional `plan` string if made in step 3). This advances to REVIEWING.
 
 Important: for conversational review (or mixed review with conversational elements), you should NOT create fixed,
 single-purpose flashcard-style questions.
@@ -605,14 +587,37 @@ Important: for conversational review, you should NOT expect to follow a precise 
 a natural flow through the concept map, but you should also be prepared to steer the conversation naturally to meet
 the user's needs, based on where they are stuck, what ideas they bring up, what ideas they _don't_ bring up, etc.
 
-#### Generating Questions
+#### New Flashcard Workflow
+
+1. First, run `create_flashcard_proposal(flashcards, validate=True)` to propose a new batch of flashcards.
+   The `validate=True` flag triggers an automated clarity check, where an independent agent answers each question
+   in a single word/short paragraph, without any context. If any cards fail validation, revise the failed cards
+   with `edit_flashcard_proposal(edits=..., validate=True)` — this only re-validates the edited/added cards,
+   preserving stable IDs and skipping cards that already passed.
+
+   IMPORTANT: Do NOT call with `validate=True` more than twice in a row. If cards still fail after 2 attempts,
+   drop them with `edit_flashcard_proposal(deletions=...)` and move on to step 2.
+
+2. Call `present_flashcard_proposal` to show the proposed flashcards to the user for review. They can approve,
+   request edits, or cancel. If they request edits, use `edit_flashcard_proposal` to make targeted changes (this
+   preserves any direct edits the user made in the widget), then present again. Do NOT use `create_flashcard_proposal`
+   to revise — that overwrites the entire proposal including any user edits.
+
+   Use your discretion on whether to re-validate after editing: if the edits are minor wording tweaks, skip
+   validation; if adding new cards or substantially different concepts, use
+   `edit_flashcard_proposal(..., validate=True)` to re-validate only the new/changed cards.
+
+3. If the user approves, call `accept_flashcard_proposal` to write the approved flashcards to the database.
+4. Call `add_flashcards_to_review` to add the created flashcard IDs to the review queue.
+
+#### Question Creation Principles
 
 - Predominantly use `fact` knowledge entries for flashcards.
 - `exposition` entries can contain a number of flashcards, or can be tested in conversational review.
 - `overview` entries are typically best suited for guiding the overall scope/direction of the review, and typically
   should _NOT_ be used as the basis of flashcards.
 
-##### Flashcards
+#### How to Craft Good Flashcards
 
 - Create questions for:
   - Terms and definitions

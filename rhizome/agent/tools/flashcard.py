@@ -26,6 +26,146 @@ from rhizome.logs import get_logger
 _logger = get_logger("agent.flashcard_proposal_tools")
 
 
+# ---------------------------------------------------------------------------
+# Validation helper
+# ---------------------------------------------------------------------------
+
+class _ValidationResult:
+    """Result of running the answerer/comparator validation pipeline."""
+
+    __slots__ = ("all_passed", "passed", "failed", "total", "results", "error")
+
+    def __init__(
+        self,
+        *,
+        all_passed: bool = False,
+        passed: int = 0,
+        failed: int = 0,
+        total: int = 0,
+        results: list[dict[str, Any]] | None = None,
+        error: str | None = None,
+    ) -> None:
+        self.all_passed = all_passed
+        self.passed = passed
+        self.failed = failed
+        self.total = total
+        self.results = results or []
+        self.error = error
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "all_passed": self.all_passed,
+            "passed": self.passed,
+            "failed": self.failed,
+            "total": self.total,
+            "results": self.results,
+        }
+        if self.error:
+            d["error"] = self.error
+        return d
+
+
+async def _validate_flashcards(
+    items: list[FlashcardProposalItem],
+    answerer,
+    comparator,
+) -> _ValidationResult:
+    """Run the answerer → comparator validation pipeline on *items*.
+
+    Returns a ``_ValidationResult`` with per-card pass/fail and feedback.
+    On subagent failure, ``result.error`` is set and card-level results
+    may be empty.
+    """
+    # Step 1: Build question list for the answerer
+    questions_payload = [
+        {"index": i, "question": fc["question_text"]}
+        for i, fc in enumerate(items)
+    ]
+
+    answerer_input = (
+        "Answer each of the following flashcard questions:\n\n"
+        + "\n".join(f"{q['index']}. {q['question']}" for q in questions_payload)
+    )
+
+    _logger.debug("Invoking answerer subagent with %d question(s)", len(questions_payload))
+    _, answerer_response, _ = await answerer.ainvoke(answerer_input)
+
+    if answerer.structured_response is None:
+        return _ValidationResult(
+            error="Answerer subagent failed to produce structured output.",
+            total=len(items),
+        )
+
+    answerer_answers: dict[int, str] = {
+        a.question_index: a.answer
+        for a in answerer.structured_response.answers
+    }
+
+    # Step 2: Build comparison payload
+    comparison_items = [
+        {
+            "index": i,
+            "question": fc["question_text"],
+            "expected_answer": fc["answer_text"],
+            "test_taker_answer": answerer_answers.get(i, "(no answer provided)"),
+            "testing_notes": fc.get("testing_notes"),
+        }
+        for i, fc in enumerate(items)
+    ]
+
+    comparator_input = (
+        "Evaluate the following flashcards for clarity and unambiguity:\n\n"
+        + "\n---\n".join(
+            f"Card {item['index']}:\n"
+            f"  Question: {item['question']}\n"
+            f"  Expected answer: {item['expected_answer']}\n"
+            f"  Test-taker answer: {item['test_taker_answer']}\n"
+            + (f"  Testing notes: {item['testing_notes']}\n" if item["testing_notes"] else "")
+            for item in comparison_items
+        )
+    )
+
+    _logger.debug("Invoking comparator subagent with %d card(s)", len(comparison_items))
+    _, comparator_response, _ = await comparator.ainvoke(comparator_input)
+
+    if comparator.structured_response is None:
+        return _ValidationResult(
+            error="Comparator subagent failed to produce structured output.",
+            total=len(items),
+        )
+
+    # Step 3: Build result summary
+    results = []
+    all_passed = True
+    for card_result in comparator.structured_response.results:
+        idx = card_result.question_index
+        fc = items[idx] if idx < len(items) else None
+        result_entry: dict[str, Any] = {
+            "question_index": idx,
+            "question": fc["question_text"] if fc else "(unknown)",
+            "expected_answer": fc["answer_text"] if fc else "(unknown)",
+            "test_taker_answer": answerer_answers.get(idx, "(no answer)"),
+            "passed": card_result.passed,
+            "feedback": card_result.feedback,
+        }
+        results.append(result_entry)
+        if not card_result.passed:
+            all_passed = False
+
+    passed_count = sum(1 for r in results if r["passed"])
+    failed_count = len(results) - passed_count
+
+    _logger.info("Flashcard validation: %d/%d passed", passed_count, len(results))
+
+    return _ValidationResult(
+        all_passed=all_passed,
+        passed=passed_count,
+        failed=failed_count,
+        total=len(results),
+        results=results,
+    )
+
+
 class FlashcardInput(BaseModel):
     """Input schema for creating a single flashcard."""
 
@@ -104,7 +244,7 @@ def build_flashcard_proposal_tools(
     answerer, comparator:
         Optional ``StructuredSubagent`` instances for flashcard validation.
         Required if the ``validate`` flag on ``create_flashcard_proposal``
-        is to be used.
+        or ``edit_flashcard_proposal`` is to be used.
     """
 
     @tool("create_flashcard_proposal", description=(
@@ -155,128 +295,35 @@ def build_flashcard_proposal_tools(
                 )],
             })
 
-        # Step 1: Build question list for the answerer
-        questions_payload = [
-            {"index": i, "question": fc["question_text"]}
-            for i, fc in enumerate(items)
-        ]
+        vr = await _validate_flashcards(items, answerer, comparator)
 
-        answerer_input = (
-            "Answer each of the following flashcard questions:\n\n"
-            + "\n".join(f"{q['index']}. {q['question']}" for q in questions_payload)
-        )
-
-        _logger.debug("Invoking answerer subagent with %d question(s)", len(questions_payload))
-        _, answerer_response, _ = await answerer.ainvoke(answerer_input)
-
-        if answerer.structured_response is None:
+        if vr.error:
             return Command(update={
                 "flashcard_proposal_state": proposal_state,
                 "messages": [ToolMessage(
-                    content=json.dumps({
-                        "error": "Answerer subagent failed to produce structured output.",
-                        "raw_response": answerer_response.content,
-                    }, indent=2, default=str),
+                    content=json.dumps({"error": vr.error}, indent=2),
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
 
-        answerer_answers: dict[int, str] = {
-            a.question_index: a.answer
-            for a in answerer.structured_response.answers
-        }
-
-        # Step 2: Build comparison payload
-        comparison_items = [
-            {
-                "index": i,
-                "question": fc["question_text"],
-                "expected_answer": fc["answer_text"],
-                "test_taker_answer": answerer_answers.get(i, "(no answer provided)"),
-                "testing_notes": fc.get("testing_notes"),
-            }
-            for i, fc in enumerate(items)
-        ]
-
-        comparator_input = (
-            "Evaluate the following flashcards for clarity and unambiguity:\n\n"
-            + "\n---\n".join(
-                f"Card {item['index']}:\n"
-                f"  Question: {item['question']}\n"
-                f"  Expected answer: {item['expected_answer']}\n"
-                f"  Test-taker answer: {item['test_taker_answer']}\n"
-                + (f"  Testing notes: {item['testing_notes']}\n" if item["testing_notes"] else "")
-                for item in comparison_items
-            )
-        )
-
-        _logger.debug("Invoking comparator subagent with %d card(s)", len(comparison_items))
-        _, comparator_response, _ = await comparator.ainvoke(comparator_input)
-
-        if comparator.structured_response is None:
-            return Command(update={
-                "flashcard_proposal_state": proposal_state,
-                "messages": [ToolMessage(
-                    content=json.dumps({
-                        "error": "Comparator subagent failed to produce structured output.",
-                        "raw_response": comparator_response.content,
-                    }, indent=2, default=str),
-                    tool_call_id=runtime.tool_call_id,
-                )],
-            })
-
-        # Step 3: Build result summary
-        results = []
-        all_passed = True
-        for card_result in comparator.structured_response.results:
-            idx = card_result.question_index
-            fc = items[idx] if idx < len(items) else None
-            result_entry: dict[str, Any] = {
-                "question_index": idx,
-                "question": fc["question_text"] if fc else "(unknown)",
-                "expected_answer": fc["answer_text"] if fc else "(unknown)",
-                "test_taker_answer": answerer_answers.get(idx, "(no answer)"),
-                "passed": card_result.passed,
-                "feedback": card_result.feedback,
-            }
-            results.append(result_entry)
-            if not card_result.passed:
-                all_passed = False
-
-        passed_count = sum(1 for r in results if r["passed"])
-        failed_count = len(results) - passed_count
-
-        summary: dict[str, Any] = {
-            "all_passed": all_passed,
-            "passed": passed_count,
-            "failed": failed_count,
-            "total": len(results),
-            "results": results,
-        }
-
-        if all_passed:
+        if vr.all_passed:
             msg = (
                 f"Flashcard proposal staged and validated: "
-                f"all {len(results)} card(s) are clear and unambiguous. "
+                f"all {vr.total} card(s) are clear and unambiguous. "
                 f"Proceed with present_flashcard_proposal."
             )
         else:
             msg = (
                 f"Flashcard proposal staged. Validation: "
-                f"{passed_count}/{len(results)} passed, {failed_count} failed. "
-                f"Review the feedback, revise failed cards, and re-stage with "
-                f"create_flashcard_proposal(validate=True)."
+                f"{vr.passed}/{vr.total} passed, {vr.failed} failed. "
+                f"Review the feedback, revise failed cards with "
+                f"edit_flashcard_proposal(edits=..., validate=True)."
             )
-
-        _logger.info(
-            "Flashcard validation: %d/%d passed",
-            passed_count, len(results),
-        )
 
         return Command(update={
             "flashcard_proposal_state": proposal_state,
             "messages": [ToolMessage(
-                content=json.dumps({"summary": msg, **summary}, indent=2),
+                content=json.dumps({"summary": msg, **vr.to_dict()}, indent=2),
                 tool_call_id=runtime.tool_call_id,
             )],
         })
@@ -380,6 +427,8 @@ def build_flashcard_proposal_tools(
         "Supports in-place edits (partial field updates by stable ID), deletions (by ID), "
         "and additions (new flashcards appended with auto-assigned IDs). "
         "Processing order: edits, then deletions, then additions. "
+        "Set validate=True to run an automated clarity check on only the "
+        "edited and added cards (unchanged cards are not re-validated). "
         "Call present_flashcard_proposal afterwards to show the revised proposal to the user."
     ))
     @tool_visibility(ToolVisibility.LOW)
@@ -388,6 +437,7 @@ def build_flashcard_proposal_tools(
         edits: list[FlashcardEdit] | None = None,
         additions: list[FlashcardInput] | None = None,
         deletions: list[int] | None = None,
+        validate: bool = False,
     ) -> Command:
         fp_state: FlashcardProposalState | None = runtime.state.get("flashcard_proposal_state")
 
@@ -402,6 +452,7 @@ def build_flashcard_proposal_tools(
         items = [dict(item) for item in fp_state["items"]]
         items_by_id = {item["id"]: item for item in items}
         changes: list[str] = []
+        touched_ids: set[int] = set()
 
         # 1. Apply edits (by stable id)
         for edit in (edits or []):
@@ -415,6 +466,7 @@ def build_flashcard_proposal_tools(
             if edit.testing_notes is not None:
                 item["testing_notes"] = edit.testing_notes
             changes.append(f"edited card {edit.id}")
+            touched_ids.add(edit.id)
 
         # 2. Apply deletions (by stable id)
         delete_ids = set(deletions or [])
@@ -435,12 +487,71 @@ def build_flashcard_proposal_tools(
                 testing_notes=addition.testing_notes,
             ))
             changes.append(f"added card {next_id} ({addition.question_text[:40]!r})")
+            touched_ids.add(next_id)
             next_id += 1
 
-        summary = "; ".join(changes) if changes else "no changes applied"
-        msg = f"Flashcard proposal updated ({len(items)} card(s)): {summary}."
+        updated_state = {**fp_state, "items": items}
+        edit_summary = "; ".join(changes) if changes else "no changes applied"
+
+        # 4. Optional validation of only touched cards
+        if validate and touched_ids:
+            if answerer is None or comparator is None:
+                return Command(update={
+                    "flashcard_proposal_state": updated_state,
+                    "messages": [ToolMessage(
+                        content=(
+                            f"Flashcard proposal updated ({len(items)} card(s)): {edit_summary}. "
+                            f"Error: validation subagents not configured."
+                        ),
+                        tool_call_id=runtime.tool_call_id,
+                    )],
+                })
+
+            items_to_validate = [item for item in items if item["id"] in touched_ids]
+            vr = await _validate_flashcards(items_to_validate, answerer, comparator)
+
+            if vr.error:
+                return Command(update={
+                    "flashcard_proposal_state": updated_state,
+                    "messages": [ToolMessage(
+                        content=json.dumps({
+                            "edit_summary": edit_summary,
+                            "error": vr.error,
+                        }, indent=2),
+                        tool_call_id=runtime.tool_call_id,
+                    )],
+                })
+
+            # Remap validation indices back to stable card IDs
+            validated_ids = [item["id"] for item in items_to_validate]
+            for r in vr.results:
+                r["card_id"] = validated_ids[r["question_index"]]
+
+            if vr.all_passed:
+                msg = (
+                    f"Flashcard proposal updated ({len(items)} card(s)): {edit_summary}. "
+                    f"Validation: all {vr.total} edited/added card(s) passed. "
+                    f"Proceed with present_flashcard_proposal."
+                )
+            else:
+                msg = (
+                    f"Flashcard proposal updated ({len(items)} card(s)): {edit_summary}. "
+                    f"Validation: {vr.passed}/{vr.total} edited/added card(s) passed, "
+                    f"{vr.failed} failed. Review the feedback and revise with "
+                    f"edit_flashcard_proposal(edits=..., validate=True)."
+                )
+
+            return Command(update={
+                "flashcard_proposal_state": updated_state,
+                "messages": [ToolMessage(
+                    content=json.dumps({"summary": msg, **vr.to_dict()}, indent=2),
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        msg = f"Flashcard proposal updated ({len(items)} card(s)): {edit_summary}."
         return Command(update={
-            "flashcard_proposal_state": {**fp_state, "items": items},
+            "flashcard_proposal_state": updated_state,
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
