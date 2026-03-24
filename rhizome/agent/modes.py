@@ -14,12 +14,7 @@ from rhizome.agent.system_prompt import (
     IDLE_MODE_SECTION,
     LEARN_MODE_SECTION,
     REVIEW_MODE_SECTION,
-    SHARED_APP_OVERVIEW,
-    SHARED_APP_OVERVIEW_BRIEF,
-    SHARED_DATABASE_CONTEXT,
-    SHARED_MODE_SWITCHING,
     SHARED_PREAMBLE,
-    SHARED_SETTINGS_AND_BEHAVIOR,
 )
 
 
@@ -139,12 +134,8 @@ class IdleAgentMode(AgentMode):
     @property
     def system_prompt(self) -> str:
         return _compose_prompt(
-            SHARED_PREAMBLE, 
-            SHARED_APP_OVERVIEW_BRIEF, 
-            SHARED_DATABASE_CONTEXT,
-            SHARED_MODE_SWITCHING, 
-            IDLE_MODE_SECTION, 
-            SHARED_SETTINGS_AND_BEHAVIOR,
+            SHARED_PREAMBLE,
+            IDLE_MODE_SECTION,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
@@ -169,12 +160,8 @@ class LearnAgentMode(AgentMode):
     @property
     def system_prompt(self) -> str:
         return _compose_prompt(
-            SHARED_PREAMBLE, 
-            SHARED_APP_OVERVIEW, 
-            SHARED_DATABASE_CONTEXT,
-            SHARED_MODE_SWITCHING, 
-            LEARN_MODE_SECTION, 
-            SHARED_SETTINGS_AND_BEHAVIOR,
+            SHARED_PREAMBLE,
+            LEARN_MODE_SECTION,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 
@@ -201,11 +188,7 @@ class ReviewAgentMode(AgentMode):
     def system_prompt(self) -> str:
         return _compose_prompt(
             SHARED_PREAMBLE,
-            SHARED_APP_OVERVIEW_BRIEF,
-            SHARED_DATABASE_CONTEXT,
-            SHARED_MODE_SWITCHING,
             REVIEW_MODE_SECTION,
-            SHARED_SETTINGS_AND_BEHAVIOR,
             *(DEBUG_SECTION,) if self._debug else (),
         )
 

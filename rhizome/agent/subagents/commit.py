@@ -13,7 +13,7 @@ from langgraph.types import Command, interrupt
 from rhizome.agent.builder import build_agent
 from rhizome.agent.state import CommitProposalEntry, CommitProposalState
 from rhizome.agent.subagents.base import Subagent
-from rhizome.agent.system_prompt import KNOWLEDGE_ENTRIES_GUIDE
+from rhizome.agent.guides import GUIDE_REGISTRY
 from rhizome.agent.tools.database import build_database_tools
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.models import EntryType
@@ -35,7 +35,7 @@ You have access to database tools to query existing topics and entries so you ca
 - Avoid creating duplicate entries
 - Understand the existing knowledge structure
 
-""" + KNOWLEDGE_ENTRIES_GUIDE + """
+""" + GUIDE_REGISTRY["knowledge_entries"].content + """
 
 ## How to propose entries
 

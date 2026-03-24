@@ -35,6 +35,114 @@ class Guide:
 # ---------------------------------------------------------------------------
 
 GUIDE_REGISTRY: dict[str, Guide] = {
+
+    "knowledge_entries": Guide(
+        name="knowledge_entries",
+        description="How to create well-structured knowledge entries: schema, granularity, good/bad examples.",
+        content="""\
+# Guide: Knowledge Entries
+
+Knowledge Entries are the atomic units of knowledge in the system. They represent individual factoids, or small bits
+of exposition of ideas, within a given topic. Each entry belongs to exactly one topic and has the following fields:
+- title (required) — A short, descriptive name for the entry.
+- content (required) — The main body of the entry.
+- additional_notes (optional, defaults to empty) — Supplementary context or caveats.
+- entry_type (optional, nullable) — Categorizes the entry's verbosity/style. Must be one of:
+  - fact — A concise, unambiguous factoid (e.g. "d is the delete operator").
+  - exposition — A longer explanation or definition (e.g. "A motion is a command that moves the cursor").
+  - overview — A high-level summary that ties multiple concepts together (e.g. "Operators compose with motions:
+    dw deletes a word").
+- difficulty (optional, nullable) — An integer representing the entry's difficulty level.
+- speed_testable (boolean, defaults to false) — Whether the entry is suitable for timed recall quizzes.
+
+Entries can be tagged with any number of tags and linked to other entries via directed relationships.
+
+It is important to recognize that the purpose of a "knowledge entry" is to be a concise unit of knowledge that can be
+reflected upon whenever the user asks to review knowledge on a topic. Knowledge entries can be thought of as a more
+generalized notion of an "anki flashcard", with a front matter (the title) and a reverse matter (the content). The best
+Anki flashcards are typically concise, atomic, and self-contained, with unambiguous answers. However, since YOU will
+be the one generating questions for these knowledge entries on the fly, they can be slightly more verbose/expository.
+
+## Extraction granularity
+
+Always decompose source material into the finest-grained entries that make sense. A single paragraph of conversation can
+yield many entries — up to 10 fact-style entries is not unusual. For example, if a message gives an overview of all the
+different "git worktree" commands, do NOT create a single exposition entry listing them all; instead create one entry per
+command. A paragraph can also produce both fact and exposition entries simultaneously, depending on the content — extract
+the discrete factoids as facts and the explanatory material as expositions when appropriate.
+
+## Good Examples of Knowledge Entries
+
+Fact entries — concise, atomic, unambiguous:
+
+- Title: Vim Delete Operator
+  Content: `d` is the delete operator. It combines with a motion to delete text (e.g. `dw` deletes a word).
+
+- Title: Race Condition Definition
+  Content: A race condition occurs when program behaviour depends on the relative timing of concurrent operations.
+
+- Title: SRTF Scheduling Algorithm
+  Content: Shortest Remaining Time First (SRTF) is a preemptive scheduling algorithm that always runs the process
+  with the least remaining execution time.
+
+- Title: HTTP 204 Status Code
+  Content: 204 No Content indicates the request succeeded but the server has no body to return. Commonly used for
+  DELETE responses.
+
+Exposition entries — slightly longer, explaining a concept:
+
+- Title: What Is a Mutex
+  Content: A mutex (mutual exclusion lock) is a synchronization primitive that ensures only one thread can access a
+  shared resource at a time. A thread acquires the lock before entering a critical section and releases it when done.
+  If the lock is already held, other threads block until it becomes available.
+
+- Title: Python GIL
+  Content: The Global Interpreter Lock (GIL) is a mutex in CPython that allows only one thread to execute Python
+  bytecode at a time. This simplifies memory management but means CPU-bound threads cannot run in parallel.
+  I/O-bound threads release the GIL while waiting, so threading still helps for I/O workloads.
+
+Overview entries — tie multiple concepts together:
+
+- Title: Vim Operator-Motion Composition
+  Content: Operators (d, c, y, etc.) compose with motions (w, e, $, etc.) to act on text regions. For example, `dw`
+  deletes a word and `y$` yanks to end of line. This composability means N operators and M motions give N*M commands.
+  Operators can also take text objects (iw, a", ip) for structural selections.
+
+## Bad Examples of Knowledge Entries
+
+Too broad — no single entry should try to cover an entire field:
+
+- Title: How Operating Systems Work
+  Content: An operating system manages hardware resources and provides services to applications. It handles
+  process scheduling, memory management, file systems, I/O, and security...
+  Why bad: This is a textbook chapter, not an entry. Break it into entries per concept (e.g. "Process Scheduling",
+  "Virtual Memory", etc.).
+
+Too vague — the title promises insight but the content is a platitude:
+
+- Title: Why Distributed Systems Are Hard
+  Content: Distributed systems are hard because many things can go wrong with networks and timing.
+  Why bad: Not actionable or reviewable. Better entries would cover specific concepts: "CAP Theorem",
+  "Network Partition", "Byzantine Fault", etc.
+
+Too terse — lacks enough detail to be useful during review:
+
+- Title: What Is Caching
+  Content: Storing stuff for later.
+  Why bad: Technically true but useless for review. A good version: "Caching stores the results of expensive
+  computations or remote fetches in a faster-access layer (memory, local disk) to avoid repeating the work on
+  subsequent requests."
+
+Question-as-title without a clear answer:
+
+- Title: How does DNS work?
+  Content: It translates domain names to IP addresses.
+  Why bad: The title is a question (titles should be declarative labels) and the content omits the interesting
+  structure (recursive resolvers, root/TLD/authoritative servers, TTL). Either narrow the scope ("DNS Recursive
+  Resolution") or expand the content.
+""",
+    ),
+    
     "flashcards": Guide(
         name="flashcards",
         description="How to craft clear, unambiguous flashcards.",
