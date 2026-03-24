@@ -23,8 +23,6 @@ from rhizome.tui.commit_state import CommitApproved
 
 _logger = get_logger("agent.commit")
 
-COMMIT = "__commit"
-
 COMMIT_SYSTEM_PROMPT = """\
 You are a knowledge extraction assistant for a knowledge management system.
 

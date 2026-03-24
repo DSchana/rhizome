@@ -18,13 +18,13 @@ from rhizome.agent.builder import build_root_agent
 from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.agent_mode import AgentModeMiddleware, SYSTEM_PROMPT_MESSAGE_ID
 from rhizome.agent.modes import MODE_REGISTRY
-from rhizome.agent.subagents import Subagent
-from rhizome.agent.tools.database import build_database_tools
 from rhizome.agent.tools.app import build_app_tools
+from rhizome.agent.tools.database import build_database_tools
+from rhizome.agent.tools.guide import build_guide_tools
 from rhizome.agent.tools.review import build_review_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 
-from rhizome.agent.subagents.commit import COMMIT, build_commit_subagent, build_commit_subagent_tools
+from rhizome.agent.subagents.commit import build_commit_subagent, build_commit_subagent_tools
 from rhizome.agent.subagents.flashcard_validator import (
     build_answerer_subagent,
     build_comparator_subagent,
@@ -115,6 +115,7 @@ class AgentSession:
             *build_review_tools(session_factory).values(),
             *build_flashcard_proposal_tools(session_factory, answerer, comparator).values(),
             *build_sql_tools(session_factory).values(),
+            *build_guide_tools().values(),
         ]
 
         # Build the commit subagent and add its tools to the root agent's tool list.
@@ -312,6 +313,14 @@ class AgentSession:
                 self._last_injected_settings = dict(user_settings)
 
             context = AgentContext(user_settings=user_settings)
+
+            # Inject a reminder, since the agent seems to forget to follow this instruction otherwise:
+            queued.append(HumanMessage(
+                content=(
+                    "[System] Reminder, you will see your previous messages with a '[MSG-{N}]' prefix. THIS IS ADDED AUTOMATICALLY BY THE SYSTEM. "
+                    "Do NOT begin your message with your own '[MSG-{N}]' prefix, as one will be created automatically."
+                )
+            ))
 
             while True:
                 interrupted = False

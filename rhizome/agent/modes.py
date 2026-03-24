@@ -74,6 +74,11 @@ _FLASHCARD_PROPOSAL_TOOLS = frozenset({
     "accept_flashcard_proposal",
 })
 
+_GUIDE_TOOLS = frozenset({
+    "list_guides",
+    "load_guide",
+})
+
 _REVIEW_TOOLS = frozenset({
     "get_review_sessions",
     "set_review_scope",
@@ -150,7 +155,8 @@ class IdleAgentMode(AgentMode):
                _APP_TOOLS      | \
                _COMMIT_TOOLS   | \
                _WEB_TOOLS      | \
-               _DB_SQL_TOOLS
+               _DB_SQL_TOOLS   | \
+               _GUIDE_TOOLS
 
 
 class LearnAgentMode(AgentMode):
@@ -180,7 +186,8 @@ class LearnAgentMode(AgentMode):
                _COMMIT_TOOLS             | \
                _FLASHCARD_PROPOSAL_TOOLS | \
                _WEB_TOOLS                | \
-               _DB_SQL_TOOLS
+               _DB_SQL_TOOLS             | \
+               _GUIDE_TOOLS
 
 
 class ReviewAgentMode(AgentMode):
@@ -209,7 +216,8 @@ class ReviewAgentMode(AgentMode):
                _WEB_TOOLS                | \
                _REVIEW_TOOLS             | \
                _FLASHCARD_PROPOSAL_TOOLS | \
-               _DB_SQL_TOOLS
+               _DB_SQL_TOOLS             | \
+               _GUIDE_TOOLS
 
 
 # -- Registry ----------------------------------------------------------------
