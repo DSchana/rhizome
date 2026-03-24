@@ -45,7 +45,6 @@ from .explorer_viewer import ExplorerViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
 from .flashcard_review import AgainBehaviour, FlashcardReview
-from .flashcard_viewer import FlashcardViewer
 from .navigable import WidgetDeactivated
 
 
@@ -1149,15 +1148,6 @@ class ChatPane(Widget):
     def on_explorer_viewer_dismissed(self, event: ExplorerViewer.Dismissed) -> None:
         for viewer in self.query(ExplorerViewer):
             viewer.remove()
-        self._restore_chat_input()
-
-    def on_flashcard_viewer_dismissed(self, event: FlashcardViewer.Dismissed) -> None:
-        for w in self.query(FlashcardViewer):
-            w.remove()
-        self._restore_chat_input()
-
-    def on_flashcard_viewer_session_complete(self, event: FlashcardViewer.SessionComplete) -> None:
-        self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard session complete."))
         self._restore_chat_input()
 
     def on_flashcard_review_session_complete(self, event: FlashcardReview.SessionComplete) -> None:
