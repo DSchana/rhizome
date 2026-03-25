@@ -19,7 +19,7 @@ from rhizome.agent.context import AgentContext
 from rhizome.agent.middleware.agent_mode import AgentModeMiddleware, SYSTEM_PROMPT_MESSAGE_ID
 from rhizome.agent.modes import MODE_REGISTRY
 from rhizome.agent.tools.app import build_app_tools
-from rhizome.agent.tools.database import build_database_tools
+from rhizome.agent.tools.core import build_core_tools
 from rhizome.agent.tools.guide import build_guide_tools
 from rhizome.agent.tools.review import build_review_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
@@ -101,7 +101,7 @@ class AgentSession:
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
         # Build all tool groups (each closed over session_factory and/or chat_pane).
-        from rhizome.agent.tools.flashcard import build_flashcard_proposal_tools
+        from rhizome.agent.tools.flashcard_proposal import build_flashcard_proposal_tools
         from rhizome.agent.tools.sql import build_sql_tools
 
         # Build the flashcard validation subagents so create_flashcard_proposal
@@ -110,7 +110,7 @@ class AgentSession:
         comparator = build_comparator_subagent(**dict(self._agent_kwargs))
 
         self._tools: list = [
-            *build_database_tools(session_factory).values(),
+            *build_core_tools(session_factory).values(),
             *build_app_tools(session_factory, chat_pane).values(),
             *build_review_tools(session_factory).values(),
             *build_flashcard_proposal_tools(session_factory, answerer, comparator).values(),

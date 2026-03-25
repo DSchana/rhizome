@@ -5,10 +5,10 @@ Re-exports
 - ``ToolVisibility``, ``TOOL_VISIBILITY``, ``tool_visibility`` — visibility system
 
 Domain-specific tool builders live in submodules:
-- ``tools.database`` — topic and entry CRUD tools
+- ``tools.core`` — core knowledge-base tools (topics, entries, flashcard lookup)
 - ``tools.app`` — app control tools (mode switching, tab renaming, etc.)
 - ``tools.sql`` — SQL exploration/modification tools
-- ``tools.flashcard`` — flashcard proposal tools
+- ``tools.flashcard_proposal`` — flashcard proposal tools
 - ``tools.review`` — review session state machine tools
 """
 

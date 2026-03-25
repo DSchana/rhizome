@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rhizome.agent.builder import build_agent
 from rhizome.agent.subagents import StructuredSubagent
-from rhizome.agent.tools.database import build_database_tools
+from rhizome.agent.tools.core import build_core_tools
 from rhizome.db import get_session_factory, init_db
 from rhizome.db.operations import create_entry, create_topic
 
@@ -75,7 +75,7 @@ async def main():
     await seed_db(session_factory)
 
     # Build a subagent with read-only DB tools.
-    tools = list(build_database_tools(session_factory).values())
+    tools = list(build_core_tools(session_factory).values())
     model, agent, _middleware = build_agent(tools, provider="anthropic", model_name="claude-sonnet-4-6", response_format=ProviderStrategy(TopicSummary))
 
     schema_hint = json.dumps({

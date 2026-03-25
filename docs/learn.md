@@ -79,7 +79,7 @@ On approval, `accept_commit_proposal` writes the entries to the database as `Kno
 
 ## Available Tools
 
-**Database:** `list_all_topics`, `show_topics`, `get_entries`, `create_new_topic`, `delete_topics`, `create_entries`
+**Database:** `list_all_topics`, `show_topics`, `get_entries`, `list_flashcards`, `get_flashcards`, `create_new_topic`, `delete_topics`
 **App:** `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
 **Commit:** `inspect_commit_payload`, `create_commit_proposal`, `invoke_commit_subagent`, `present_commit_proposal`, `accept_commit_proposal`
 **Web:** `web_search`, `web_fetch`

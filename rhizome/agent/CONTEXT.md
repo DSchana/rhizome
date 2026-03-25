@@ -4,7 +4,7 @@ LLM agent integration using LangChain and LangGraph.
 
 ## Architecture
 
-Each chat tab creates its own `AgentSession`, which owns the LangChain conversation history (a list of `BaseMessage`) and a compiled agent graph. Tools are built via domain-specific builder functions (e.g. `build_database_tools`, `build_app_tools`) that close over the session factory and optional chat pane. Each tool creates its own DB session, eliminating the need for a shared session lock. `AgentContext` holds only immutable per-invocation data (`user_settings`), satisfying LangGraph's guideline that runtime context should be immutable.
+Each chat tab creates its own `AgentSession`, which owns the LangChain conversation history (a list of `BaseMessage`) and a compiled agent graph. Tools are built via domain-specific builder functions (e.g. `build_core_tools`, `build_app_tools`) that close over the session factory and optional chat pane. Each tool creates its own DB session, eliminating the need for a shared session lock. `AgentContext` holds only immutable per-invocation data (`user_settings`), satisfying LangGraph's guideline that runtime context should be immutable.
 
 ### Agent Modes
 
@@ -32,9 +32,10 @@ The system message is seeded into graph state on init with a well-known ID (`SYS
 ## Tool List
 
 Topics: `list_all_topics`, `show_topics`, `create_new_topic`, `delete_topics`
-Entries: `get_entries`, `create_entries`
+Entries: `get_entries`
+Flashcards: `list_flashcards`, `get_flashcards`
 App Commands: `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
-Review: `get_review_sessions`, `set_review_scope`, `configure_review`, `list_flashcards`, `get_flashcards`, `set_review_flashcards`, `add_flashcards_to_review`, `start_review`, `record_review_interaction`, `complete_review_session`, `save_review_summary`, `inspect_review_state`, `clear_review_state`
+Review: `get_review_sessions`, `set_review_scope`, `configure_review`, `set_review_flashcards`, `add_flashcards_to_review`, `start_review`, `record_review_interaction`, `complete_review_session`, `save_review_summary`, `inspect_review_state`, `clear_review_state`
 Flashcard Proposals: `create_flashcard_proposal` (with `validate=True` for inline validation), `present_flashcard_proposal`, `edit_flashcard_proposal`, `accept_flashcard_proposal`
 Commit: `inspect_commit_payload`, `invoke_commit_subagent`, `create_commit_proposal`, `present_commit_proposal`, `edit_commit_proposal`, `accept_commit_proposal`
 SQL: `describe_database`, `run_sql_query`, `run_sql_modification`

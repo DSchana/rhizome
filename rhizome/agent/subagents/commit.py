@@ -14,7 +14,7 @@ from rhizome.agent.builder import build_agent
 from rhizome.agent.state import CommitProposalEntry, CommitProposalState
 from rhizome.agent.subagents.base import Subagent
 from rhizome.agent.guides import GUIDE_REGISTRY
-from rhizome.agent.tools.database import build_database_tools
+from rhizome.agent.tools.core import build_core_tools
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.models import EntryType
 from rhizome.db.operations import create_entry, get_topic
@@ -240,7 +240,7 @@ def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Subagen
     Returns a ``Subagent`` whose graph uses ``CommitSubagentState`` so its
     tools can read/write ``commit_proposal`` via ``extra_state``.
     """
-    db_tools = list(build_database_tools(session_factory).values())
+    db_tools = list(build_core_tools(session_factory).values())
     proposal_tools = _build_subagent_tools()
 
     provider = agent_kwargs.pop("provider", "anthropic")

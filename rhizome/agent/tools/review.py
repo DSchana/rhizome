@@ -18,10 +18,8 @@ from rhizome.db.operations import (
     complete_review_session,
     create_review_session,
     get_flashcard_entry_ids,
-    get_flashcards_by_ids,
     get_interaction_stats,
     get_sessions_by_topics,
-    list_flashcards_by_entries,
     update_session_ephemeral,
     update_session_instructions,
     update_session_plan,
@@ -42,6 +40,7 @@ def build_review_tools(session_factory) -> list:
     # SCOPING Phase
     # -------------------------------------------------------------------
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("get_review_sessions", description=(
         "Get past review sessions overlapping the given topic IDs. "
         "Returns session date, scope summary, and final_summary text. "
@@ -70,6 +69,7 @@ def build_review_tools(session_factory) -> list:
 
         return "\n\n---\n\n".join(lines)
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("set_review_scope", description=(
         "Lock in the review scope from a list of entry IDs. "
         "Derives topic IDs from the entries automatically. "
@@ -114,6 +114,7 @@ def build_review_tools(session_factory) -> list:
     # CONFIGURING Phase
     # -------------------------------------------------------------------
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("configure_review", description=(
         "Set review session configuration. Advances phase to PLANNING. "
         "Parameters: style ('flashcard'|'conversation'|'mixed'), "
@@ -169,65 +170,7 @@ def build_review_tools(session_factory) -> list:
     # PLANNING Phase
     # -------------------------------------------------------------------
 
-    @tool("list_flashcards", description=(
-        "List existing flashcards linked to the given entry IDs. "
-        "Excludes flashcards from ephemeral sessions. "
-        "Returns a summary of which entries have flashcards and which don't."
-    ))
-    async def list_flashcards_tool(entry_ids: list[int]) -> str:
-        async with session_factory() as session:
-            flashcards = await list_flashcards_by_entries(session, entry_ids)
-
-        if not flashcards:
-            return f"No existing flashcards found for {len(entry_ids)} entries."
-
-        # Group flashcards by entry
-        entry_to_flashcards: dict[int, list[int]] = {}
-        for fc in flashcards:
-            for fe in fc.flashcard_entries:
-                entry_to_flashcards.setdefault(fe.entry_id, []).append(fc.id)
-
-        covered = set(entry_to_flashcards.keys()) & set(entry_ids)
-        uncovered = set(entry_ids) - covered
-
-        lines = [f"Found {len(flashcards)} flashcard(s) across {len(covered)} entries:"]
-        for eid in sorted(covered):
-            fc_ids = entry_to_flashcards[eid]
-            lines.append(f"  Entry [{eid}]: {len(fc_ids)} flashcard(s) (IDs: {', '.join(str(i) for i in fc_ids)})")
-
-        if uncovered:
-            lines.append(f"\n{len(uncovered)} entries have no flashcards: {sorted(uncovered)}")
-
-        return "\n".join(lines)
-
-    @tool("get_flashcards", description=(
-        "Get full flashcard content by IDs: question_text, answer_text, "
-        "testing_notes, and linked entry_ids. This does NOT present the cards "
-        "to the user, only as an internal tool message for the agent."
-    ))
-    async def get_flashcards_tool(flashcard_ids: list[int]) -> str:
-        async with session_factory() as session:
-            flashcards = await get_flashcards_by_ids(session, flashcard_ids)
-
-        if not flashcards:
-            return "No flashcards found for the given IDs."
-
-        lines: list[str] = []
-        for fc in flashcards:
-            entry_ids = [fe.entry_id for fe in fc.flashcard_entries]
-            parts = [
-                f"Flashcard [{fc.id}]",
-                f"Topic: {fc.topic_id}",
-                f"Q: {fc.question_text}",
-                f"A: {fc.answer_text}",
-            ]
-            if fc.testing_notes:
-                parts.append(f"Testing notes: {fc.testing_notes}")
-            parts.append(f"Entries: {entry_ids}")
-            lines.append("\n".join(parts))
-
-        return "\n\n---\n\n".join(lines)
-
+    @tool_visibility(ToolVisibility.LOW)
     @tool("set_review_flashcards", description=(
         "Set the flashcard queue to the given list of flashcard IDs. "
         "Replaces the current queue entirely — use this to add, remove, "
@@ -247,6 +190,7 @@ def build_review_tools(session_factory) -> list:
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("add_flashcards_to_review", description=(
         "Append flashcard IDs to the review queue. Use this after "
         "accept_flashcard_proposal or with existing flashcard IDs from "
@@ -267,6 +211,7 @@ def build_review_tools(session_factory) -> list:
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("start_review", description=(
         "Store the discussion plan and advance to the REVIEWING phase. "
         "Call this after planning is complete."
@@ -297,6 +242,7 @@ def build_review_tools(session_factory) -> list:
     # REVIEWING Phase
     # -------------------------------------------------------------------
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("record_review_interaction", description=(
         "Record a Q&A interaction during the review. Exactly one of flashcard_id "
         "or entry_ids must be provided. Extracts question/answer text from message "
@@ -417,6 +363,7 @@ def build_review_tools(session_factory) -> list:
     # SUMMARIZING Phase
     # -------------------------------------------------------------------
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("complete_review_session", description=(
         "Compute aggregate stats from review interactions and advance to SUMMARIZING. "
         "Returns stats for the agent to use when writing the final_summary."
@@ -452,6 +399,7 @@ def build_review_tools(session_factory) -> list:
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("save_review_summary", description=(
         "Write the final_summary to the ReviewSession DB record, "
         "set completed_at, and clear ReviewState. Call this after the agent "
@@ -513,6 +461,7 @@ def build_review_tools(session_factory) -> list:
 
         return "\n".join(lines)
 
+    @tool_visibility(ToolVisibility.LOW)
     @tool("clear_review_state", description=(
         "Abandon the current review session and clear ReviewState. "
         "Does NOT delete DB records — the session remains as-is."
@@ -528,8 +477,6 @@ def build_review_tools(session_factory) -> list:
         "get_review_sessions": get_review_sessions_tool,
         "set_review_scope": set_review_scope_tool,
         "configure_review": configure_review_tool,
-        "list_flashcards": list_flashcards_tool,
-        "get_flashcards": get_flashcards_tool,
         "set_review_flashcards": set_review_flashcards_tool,
         "add_flashcards_to_review": add_flashcards_to_review_tool,
         "start_review": start_review_tool,

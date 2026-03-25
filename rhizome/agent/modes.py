@@ -26,12 +26,13 @@ _DB_READ_TOOLS = frozenset({
     "list_all_topics",
     "show_topics",
     "get_entries",
+    "list_flashcards",
+    "get_flashcards",
 })
 
 _DB_WRITE_TOOLS = frozenset({
     "create_new_topic",
     "delete_topics",
-    "create_entries",
 })
 
 _APP_TOOLS = frozenset({
@@ -78,8 +79,6 @@ _REVIEW_TOOLS = frozenset({
     "get_review_sessions",
     "set_review_scope",
     "configure_review",
-    "list_flashcards",
-    "get_flashcards",
     "set_review_flashcards",
     "add_flashcards_to_review",
     "start_review",

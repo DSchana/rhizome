@@ -8,7 +8,7 @@ Two subagents work in sequence:
    any testing notes, then evaluates whether each flashcard is clear and unambiguous.
 
 The validation logic itself lives in ``create_flashcard_proposal`` (in
-``rhizome.agent.tools.flashcard``) — this module only defines the subagent
+``rhizome.agent.tools.flashcard_proposal``) — this module only defines the subagent
 builders and their response schemas.
 """
 

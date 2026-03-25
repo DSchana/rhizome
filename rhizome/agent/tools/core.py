@@ -1,28 +1,32 @@
-"""Database tools — topic and entry CRUD for the agent."""
+"""Core tools — topics, entries, and flashcard lookup for the agent."""
 
 from langchain.tools import tool
 from langgraph.types import interrupt
 from sqlalchemy import func, select
 
+from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
+
 from rhizome.db.models import KnowledgeEntry, Topic
 from rhizome.db.operations import (
-    create_entry,
     create_topic,
     delete_topic,
     get_entry,
+    get_flashcards_by_ids,
     get_subtree,
     get_topic,
     list_entries,
+    list_flashcards_by_entries,
 )
 
 
-def build_database_tools(session_factory) -> dict:
-    """Build topic and entry tools with session_factory closed over."""
+def build_core_tools(session_factory) -> dict:
+    """Build core knowledge-base tools with session_factory closed over."""
 
     # -----------------------------------------------------------------------
     # Topics
     # -----------------------------------------------------------------------
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("list_all_topics", description=(
         "List the entire topic tree with entry counts. "
         "Returns a nested, indented view of all topics showing [id], name, "
@@ -59,6 +63,7 @@ def build_database_tools(session_factory) -> dict:
         walk(None, 0)
         return "\n".join(lines)
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("show_topics", description=(
         "Show one or more topics' details and list all their knowledge entries by title and ID. "
         "Use get_entries to read the full content of specific entries."
@@ -87,6 +92,7 @@ def build_database_tools(session_factory) -> dict:
                 results.append("\n".join(lines))
         return "\n\n---\n\n".join(results)
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("create_new_topic", description="Create a new topic, optionally under a parent topic.")
     async def create_new_topic_tool(
         name: str,
@@ -98,6 +104,7 @@ def build_database_tools(session_factory) -> dict:
             await session.commit()
         return f"Created topic [{topic.id}] {topic.name}"
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("delete_topics", description=(
         "Delete one or more topics by ID. This is irreversible — all knowledge "
         "entries under each topic will also be deleted. Subtrees (child topics) "
@@ -159,6 +166,7 @@ def build_database_tools(session_factory) -> dict:
     # Entries
     # -----------------------------------------------------------------------
 
+    @tool_visibility(ToolVisibility.DEFAULT)
     @tool("get_entries", description=(
         "Get the full details of one or more knowledge entries by their IDs."
     ))
@@ -182,27 +190,70 @@ def build_database_tools(session_factory) -> dict:
                 results.append("\n".join(lines))
         return "\n\n---\n\n".join(results)
 
-    @tool("create_entries", description=(
-        "Create one or more knowledge entries. Each entry needs: "
-        "topic_id (int), title (str), content (str), and optionally "
-        "entry_type ('fact'|'exposition'|'overview')."
+    # -----------------------------------------------------------------------
+    # Flashcards
+    # -----------------------------------------------------------------------
+
+    @tool_visibility(ToolVisibility.DEFAULT)
+    @tool("list_flashcards", description=(
+        "List existing flashcards linked to the given entry IDs. "
+        "Excludes flashcards from ephemeral sessions. "
+        "Returns a summary of which entries have flashcards and which don't."
     ))
-    async def create_entries_tool(entries: list[dict]) -> str:
-        from rhizome.db.models import EntryType
-        created: list[str] = []
+    async def list_flashcards_tool(entry_ids: list[int]) -> str:
         async with session_factory() as session:
-            for e in entries:
-                parsed_type = EntryType(e["entry_type"]) if e.get("entry_type") else None
-                entry = await create_entry(
-                    session,
-                    topic_id=e["topic_id"],
-                    title=e["title"],
-                    content=e["content"],
-                    entry_type=parsed_type,
-                )
-                created.append(f"[{entry.id}] {entry.title}")
-            await session.commit()
-        return f"Created {len(created)} entries:\n" + "\n".join(f"  - {c}" for c in created)
+            flashcards = await list_flashcards_by_entries(session, entry_ids)
+
+        if not flashcards:
+            return f"No existing flashcards found for {len(entry_ids)} entries."
+
+        # Group flashcards by entry
+        entry_to_flashcards: dict[int, list[int]] = {}
+        for fc in flashcards:
+            for fe in fc.flashcard_entries:
+                entry_to_flashcards.setdefault(fe.entry_id, []).append(fc.id)
+
+        covered = set(entry_to_flashcards.keys()) & set(entry_ids)
+        uncovered = set(entry_ids) - covered
+
+        lines = [f"Found {len(flashcards)} flashcard(s) across {len(covered)} entries:"]
+        for eid in sorted(covered):
+            fc_ids = entry_to_flashcards[eid]
+            lines.append(f"  Entry [{eid}]: {len(fc_ids)} flashcard(s) (IDs: {', '.join(str(i) for i in fc_ids)})")
+
+        if uncovered:
+            lines.append(f"\n{len(uncovered)} entries have no flashcards: {sorted(uncovered)}")
+
+        return "\n".join(lines)
+
+    @tool_visibility(ToolVisibility.DEFAULT)
+    @tool("get_flashcards", description=(
+        "Get full flashcard content by IDs: question_text, answer_text, "
+        "testing_notes, and linked entry_ids. This does NOT present the cards "
+        "to the user, only as an internal tool message for the agent."
+    ))
+    async def get_flashcards_tool(flashcard_ids: list[int]) -> str:
+        async with session_factory() as session:
+            flashcards = await get_flashcards_by_ids(session, flashcard_ids)
+
+        if not flashcards:
+            return "No flashcards found for the given IDs."
+
+        lines: list[str] = []
+        for fc in flashcards:
+            entry_ids = [fe.entry_id for fe in fc.flashcard_entries]
+            parts = [
+                f"Flashcard [{fc.id}]",
+                f"Topic: {fc.topic_id}",
+                f"Q: {fc.question_text}",
+                f"A: {fc.answer_text}",
+            ]
+            if fc.testing_notes:
+                parts.append(f"Testing notes: {fc.testing_notes}")
+            parts.append(f"Entries: {entry_ids}")
+            lines.append("\n".join(parts))
+
+        return "\n\n---\n\n".join(lines)
 
     return {
         "list_all_topics": list_all_topics_tool,
@@ -210,5 +261,6 @@ def build_database_tools(session_factory) -> dict:
         "create_new_topic": create_new_topic_tool,
         "delete_topics": delete_topics_tool,
         "get_entries": get_entries_tool,
-        "create_entries": create_entries_tool,
+        "list_flashcards": list_flashcards_tool,
+        "get_flashcards": get_flashcards_tool,
     }

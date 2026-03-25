@@ -183,7 +183,7 @@ def build_sql_tools(session_factory) -> dict:
         "execution. Requires explicit user approval via a confirmation dialog. "
         "IMPORTANT: Always run describe_database first to understand the schema. "
         "This is a last-resort tool — prefer native tools (create_new_topic, "
-        "create_entries, delete_topics, etc.) for standard operations."
+        "delete_topics, etc.) for standard operations."
     ))
     @tool_visibility(ToolVisibility.DEFAULT)
     async def run_sql_modification_tool(sql: str) -> str:
