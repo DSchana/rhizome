@@ -1150,14 +1150,6 @@ class ChatPane(Widget):
             viewer.remove()
         self._restore_chat_input()
 
-    def on_flashcard_review_session_complete(self, event: FlashcardReview.SessionComplete) -> None:
-        self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard review session complete."))
-        self._restore_chat_input()
-
-    def on_flashcard_review_session_cancelled(self, event: FlashcardReview.SessionCancelled) -> None:
-        self.append_message(ChatMessageData(role=Role.SYSTEM, content="Flashcard review session cancelled."))
-        self._restore_chat_input()
-
     def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:
         for ed in self.query(OptionsEditor):
             ed.remove()

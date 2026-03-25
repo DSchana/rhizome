@@ -16,6 +16,7 @@ from rhizome.tui.types import Mode, Role
 
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
+from .flashcard_review import FlashcardReview
 from .interrupt import InterruptWidgetBase
 from .choices import Choices
 from .multiple_choices import MultipleChoices
@@ -280,6 +281,8 @@ class AgentMessageHarness(Widget):
             widget = FlashcardProposal.from_interrupt(interrupt_value)
         elif itype == "sql_confirmation":
             widget = SqlConfirmation.from_interrupt(interrupt_value)
+        elif itype == "flashcard_review":
+            widget = FlashcardReview.from_interrupt(interrupt_value)
         else:
             raise ValueError(f"Unknown interrupt type: {itype!r}")
         self._interrupt_widget = widget

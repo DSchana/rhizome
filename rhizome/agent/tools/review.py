@@ -10,7 +10,7 @@ from __future__ import annotations
 from langchain.tools import tool
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolRuntime
-from langgraph.types import Command
+from langgraph.types import Command, interrupt
 from rhizome.agent.state import ReviewConfig, ReviewScope, ReviewState
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.operations import (
@@ -18,6 +18,7 @@ from rhizome.db.operations import (
     complete_review_session,
     create_review_session,
     get_flashcard_entry_ids,
+    get_flashcards_by_ids,
     get_interaction_stats,
     get_sessions_by_topics,
     update_session_ephemeral,
@@ -32,8 +33,11 @@ from sqlalchemy import select
 
 _logger = get_logger("agent.review_tools")
 
+# Match the constant in FlashcardReview to avoid cross-layer import.
+AUTO_SCORE = -1
 
-def build_review_tools(session_factory) -> list:
+
+def build_review_tools(session_factory, scorer=None) -> dict:
     """Build all review-mode tool functions with session_factory closed over."""
 
     # -------------------------------------------------------------------
@@ -244,27 +248,19 @@ def build_review_tools(session_factory) -> list:
 
     @tool_visibility(ToolVisibility.LOW)
     @tool("record_review_interaction", description=(
-        "Record a Q&A interaction during the review. Exactly one of flashcard_id "
-        "or entry_ids must be provided. Extracts question/answer text from message "
-        "history using message IDs. Updates entry coverage and interaction count."
+        "Record a conversational Q&A interaction during the review. "
+        "For flashcard-based interactions use present_flashcards / score_flashcards instead. "
+        "Extracts question/answer text from message history using message IDs. "
+        "Updates entry coverage and interaction count."
     ))
     async def record_review_interaction_tool(
         question_message_id: int,
         answer_message_id: int,
         score: int,
+        entry_ids: list[int],
         runtime: ToolRuntime,
         feedback: str | None = None,
-        flashcard_id: int | None = None,
-        entry_ids: list[int] | None = None,
     ) -> Command:
-        if (flashcard_id is None) == (entry_ids is None):
-            return Command(update={
-                "messages": [ToolMessage(
-                    content="Error: exactly one of flashcard_id or entry_ids must be provided.",
-                    tool_call_id=runtime.tool_call_id,
-                )],
-            })
-
         review_state: ReviewState = runtime.state["review"]
         messages = runtime.state["messages"]
 
@@ -293,14 +289,6 @@ def build_review_tools(session_factory) -> list:
                 )],
             })
 
-        # Resolve entry_ids from flashcard if needed
-        resolved_entry_ids: list[int]
-        if flashcard_id is not None:
-            async with session_factory() as session:
-                resolved_entry_ids = await get_flashcard_entry_ids(session, flashcard_id)
-        else:
-            resolved_entry_ids = list(entry_ids)  # type: ignore[arg-type]
-
         session_id = review_state["session_id"]
         interaction_count = review_state["interaction_count"]
         position = interaction_count + 1
@@ -312,46 +300,260 @@ def build_review_tools(session_factory) -> list:
                 session_id=session_id,
                 question_text=question_text,
                 user_response=user_response,
-                entry_ids=resolved_entry_ids,
+                entry_ids=list(entry_ids),
                 feedback=feedback,
                 score=score,
                 position=position,
-                flashcard_id=flashcard_id,
             )
             await session.commit()
 
         # Update ReviewState
         new_state = dict(review_state)
         new_coverage = dict(review_state["entry_coverage"])
-        for eid in resolved_entry_ids:
+        for eid in entry_ids:
             new_coverage[eid] = new_coverage.get(eid, 0) + 1
         new_state["entry_coverage"] = new_coverage
         new_state["interaction_count"] = position
-
-        # Pop flashcard from queue if applicable
-        if flashcard_id is not None:
-            new_queue = list(review_state["flashcard_queue"])
-            if flashcard_id in new_queue:
-                new_queue.remove(flashcard_id)
-            new_state["flashcard_queue"] = new_queue
 
         # Build tool message
         total_entries = len(new_coverage)
         touched = sum(1 for c in new_coverage.values() if c > 0)
         untouched_ids = [eid for eid, c in new_coverage.items() if c == 0]
 
-        queue_total = len(review_state["flashcard_queue"])
-        queue_remaining = len(new_state.get("flashcard_queue", []))
-
         parts = [f"Recorded #{position} (score: {score}/5)."]
-        if queue_total > 0:
-            parts.append(f"Flashcard queue: {queue_remaining}/{queue_total}.")
         parts.append(f"Coverage: {touched}/{total_entries} entries touched.")
 
         if untouched_ids:
             parts.append(f"Untouched: {untouched_ids}.")
         else:
             parts.append("All entries covered at least once.")
+
+        msg = " ".join(parts)
+        return Command(update={
+            "review": new_state,
+            "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
+        })
+
+    @tool_visibility(ToolVisibility.LOW)
+    @tool("present_flashcards", description=(
+        "Present flashcards to the user via the FlashcardReview widget. "
+        "By default pops from the queue: one card for critique-during, all "
+        "cards for critique-after. Pass flashcard_ids to override. "
+        "Self-scored and again cards are handled automatically; "
+        "'auto' cards are scored by an internal subagent."
+    ))
+    async def present_flashcards_tool(
+        runtime: ToolRuntime,
+        flashcard_ids: list[int] | None = None,
+    ) -> Command:
+        review_state: ReviewState = runtime.state["review"]
+        queue = list(review_state["flashcard_queue"])
+
+        # Determine which flashcards to present
+        if flashcard_ids is not None:
+            ids_to_present = list(flashcard_ids)
+        else:
+            if not queue:
+                return Command(update={
+                    "messages": [ToolMessage(
+                        content="Error: flashcard queue is empty and no flashcard_ids provided.",
+                        tool_call_id=runtime.tool_call_id,
+                    )],
+                })
+            # Pop one card for critique-during, all cards for critique-after
+            config = review_state.get("config")
+            critique_timing = config["critique_timing"] if config else "after"
+            if critique_timing == "during":
+                ids_to_present = [queue[0]]
+            else:
+                ids_to_present = list(queue)
+
+        # Fetch flashcard data from DB
+        async with session_factory() as session:
+            flashcards = await get_flashcards_by_ids(session, ids_to_present)
+
+        if not flashcards:
+            return Command(update={
+                "messages": [ToolMessage(
+                    content="Error: no flashcards found for the given IDs.",
+                    tool_call_id=runtime.tool_call_id,
+                )],
+            })
+
+        flashcard_map = {fc.id: fc for fc in flashcards}
+
+        # Build card data for the widget
+        card_data = [
+            {"id": fc.id, "question": fc.question_text, "answer": fc.answer_text}
+            for fc in flashcards
+        ]
+
+        # Call interrupt to present the widget
+        is_single = len(card_data) == 1
+        result = interrupt({
+            "type": "flashcard_review",
+            "cards": card_data,
+            "auto_score": True,
+            "user_input_enabled": True,
+            "show_complete_status": not is_single,
+        })
+
+        # Process results
+        new_state = dict(review_state)
+        new_queue = list(review_state["flashcard_queue"])
+        new_coverage = dict(review_state["entry_coverage"])
+        interaction_count = review_state["interaction_count"]
+        session_id = review_state["session_id"]
+
+        again_ids: list[int] = []
+        auto_cards: list[dict] = []  # {"id", "question", "answer", "user_answer", "entry_ids"}
+        scored_count = 0
+        user_answers: dict[int, str] = {}  # fc_id -> user_answer for summary
+
+        for card_result in result["cards"]:
+            fc_id = card_result["id"]
+            fc = flashcard_map.get(fc_id)
+            if fc is None:
+                continue
+
+            entry_ids = [fe.entry_id for fe in fc.flashcard_entries]
+            score = card_result["score"]
+            user_answer = card_result.get("user_answer", "")
+            user_answers[fc_id] = user_answer
+
+            # Remove from queue regardless of score
+            if fc_id in new_queue:
+                new_queue.remove(fc_id)
+
+            if score == 0:
+                # "again" — requeue at end
+                again_ids.append(fc_id)
+            elif score == AUTO_SCORE:
+                # Auto — will be scored by subagent below
+                auto_cards.append({
+                    "id": fc_id,
+                    "question": fc.question_text,
+                    "answer": fc.answer_text,
+                    "user_answer": user_answer,
+                    "testing_notes": fc.testing_notes,
+                    "entry_ids": entry_ids,
+                    "duration": card_result.get("duration"),
+                })
+            elif score is not None:
+                # Self-scored — record interaction immediately
+                interaction_count += 1
+                async with session_factory() as session:
+                    await add_review_interaction(
+                        session,
+                        session_id=session_id,
+                        question_text=fc.question_text,
+                        user_response=user_answer,
+                        entry_ids=entry_ids,
+                        score=score,
+                        position=interaction_count,
+                        flashcard_id=fc_id,
+                    )
+                    await session.commit()
+                for eid in entry_ids:
+                    new_coverage[eid] = new_coverage.get(eid, 0) + 1
+                scored_count += 1
+
+        # Score auto cards via subagent
+        auto_scored: list[dict] = []  # [{"id", "score", "feedback"}]
+        if auto_cards and scorer is not None:
+            scorer_input = "Score the following flashcard answers:\n\n" + "\n---\n".join(
+                f"Flashcard {ac['id']}:\n"
+                f"  Question: {ac['question']}\n"
+                f"  Expected answer: {ac['answer']}\n"
+                f"  User's answer: {ac['user_answer'] or '(blank)'}\n"
+                f"  Time spent: {ac['duration']}s\n"
+                + (f"  Testing notes: {ac['testing_notes']}\n" if ac.get("testing_notes") else "")
+                for ac in auto_cards
+            )
+
+            _logger.debug("Invoking scorer subagent with %d card(s)", len(auto_cards))
+            _, _, _ = await scorer.ainvoke(scorer_input)
+
+            if scorer.structured_response is not None:
+                scores_by_id = {
+                    r.flashcard_id: r for r in scorer.structured_response.results
+                }
+                auto_card_map = {ac["id"]: ac for ac in auto_cards}
+
+                for fc_id, ac in auto_card_map.items():
+                    scorer_result = scores_by_id.get(fc_id)
+                    if scorer_result is None:
+                        _logger.warning("Scorer did not return result for flashcard %d", fc_id)
+                        continue
+
+                    auto_score = scorer_result.score
+                    feedback = scorer_result.feedback
+
+                    if auto_score == 0:
+                        again_ids.append(fc_id)
+                    else:
+                        interaction_count += 1
+                        async with session_factory() as session:
+                            await add_review_interaction(
+                                session,
+                                session_id=session_id,
+                                question_text=ac["question"],
+                                user_response=ac["user_answer"],
+                                entry_ids=ac["entry_ids"],
+                                feedback=feedback,
+                                score=auto_score,
+                                position=interaction_count,
+                                flashcard_id=fc_id,
+                            )
+                            await session.commit()
+                        for eid in ac["entry_ids"]:
+                            new_coverage[eid] = new_coverage.get(eid, 0) + 1
+
+                    auto_scored.append({
+                        "id": fc_id,
+                        "score": auto_score,
+                        "feedback": feedback,
+                    })
+            else:
+                _logger.warning("Scorer subagent failed to produce structured output")
+
+        # Requeue "again" cards at end
+        new_queue.extend(again_ids)
+
+        new_state["flashcard_queue"] = new_queue
+        new_state["entry_coverage"] = new_coverage
+        new_state["interaction_count"] = interaction_count
+
+        # Build summary message
+        parts = []
+        completed = result.get("completed", False)
+        if completed:
+            parts.append(f"Flashcard session complete.")
+        else:
+            parts.append(f"Flashcard session cancelled.")
+
+        if user_answers:
+            parts.append("\nUser answers:")
+            for fc_id, answer in user_answers.items():
+                fc = flashcard_map.get(fc_id)
+                q = fc.question_text if fc else "?"
+                parts.append(f"  - Flashcard {fc_id} (Q: {q}): {answer or '(blank)'}")
+        if scored_count:
+            parts.append(f"{scored_count} card(s) self-scored and recorded.")
+        if auto_scored:
+            parts.append(f"{len(auto_scored)} card(s) auto-scored by subagent:")
+            for asc in auto_scored:
+                score_labels = {0: "again", 1: "hard", 2: "good", 3: "easy"}
+                label = score_labels.get(asc['score'], str(asc['score']))
+                parts.append(f"  - Flashcard {asc['id']}: {label} ({asc['score']}/3) — {asc['feedback']}")
+        if auto_cards and not auto_scored:
+            parts.append(f"{len(auto_cards)} card(s) marked 'auto' but scorer failed — not recorded.")
+        if again_ids:
+            parts.append(f"{len(again_ids)} card(s) marked 'again' (requeued): {again_ids}.")
+        if new_queue:
+            parts.append(f"Flashcard queue: {len(new_queue)} remaining.")
+        else:
+            parts.append("Flashcard queue empty.")
 
         msg = " ".join(parts)
         return Command(update={
@@ -481,6 +683,7 @@ def build_review_tools(session_factory) -> list:
         "add_flashcards_to_review": add_flashcards_to_review_tool,
         "start_review": start_review_tool,
         "record_review_interaction": record_review_interaction_tool,
+        "present_flashcards": present_flashcards_tool,
         "complete_review_session": complete_review_session_tool,
         "save_review_summary": save_review_summary_tool,
         "inspect_review_state": inspect_review_state_tool,

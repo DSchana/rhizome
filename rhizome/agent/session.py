@@ -20,14 +20,17 @@ from rhizome.agent.middleware.agent_mode import AgentModeMiddleware, SYSTEM_PROM
 from rhizome.agent.modes import MODE_REGISTRY
 from rhizome.agent.tools.app import build_app_tools
 from rhizome.agent.tools.core import build_core_tools
+from rhizome.agent.tools.flashcard_proposal import build_flashcard_proposal_tools
 from rhizome.agent.tools.guide import build_guide_tools
 from rhizome.agent.tools.review import build_review_tools
+from rhizome.agent.tools.sql import build_sql_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
 
 from rhizome.agent.subagents.commit import build_commit_subagent, build_commit_subagent_tools
 from rhizome.agent.subagents.flashcard_validator import (
     build_answerer_subagent,
     build_comparator_subagent,
+    build_scorer_subagent,
 )
 
 from rhizome.logs import get_logger
@@ -100,19 +103,17 @@ class AgentSession:
             self._dump_dir = log_dir / f"agent-stream-{max_idx + 1}"
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build all tool groups (each closed over session_factory and/or chat_pane).
-        from rhizome.agent.tools.flashcard_proposal import build_flashcard_proposal_tools
-        from rhizome.agent.tools.sql import build_sql_tools
-
         # Build the flashcard validation subagents so create_flashcard_proposal
         # can run inline validation when validate=True.
         answerer = build_answerer_subagent(**dict(self._agent_kwargs))
         comparator = build_comparator_subagent(**dict(self._agent_kwargs))
+        scorer = build_scorer_subagent(**dict(self._agent_kwargs))
 
+        # Build all tool groups (each closed over session_factory and/or chat_pane).
         self._tools: list = [
             *build_core_tools(session_factory).values(),
             *build_app_tools(session_factory, chat_pane).values(),
-            *build_review_tools(session_factory).values(),
+            *build_review_tools(session_factory, scorer).values(),
             *build_flashcard_proposal_tools(session_factory, answerer, comparator).values(),
             *build_sql_tools(session_factory).values(),
             *build_guide_tools().values(),
