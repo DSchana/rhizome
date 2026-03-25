@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, TypedDict
+from typing import Any, Self, TypedDict
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -28,7 +29,18 @@ _DONE_GREEN = "rgb(100,200,100)"
 _CANCEL_RED = "rgb(255,80,80)"
 _ID_COLOR = "rgb(80,80,100)"
 _COUNTER_ACTUAL = "rgb(70,70,70)"
+_THROBBER_DIM = "rgb(45,48,58)"
+_THROBBER_DEFAULT = "rgb(60,65,80)"
+_THROBBER_BRIGHT = "rgb(80,85,100)"
 
+_THROBBER_FRAMES = [
+    ("•", _THROBBER_DIM),
+    ("●", _THROBBER_DIM),
+    ("●", _THROBBER_DEFAULT),
+    ("⬤", _THROBBER_BRIGHT),
+    ("●", _THROBBER_DEFAULT),
+    ("●", _THROBBER_DIM),
+]
 
 # ---------------------------------------------------------------------------
 # Payload type
@@ -110,6 +122,20 @@ class FlashcardReview(InterruptWidgetBase):
 
     DISABLE_CHILDREN_ON_DEACTIVATE = False
 
+    @classmethod
+    def from_interrupt(cls, value: dict[str, Any]) -> Self:
+        """Construct from an interrupt value dict."""
+        return cls(
+            cards=value["cards"],
+            user_input_enabled=value.get("user_input_enabled", True),
+            auto_score=value.get("auto_score", True),
+            again_behaviour=AgainBehaviour.MARK,
+            collapse_on_complete=False,
+            show_complete_status=value.get("show_complete_status", True),
+            counter_start=value.get("counter_start"),
+            counter_total=value.get("counter_total"),
+        )
+
     BINDINGS = [
         Binding("enter", "reveal_or_rate", "Reveal / Rate good", show=False),
         Binding("0", "rate_0", show=False),
@@ -159,6 +185,10 @@ class FlashcardReview(InterruptWidgetBase):
         width: 1fr;
         text-align: right;
     }
+    FlashcardReview #fr-throbber {
+        width: auto;
+        padding: 0 0 0 1;
+    }
     FlashcardReview #fr-question {
         margin: 0 0 1 0;
         color: rgb(195,195,205);
@@ -169,7 +199,9 @@ class FlashcardReview(InterruptWidgetBase):
         margin: 0;
     }
     FlashcardReview #fr-answer-input {
-        height: 3;
+        height: auto;
+        min-height: 1;
+        max-height: 5;
         margin: 0;
         border: solid rgb(35,38,48);
         background: transparent;
@@ -230,7 +262,7 @@ class FlashcardReview(InterruptWidgetBase):
     FlashcardReview #fr-status {
         text-style: bold;
         text-align: center;
-        margin: 1 0 0 0;
+        margin: 1 0 1 0;
     }
     """
 
@@ -267,6 +299,8 @@ class FlashcardReview(InterruptWidgetBase):
         counter_total: int | None = None,
         auto_score: bool = False,
         again_behaviour: AgainBehaviour = AgainBehaviour.QUEUE,
+        collapse_on_complete: bool = True,
+        show_complete_status: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -275,6 +309,7 @@ class FlashcardReview(InterruptWidgetBase):
         self._scores: list[int | None] = [None] * len(cards)
         self._user_answers: list[str] = [""] * len(cards)
         self._index: int = 0
+        self._rendered_index: int = -1
         self._total_original: int = len(cards)
 
         # Configuration
@@ -283,6 +318,14 @@ class FlashcardReview(InterruptWidgetBase):
         self._counter_total = counter_total
         self._auto_score = auto_score
         self._again_behaviour = again_behaviour
+        self._collapse_on_complete = collapse_on_complete
+        self._show_complete_status = show_complete_status
+
+        # Per-card timing: accumulated seconds spent viewing before reveal
+        self._durations: list[float] = [0.0] * len(cards)
+        self._timer_start: float | None = None
+        self._throbber_frame: int = 0
+        self._throbber_interval = None
 
         # Post-session state
         self._session_done = False
@@ -296,6 +339,7 @@ class FlashcardReview(InterruptWidgetBase):
             with Horizontal(id="fr-question-row"):
                 yield Static("Question", id="fr-question-label")
                 yield Static("", id="fr-counter")
+                yield Static("", id="fr-throbber")
             yield Static("", id="fr-question")
             yield Static("Your answer", id="fr-answer-input-label")
             yield _AnswerInput(id="fr-answer-input")
@@ -313,6 +357,8 @@ class FlashcardReview(InterruptWidgetBase):
     def on_mount(self) -> None:
         super().on_mount()
         self._refresh_view()
+        if self._cards and self._states[self._index] == CardState.HIDDEN:
+            self._start_timer()
 
     def on_focus(self) -> None:
         super().on_focus()
@@ -360,7 +406,7 @@ class FlashcardReview(InterruptWidgetBase):
 
         # Status message
         status = self.query_one("#fr-status", Static)
-        if done:
+        if done and self._show_complete_status:
             scored_count = sum(1 for s in self._states if s == CardState.SCORED)
             status.update(
                 f"Session complete — {scored_count} card{'s' if scored_count != 1 else ''} reviewed"
@@ -397,9 +443,7 @@ class FlashcardReview(InterruptWidgetBase):
         # Active session
         state = self._states[self._index]
         self.query_one("#fr-reveal-hint", Static).display = state == CardState.HIDDEN
-        self.query_one("#fr-ratings", Static).display = (
-            state == CardState.REVEALED and not self._auto_score
-        )
+        self.query_one("#fr-ratings", Static).display = state == CardState.REVEALED
         self.query_one("#fr-scored-label", Static).display = state == CardState.SCORED
 
         self._render_card()
@@ -444,10 +488,16 @@ class FlashcardReview(InterruptWidgetBase):
         answer_input.display = show_input
 
         if show_input:
-            answer_input.clear()
-            answer_input.focus()
+            if self._rendered_index != self._index:
+                answer_input.clear()
+                draft = self._user_answers[self._index]
+                if draft:
+                    answer_input.insert(draft)
+                answer_input.focus()
         elif answer_input.has_focus:
             self.focus()
+
+        self._rendered_index = self._index
 
         # User's submitted answer — visible after reveal (only if input was enabled)
         user_answer_label = self.query_one("#fr-user-answer-label", Static)
@@ -514,14 +564,6 @@ class FlashcardReview(InterruptWidgetBase):
                 )
 
         elif state == CardState.REVEALED:
-            if self._auto_score:
-                # Auto-score mode: just show a hint that enter will advance
-                self.query_one("#fr-ratings", Static).display = False
-                self.query_one("#fr-reveal-hint", Static).display = True
-                self.query_one("#fr-reveal-hint", Static).update(
-                    "Press [bold]enter[/bold] to continue"
-                )
-            else:
                 text = Text()
                 for i, (num, label) in enumerate(_RATINGS):
                     if i > 0:
@@ -529,7 +571,8 @@ class FlashcardReview(InterruptWidgetBase):
                     text.append(f"{num}", style=f"bold {_RATING_HIGHLIGHT}")
                     text.append(f" - {label}", style=_RATING_DIM)
                 text.append("    ")
-                text.append("[enter = good]", style=_HINT)
+                enter_label = "auto" if self._auto_score else "good"
+                text.append(f"[enter = {enter_label}]", style=_HINT)
                 self.query_one("#fr-ratings", Static).update(text)
 
         elif state == CardState.SCORED:
@@ -563,6 +606,45 @@ class FlashcardReview(InterruptWidgetBase):
             self._set_collapsed(not self._collapsed)
 
     # ------------------------------------------------------------------
+    # Timer
+    # ------------------------------------------------------------------
+
+    def _start_timer(self) -> None:
+        """Start timing the current card and begin the throbber."""
+        self._timer_start = time.monotonic()
+        self._throbber_frame = 0
+        if self._throbber_interval is None:
+            self._throbber_interval = self.set_interval(0.7, self._tick_throbber)
+        self._render_throbber()
+
+    def _pause_timer(self) -> None:
+        """Pause timing — accumulate elapsed time for the current card."""
+        if self._timer_start is not None:
+            self._durations[self._index] += time.monotonic() - self._timer_start
+            self._timer_start = None
+        if self._throbber_interval is not None:
+            self._throbber_interval.stop()
+            self._throbber_interval = None
+        self.query_one("#fr-throbber", Static).update("")
+
+    def _tick_throbber(self) -> None:
+        """Advance the throbber animation by one frame."""
+        if self._timer_start is None:
+            return
+        self._throbber_frame = (self._throbber_frame + 1) % len(_THROBBER_FRAMES)
+        self._render_throbber()
+
+    def _render_throbber(self) -> None:
+        """Render the current throbber frame."""
+        throbber = self.query_one("#fr-throbber", Static)
+        if self._timer_start is not None:
+            char, color = _THROBBER_FRAMES[self._throbber_frame]
+            text = Text(char, style=color)
+            throbber.update(text)
+        else:
+            throbber.update("")
+
+    # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
 
@@ -580,12 +662,14 @@ class FlashcardReview(InterruptWidgetBase):
                 self._rate(2)  # "good"
 
     def _reveal_current(self) -> None:
+        self._pause_timer()
         if self._user_input_enabled:
             answer_input = self.query_one("#fr-answer-input", _AnswerInput)
             self._user_answers[self._index] = answer_input.text.strip()
         self._states[self._index] = CardState.REVEALED
         self.focus()
         self._refresh_view()
+        self.call_after_refresh(self.scroll_visible)
 
     def action_rate_0(self) -> None:
         if (
@@ -619,19 +703,34 @@ class FlashcardReview(InterruptWidgetBase):
         ):
             self._rate(3)
 
+    def _save_draft(self) -> None:
+        """Persist the current answer input text for the active card."""
+        if self._user_input_enabled and self._states[self._index] == CardState.HIDDEN:
+            answer_input = self.query_one("#fr-answer-input", _AnswerInput)
+            self._user_answers[self._index] = answer_input.text.strip()
+
     def action_prev_card(self) -> None:
         if self._cards and self._index > 0:
+            self._save_draft()
+            self._pause_timer()
             self._index -= 1
+            if self._states[self._index] == CardState.HIDDEN:
+                self._start_timer()
             self._refresh_view()
 
     def action_next_card(self) -> None:
         if self._cards and self._index < len(self._cards) - 1:
+            self._save_draft()
+            self._pause_timer()
             self._index += 1
+            if self._states[self._index] == CardState.HIDDEN:
+                self._start_timer()
             self._refresh_view()
 
     def action_cancel_session(self) -> None:
         if self._session_done or self._session_cancelled:
             return
+        self._pause_timer()
         self._session_cancelled = True
         # Disable further answer input
         answer_input = self.query_one("#fr-answer-input", _AnswerInput)
@@ -643,6 +742,9 @@ class FlashcardReview(InterruptWidgetBase):
     # ------------------------------------------------------------------
     # Child events
     # ------------------------------------------------------------------
+
+    def on__answer_input_changed(self, event: TextArea.Changed) -> None:
+        self.scroll_visible()
 
     def on__answer_input_submitted(self, event: _AnswerInput.Submitted) -> None:
         if (
@@ -674,7 +776,7 @@ class FlashcardReview(InterruptWidgetBase):
 
         if rating == 0:
             if self._again_behaviour == AgainBehaviour.QUEUE:
-                # Re-queue at end
+                # Re-queue at end — duration resets for the new attempt
                 self._cards.append(self._cards.pop(self._index))
                 self._states.append(CardState.HIDDEN)
                 self._states.pop(self._index)
@@ -682,6 +784,8 @@ class FlashcardReview(InterruptWidgetBase):
                 self._scores.pop(self._index)
                 self._user_answers.append("")
                 self._user_answers.pop(self._index)
+                self._durations.append(0.0)
+                self._durations.pop(self._index)
                 if self._index >= len(self._cards):
                     self._index = 0
             else:
@@ -696,10 +800,15 @@ class FlashcardReview(InterruptWidgetBase):
 
         # Check completion
         if all(s == CardState.SCORED for s in self._states):
+            self._pause_timer()
             self._session_done = True
             self.post_message(self.SessionComplete())
             self._finish_session(completed=True)
             return
+
+        # Start timer for the new current card if it's unanswered
+        if self._states[self._index] == CardState.HIDDEN:
+            self._start_timer()
 
         self._refresh_view()
 
@@ -712,16 +821,18 @@ class FlashcardReview(InterruptWidgetBase):
                 return
 
     def _finish_session(self, *, completed: bool) -> None:
-        """Resolve the interrupt and transition to collapsed post-session state."""
+        """Resolve the interrupt and transition to post-session state."""
         result = self._build_result(completed=completed)
         self.resolve(result)
 
         # Re-enable focus for post-session navigation
         self.can_focus = True
 
-        # Show collapse button
-        self.query_one("#fr-collapse", Button).display = True
-        self._set_collapsed(True)
+        if self._collapse_on_complete:
+            self.query_one("#fr-collapse", Button).display = True
+            self._set_collapsed(True)
+        else:
+            self._refresh_view()
 
     def _build_result(self, *, completed: bool) -> dict[str, Any]:
         cards_result = []
@@ -740,6 +851,7 @@ class FlashcardReview(InterruptWidgetBase):
                 "user_answer": self._user_answers[i],
                 "score": score,
                 "score_label": score_label,
+                "duration": round(self._durations[i], 1),
             })
         return {
             "completed": completed,
