@@ -32,6 +32,7 @@ _COUNTER_ACTUAL = "rgb(70,70,70)"
 _THROBBER_DIM = "rgb(45,48,58)"
 _THROBBER_DEFAULT = "rgb(60,65,80)"
 _THROBBER_BRIGHT = "rgb(80,85,100)"
+_TIMER_DIM = "rgb(60,60,60)"
 
 _THROBBER_FRAMES = [
     ("•", _THROBBER_DIM),
@@ -145,6 +146,7 @@ class FlashcardReview(InterruptWidgetBase):
         Binding("alt+left", "prev_card", show=False),
         Binding("alt+right", "next_card", show=False),
         Binding("ctrl+c", "cancel_session", show=False),
+        Binding("ctrl+k", "toggle_time", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -184,10 +186,6 @@ class FlashcardReview(InterruptWidgetBase):
     FlashcardReview #fr-counter {
         width: 1fr;
         text-align: right;
-    }
-    FlashcardReview #fr-throbber {
-        width: auto;
-        padding: 0 0 0 1;
     }
     FlashcardReview #fr-question {
         margin: 0 0 1 0;
@@ -253,6 +251,25 @@ class FlashcardReview(InterruptWidgetBase):
     FlashcardReview #fr-scored-label {
         text-align: center;
         margin: 1 0 0 0;
+    }
+    FlashcardReview #fr-start-screen {
+        border: solid rgb(58,65,80);
+        padding: 1 2;
+        height: auto;
+        min-height: 9;
+        margin: 0 4;
+        align: center middle;
+    }
+    FlashcardReview #fr-start-summary {
+        text-align: center;
+        color: rgb(80,80,80);
+        width: 1fr;
+        margin: 0 0 1 0;
+    }
+    FlashcardReview #fr-start-prompt {
+        text-align: center;
+        color: rgb(80,80,80);
+        width: 1fr;
     }
     FlashcardReview #fr-empty {
         color: $text-muted;
@@ -327,6 +344,12 @@ class FlashcardReview(InterruptWidgetBase):
         self._throbber_frame: int = 0
         self._throbber_interval = None
 
+        # Time display toggle
+        self._show_time = False
+
+        # Start screen — wait for user to press enter before beginning
+        self._awaiting_start = bool(cards)
+
         # Post-session state
         self._session_done = False
         self._session_cancelled = False
@@ -335,11 +358,14 @@ class FlashcardReview(InterruptWidgetBase):
     def compose(self) -> ComposeResult:
         yield Button("▼", id="fr-collapse")
         yield Static("", id="fr-empty")
+        with Vertical(id="fr-start-screen"):
+            n = len(self._cards)
+            yield Static(f"{n} card{'s' if n != 1 else ''} to review", id="fr-start-summary")
+            yield Static("Press [bold]enter[/bold] to begin.", id="fr-start-prompt")
         with Vertical(id="fr-card"):
             with Horizontal(id="fr-question-row"):
                 yield Static("Question", id="fr-question-label")
                 yield Static("", id="fr-counter")
-                yield Static("", id="fr-throbber")
             yield Static("", id="fr-question")
             yield Static("Your answer", id="fr-answer-input-label")
             yield _AnswerInput(id="fr-answer-input")
@@ -357,13 +383,14 @@ class FlashcardReview(InterruptWidgetBase):
     def on_mount(self) -> None:
         super().on_mount()
         self._refresh_view()
-        if self._cards and self._states[self._index] == CardState.HIDDEN:
+        if self._cards and not self._awaiting_start and self._states[self._index] == CardState.HIDDEN:
             self._start_timer()
 
     def on_focus(self) -> None:
         super().on_focus()
         if (
             self._cards
+            and not self._awaiting_start
             and not self._session_done
             and not self._session_cancelled
             and self._user_input_enabled
@@ -376,9 +403,12 @@ class FlashcardReview(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def check_action(self, action: str, parameters: tuple) -> bool:
+        # Start screen — only allow enter to begin
+        if self._awaiting_start:
+            return action == "reveal_or_rate"
         # After session end, only allow navigation
         if self._session_done or self._session_cancelled:
-            return action in ("prev_card", "next_card")
+            return action in ("prev_card", "next_card", "toggle_time")
         return True
 
     # ------------------------------------------------------------------
@@ -390,6 +420,17 @@ class FlashcardReview(InterruptWidgetBase):
         done = self._session_done
         cancelled = self._session_cancelled
         finished = done or cancelled
+
+        # Start screen
+        self.query_one("#fr-start-screen", Vertical).display = self._awaiting_start
+        if self._awaiting_start:
+            self.query_one("#fr-empty", Static).display = False
+            self.query_one("#fr-card", Vertical).display = False
+            self.query_one("#fr-reveal-hint", Static).display = False
+            self.query_one("#fr-ratings", Static).display = False
+            self.query_one("#fr-scored-label", Static).display = False
+            self.query_one("#fr-status", Static).display = False
+            return
 
         self.query_one("#fr-empty", Static).display = empty
         self.query_one("#fr-card", Vertical).display = (
@@ -531,6 +572,25 @@ class FlashcardReview(InterruptWidgetBase):
     def _render_counter(self) -> None:
         counter_widget = self.query_one("#fr-counter", Static)
 
+        text = Text()
+
+        # Throbber or timer prefix
+        if self._timer_start is not None:
+            if self._show_time:
+                elapsed = self._durations[self._index] + (
+                    time.monotonic() - self._timer_start
+                )
+                text.append(f"{elapsed:05.2f}s", style=_TIMER_DIM)
+                text.append(" — ", style=_TIMER_DIM)
+            else:
+                char, color = _THROBBER_FRAMES[self._throbber_frame]
+                text.append(f"{char} ", style=color)
+        elif self._show_time and self._cards and self._durations[self._index] > 0:
+            text.append(
+                f"{self._durations[self._index]:05.2f}s", style=_TIMER_DIM
+            )
+            text.append(" — ", style=_TIMER_DIM)
+
         # Counter — use overrides if provided
         has_override = self._counter_start is not None and self._counter_total is not None
         if has_override:
@@ -540,7 +600,6 @@ class FlashcardReview(InterruptWidgetBase):
             display_index = self._index + 1
             display_total = len(self._cards)
 
-        text = Text()
         text.append(f"{display_index}/{display_total}", style=_DIM)
 
         if has_override:
@@ -609,12 +668,20 @@ class FlashcardReview(InterruptWidgetBase):
     # Timer
     # ------------------------------------------------------------------
 
+    @property
+    def _tick_rate(self) -> float:
+        """Interval rate: faster when showing live time, slower for throbber."""
+        return 0.05 if self._show_time else 0.7
+
     def _start_timer(self) -> None:
         """Start timing the current card and begin the throbber."""
         self._timer_start = time.monotonic()
         self._throbber_frame = 0
-        if self._throbber_interval is None:
-            self._throbber_interval = self.set_interval(0.7, self._tick_throbber)
+        if self._throbber_interval is not None:
+            self._throbber_interval.stop()
+        self._throbber_interval = self.set_interval(
+            self._tick_rate, self._tick_throbber
+        )
         self._render_throbber()
 
     def _pause_timer(self) -> None:
@@ -625,7 +692,7 @@ class FlashcardReview(InterruptWidgetBase):
         if self._throbber_interval is not None:
             self._throbber_interval.stop()
             self._throbber_interval = None
-        self.query_one("#fr-throbber", Static).update("")
+        self._render_throbber()
 
     def _tick_throbber(self) -> None:
         """Advance the throbber animation by one frame."""
@@ -635,14 +702,8 @@ class FlashcardReview(InterruptWidgetBase):
         self._render_throbber()
 
     def _render_throbber(self) -> None:
-        """Render the current throbber frame."""
-        throbber = self.query_one("#fr-throbber", Static)
-        if self._timer_start is not None:
-            char, color = _THROBBER_FRAMES[self._throbber_frame]
-            text = Text(char, style=color)
-            throbber.update(text)
-        else:
-            throbber.update("")
+        """Re-render the counter (which includes the throbber/timer prefix)."""
+        self._render_counter()
 
     # ------------------------------------------------------------------
     # Actions
@@ -650,6 +711,15 @@ class FlashcardReview(InterruptWidgetBase):
 
     def action_reveal_or_rate(self) -> None:
         if not self._cards:
+            return
+
+        if self._awaiting_start:
+            self._awaiting_start = False
+            self._refresh_view()
+            if self._states[self._index] == CardState.HIDDEN:
+                self._start_timer()
+            if self._user_input_enabled:
+                self.query_one("#fr-answer-input", _AnswerInput).focus()
             return
 
         state = self._states[self._index]
@@ -738,6 +808,17 @@ class FlashcardReview(InterruptWidgetBase):
         self.focus()
         self.post_message(self.SessionCancelled())
         self._finish_session(completed=False)
+
+    def action_toggle_time(self) -> None:
+        """Toggle between throbber animation and numeric time display."""
+        self._show_time = not self._show_time
+        # Restart the interval at the appropriate tick rate if timer is running
+        if self._timer_start is not None and self._throbber_interval is not None:
+            self._throbber_interval.stop()
+            self._throbber_interval = self.set_interval(
+                self._tick_rate, self._tick_throbber
+            )
+        self._render_throbber()
 
     # ------------------------------------------------------------------
     # Child events
