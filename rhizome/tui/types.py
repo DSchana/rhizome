@@ -32,6 +32,10 @@ class UserFeedback(Message):
         self.severity = severity
 
 
+class DataChanged(Message):
+    """Posted when a DB commit occurs, signalling widgets to refresh stale data."""
+
+
 @dataclass
 class ChatMessageData:
     """A single message in the conversation history."""

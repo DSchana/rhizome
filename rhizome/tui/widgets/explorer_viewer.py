@@ -265,6 +265,23 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
         self._update_help_text()
 
     # ------------------------------------------------------------------
+    # Data refresh (called when DB state changes externally)
+    # ------------------------------------------------------------------
+
+    async def invalidate_and_refresh(self) -> None:
+        """Clear all caches and reload data for the current view."""
+        self._entry_cache.clear()
+        self._entry_count_cache.clear()
+        self._fc_by_topic_cache.clear()
+        self._fc_count_cache.clear()
+        self._fc_by_entry_cache.clear()
+        # Reload the topic tree structure (new/deleted topics)
+        tree = self.query_one(TopicTree)
+        await tree.invalidate_and_refresh()
+        # Reload data for the currently highlighted topic
+        await self._load_data_for_current_topic()
+
+    # ------------------------------------------------------------------
     # Help text
     # ------------------------------------------------------------------
 

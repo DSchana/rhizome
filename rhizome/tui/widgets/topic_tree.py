@@ -44,6 +44,34 @@ class TopicTree(Tree[Topic]):
         if self.root.children:
             self.move_cursor(self.root.children[0])
 
+    async def invalidate_and_refresh(self) -> None:
+        """Clear the tree and reload from DB, preserving the cursor topic."""
+        prev_topic_id = None
+        if self.cursor_node is not None and self.cursor_node.data is not None:
+            prev_topic_id = self.cursor_node.data.id
+        self.root.remove_children()
+        self._refresh_height()
+        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        async with session_factory() as session:
+            roots = await list_root_topics(session)
+            has_children = {
+                topic.id: bool(await list_children(session, topic.id))
+                for topic in roots
+            }
+        restore_node = None
+        for topic in roots:
+            if has_children[topic.id]:
+                node = self.root.add(topic.name, data=topic, allow_expand=True)
+            else:
+                node = self.root.add_leaf(topic.name, data=topic)
+            if topic.id == prev_topic_id:
+                restore_node = node
+        self._refresh_height()
+        if restore_node is not None:
+            self.move_cursor(restore_node)
+        elif self.root.children:
+            self.move_cursor(self.root.children[0])
+
     async def on_tree_node_expanded(self, event: Tree.NodeExpanded[Topic]) -> None:
         node: TreeNode[Topic] = event.node
         if node.data is None:
