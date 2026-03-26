@@ -33,7 +33,7 @@ async def main() -> None:
     # Wipe any existing file so the script is fully repeatable.
     DB_PATH.unlink(missing_ok=True)
 
-    engine = await init_db(DB_PATH)
+    engine = init_db(DB_PATH)
     factory = get_session_factory(engine)
 
     async with factory() as session:

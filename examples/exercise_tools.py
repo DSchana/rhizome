@@ -67,7 +67,7 @@ def check(condition: bool, label: str, detail: str = "") -> None:
 
 async def main() -> None:
     DB_PATH.unlink(missing_ok=True)
-    engine = await init_db(DB_PATH)
+    engine = init_db(DB_PATH)
     factory = get_session_factory(engine)
 
     # ── Topics (tree structure) ──────────────────────────────────

@@ -18,10 +18,16 @@ Database layer. Defines the ORM schema and provides async engine/session managem
   - `ReviewInteraction` — one question-answer exchange within a review session. Has optional `flashcard_id` FK (indexed) — present for flashcard-based reviews, null for conversational exchanges. Has `question_text`, `user_response`, optional `feedback` and `score` (0-5, CHECK constraint), and `position` for ordering. References entries tested via `ReviewInteractionEntry` junction.
   - `ReviewInteractionEntry` — junction table: review interaction ↔ entry. Composite PK on (`interaction_id`, `entry_id`).
 
-- **engine.py** — Engine, session, and migration functions:
+- **engine.py** — Engine, session, and initialization:
   - `get_engine(db_path)` — creates an `AsyncEngine` using `sqlite+aiosqlite`. Registers a `connect` event listener that enables SQLite foreign key enforcement (`PRAGMA foreign_keys = ON`) on every new DBAPI connection.
   - `get_session_factory(engine)` — returns an `async_sessionmaker` with `expire_on_commit=False`.
-  - `init_db(db_path)` — creates all tables (idempotent) and returns the engine. Runs migrations on a temporary engine without FK enforcement, then returns a production engine with FK enforcement ON. Three migration phases: (1) `_migrate_review_tables` drops/recreates review tables with missing columns, (2) `create_all` creates any missing tables, (3) `_migrate_add_cascades` recreates FK tables to add `ON DELETE CASCADE`/`SET NULL` constraints using a data-preserving rename-create-copy-drop cycle.
+  - `run_migrations(db_path)` — runs all pending Alembic migrations against the given DB. No-op if already at the latest revision.
+  - `init_db(db_path)` — synchronous entry point for app startup. Calls `run_migrations()` then returns an engine with FK enforcement ON.
+
+- **alembic/** — Alembic migration environment:
+  - `env.py` — configured for async SQLAlchemy with `render_as_batch=True` (required for SQLite `ALTER TABLE` limitations). `target_metadata` points to `Base.metadata` for autogenerate support.
+  - `versions/` — migration scripts. Each has `upgrade()` / `downgrade()` functions and a revision chain (`revision` / `down_revision`). Generate new migrations with `uv run alembic revision --autogenerate -m "description"`.
+  - `alembic.ini` (repo root) — Alembic config. `sqlalchemy.url` is a fallback for CLI use; `init_db()` overrides it programmatically.
 
 ## FK Cascade Behavior
 

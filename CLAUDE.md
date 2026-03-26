@@ -41,7 +41,8 @@ Each directory under `rhizome/` contains a `CONTEXT.md` describing its contents,
   - `Topic` — tree structure via adjacency list (`parent_id` self-FK). Entries attach at any depth.
   - `KnowledgeEntry`, `Tag`, `KnowledgeEntryTag` — knowledge units with tagging
   - `RelatedKnowledgeEntries` — directed graph edges between entries (acyclic, enforced via recursive CTE)
-- **engine.py** — Async engine factory (`get_engine`), session factory (`get_session_factory`), and `init_db()` for table creation
+- **engine.py** — Engine factory (`get_engine`), session factory (`get_session_factory`), and `init_db()` which runs Alembic migrations then returns an engine
+- **alembic/** — Alembic migration environment. Generate new migrations with `uv run alembic revision --autogenerate -m "description"`
 
 ### Database Operations (`rhizome/db/operations/`)
 Pure async functions that accept `AsyncSession` as their first argument. Each module maps to a domain:

@@ -70,7 +70,7 @@ async def main():
     if DB_PATH.exists():
         DB_PATH.unlink()
 
-    engine = await init_db(DB_PATH)
+    engine = init_db(DB_PATH)
     session_factory = get_session_factory(engine)
     await seed_db(session_factory)
 

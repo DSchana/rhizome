@@ -19,6 +19,7 @@ dependencies = [
     "langchain-community>=0.4.1",
     "pypdf>=6.9.2",
     "faiss-cpu>=1.13.2",
+    "alembic>=1.18.4",
 ]
 
 [dependency-groups]

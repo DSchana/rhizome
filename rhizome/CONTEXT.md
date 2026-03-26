@@ -15,7 +15,7 @@ Typical usage (programmatic):
 from rhizome.db import init_db, get_session_factory
 from rhizome.db.operations import create_topic, create_entry
 
-engine = await init_db("my.db")
+engine = init_db("my.db")
 factory = get_session_factory(engine)
 async with factory() as session:
     t = await create_topic(session, name="motions")
