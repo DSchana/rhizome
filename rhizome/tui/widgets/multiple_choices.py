@@ -16,9 +16,11 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.reactive import reactive
-from textual.widgets import Static
+from textual.widgets import Button, Static
 
 from .interrupt import InterruptWidgetBase
+
+_DIM = "rgb(100,100,100)"
 
 
 class _Phase(Enum):
@@ -60,6 +62,22 @@ class MultipleChoices(InterruptWidgetBase):
     MultipleChoices #mc-hint {
         margin-bottom: 1;
     }
+    MultipleChoices #mc-collapse {
+        dock: right;
+        width: auto;
+        min-width: 3;
+        height: 1;
+        background: transparent;
+        border: none;
+        color: $text-muted;
+        display: none;
+    }
+    MultipleChoices #mc-collapse:hover {
+        color: $text;
+    }
+    MultipleChoices #mc-collapsed-summary {
+        display: none;
+    }
     """
 
     active_question: reactive[int] = reactive(0)
@@ -78,6 +96,7 @@ class MultipleChoices(InterruptWidgetBase):
         self._phase = _Phase.ANSWERING
         self._confirm_cursor = 0
         self._has_confirmed_once = False
+        self._collapsed = False
 
     @classmethod
     def from_interrupt(cls, value: dict[str, Any]) -> MultipleChoices:
@@ -100,14 +119,16 @@ class MultipleChoices(InterruptWidgetBase):
     # ------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
+        yield Button("▼", id="mc-collapse")
         yield Static(id="mc-tabs")
         yield Static(id="mc-hint")
         yield Static(id="mc-prompt")
         yield Static(id="mc-options")
+        yield Static(id="mc-collapsed-summary")
 
     def on_mount(self) -> None:
         super().on_mount()
-        self.query_one("#mc-hint", Static).styles.color = "rgb(100,100,100)"
+        self.query_one("#mc-hint", Static).styles.color = _DIM
         self._render_all()
         self.focus()
         self.scroll_visible(animate=False)
@@ -306,16 +327,75 @@ class MultipleChoices(InterruptWidgetBase):
         return None
 
     def _show_final_summary(self) -> None:
-        """Collapse the widget to a summary of answers after submission."""
+        """Transition into collapsible resolved state."""
+        self.query_one("#mc-hint", Static).update("")
+        self.query_one("#mc-hint", Static).display = False
+        self.can_focus = True
+        self.query_one("#mc-collapse", Button).display = True
+        self._set_collapsed(True)
+
+    # ------------------------------------------------------------------
+    # Collapse / expand (post-resolution)
+    # ------------------------------------------------------------------
+
+    def _build_summary_text(self) -> Text:
+        """Build collapsed summary: 'Q1: A1, Q2: A2, ...'."""
         summary = Text()
+        parts: list[str] = []
+        for i, q in enumerate(self._questions):
+            answer = self._answers.get(i, "—")
+            parts.append(f"{q['name']}: {answer}")
+        summary.append("  " + ", ".join(parts), style=_DIM)
+        return summary
+
+    def _build_expanded_answers(self) -> Text:
+        """Build the expanded view showing all questions and their answers."""
+        text = Text()
         for i, q in enumerate(self._questions):
             if i > 0:
-                summary.append("\n")
+                text.append("\n")
             answer = self._answers.get(i, "—")
-            summary.append(f"  {q['name']}: ", style="rgb(100,100,100)")
-            summary.append(answer, style="rgb(100,200,100)")
-        self.query_one("#mc-tabs", Static).display = False
-        self.query_one("#mc-hint", Static).display = False
-        self.query_one("#mc-prompt", Static).display = False
-        self.query_one("#mc-options", Static).update(summary)
+            text.append(f"  {q['name']}: ", style=_DIM)
+            text.append(answer, style="rgb(100,200,100)")
+        return text
+
+    def _set_collapsed(self, collapsed: bool) -> None:
+        self._collapsed = collapsed
+        btn = self.query_one("#mc-collapse", Button)
+        btn.label = "▶" if collapsed else "▼"
+
+        summary_widget = self.query_one("#mc-collapsed-summary", Static)
+        tabs = self.query_one("#mc-tabs", Static)
+        prompt = self.query_one("#mc-prompt", Static)
+        options = self.query_one("#mc-options", Static)
+
+        if collapsed:
+            summary_widget.update(self._build_summary_text())
+            summary_widget.display = True
+            tabs.display = False
+            prompt.display = False
+            options.display = False
+        else:
+            summary_widget.display = False
+            tabs.display = True
+            prompt.display = False  # no need for prompt text in expanded resolved
+            options.display = True
+            options.update(self._build_expanded_answers())
+            # Show tabs in resolved state (all checked, dimmed)
+            self._render_resolved_tabs()
+
+    def _render_resolved_tabs(self) -> None:
+        """Render tabs in read-only resolved state."""
+        text = Text()
+        for i, q in enumerate(self._questions):
+            if i > 0:
+                text.append("  ")
+            label = f"[x] {q['name']}"
+            text.append(label, style="rgb(100,200,100)")
+        self.query_one("#mc-tabs", Static).update(text)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "mc-collapse":
+            event.stop()
+            self._set_collapsed(not self._collapsed)
 
