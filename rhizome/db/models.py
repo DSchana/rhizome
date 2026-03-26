@@ -173,7 +173,7 @@ class ReviewSession(Base):
         back_populates="session", cascade="all, delete-orphan"
     )
     flashcards: Mapped[list["Flashcard"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan"
+        back_populates="session", passive_deletes=True
     )
 
     def __repr__(self) -> str:
@@ -215,7 +215,7 @@ class Flashcard(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     session_id: Mapped[int | None] = mapped_column(
-        ForeignKey("review_session.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("review_session.id", ondelete="SET NULL"), nullable=True, index=True
     )
     topic_id: Mapped[int] = mapped_column(
         ForeignKey("topic.id", ondelete="CASCADE"), nullable=False, index=True

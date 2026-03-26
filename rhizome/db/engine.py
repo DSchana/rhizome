@@ -103,7 +103,11 @@ _FK_TABLES_ORDERED = [
 
 
 def _needs_cascade_migration(connection) -> bool:
-    """Check if any FK constraint lacks ON DELETE CASCADE/SET NULL."""
+    """Check if any FK constraint has incorrect ON DELETE action.
+
+    Returns True when any FK lacks an ON DELETE rule (NO ACTION) or when
+    the flashcard.session_id FK uses CASCADE instead of SET NULL.
+    """
     result = connection.execute(text(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -115,6 +119,9 @@ def _needs_cascade_migration(connection) -> bool:
             # (id, seq, table, from, to, on_update, on_delete, match)
             on_delete = row[6]
             if on_delete in ("NO ACTION", "", None):
+                return True
+            # flashcard.session_id should be SET NULL, not CASCADE
+            if table == "flashcard" and row[2] == "review_session" and on_delete != "SET NULL":
                 return True
     return False
 

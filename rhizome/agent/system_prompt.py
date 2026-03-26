@@ -106,11 +106,12 @@ For full column details, use the `describe_database` tool.
 ### Cascade Behavior
 
 SQLite foreign key enforcement is ON. All foreign keys have `ON DELETE CASCADE` (or `ON DELETE SET NULL` for nullable
-references like `review_interaction.flashcard_id`). This means deleting a parent row automatically deletes or nullifies
-dependent rows — you do NOT need to manually clean up junction tables.
+references like `review_interaction.flashcard_id` and `flashcard.session_id`). This means deleting a parent row
+automatically deletes or nullifies dependent rows — you do NOT need to manually clean up junction tables.
 
 For example, `DELETE FROM flashcard WHERE id = 5` automatically deletes related `flashcard_entry` rows and sets
-`review_interaction.flashcard_id = NULL` where it referenced that flashcard.
+`review_interaction.flashcard_id = NULL` where it referenced that flashcard. Deleting a review session sets
+`flashcard.session_id = NULL` rather than deleting the flashcards — flashcards are preserved as reusable resources.
 
 ### SQL Tools — Last Resort
 
