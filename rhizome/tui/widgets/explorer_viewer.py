@@ -445,6 +445,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
                     self._entry_count_cache[topic.id] = count
 
         self._update_count_hint(topic.id)
+        self.call_after_refresh(self.scroll_visible)
 
     def _update_count_hint(self, topic_id: int) -> None:
         """Update the count hint below the tree."""
