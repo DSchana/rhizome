@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -25,6 +26,12 @@ class EntryType(enum.Enum):
     fact = "fact"
     exposition = "exposition"
     overview = "overview"
+
+
+class LoadingPreference(enum.Enum):
+    auto = "auto"
+    context_stuff = "context_stuff"
+    vector_store = "vector_store"
 
 
 class Base(DeclarativeBase):
@@ -292,3 +299,61 @@ class ReviewInteractionEntry(Base):
 
     def __repr__(self) -> str:
         return f"<ReviewInteractionEntry interaction={self.interaction_id} entry={self.entry_id}>"
+
+
+class Resource(Base):
+    __tablename__ = "resource"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    loading_preference: Mapped[LoadingPreference] = mapped_column(
+        Enum(LoadingPreference), nullable=False, server_default="auto"
+    )
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    chunks: Mapped[list["ResourceChunk"]] = relationship(
+        back_populates="resource", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Resource id={self.id} name={self.name!r}>"
+
+
+class TopicResource(Base):
+    __tablename__ = "topic_resource"
+
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic.id", ondelete="CASCADE"), primary_key=True
+    )
+    resource_id: Mapped[int] = mapped_column(
+        ForeignKey("resource.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<TopicResource topic={self.topic_id} resource={self.resource_id}>"
+
+
+class ResourceChunk(Base):
+    __tablename__ = "resource_chunk"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    resource_id: Mapped[int] = mapped_column(
+        ForeignKey("resource.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    context_tag: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+
+    resource: Mapped["Resource"] = relationship(back_populates="chunks")
+
+    def __repr__(self) -> str:
+        return f"<ResourceChunk id={self.id} resource={self.resource_id} index={self.chunk_index}>"

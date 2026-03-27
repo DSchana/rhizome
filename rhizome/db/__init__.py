@@ -5,7 +5,10 @@ from .models import (
     FlashcardEntry,
     KnowledgeEntry,
     KnowledgeEntryTag,
+    LoadingPreference,
     RelatedKnowledgeEntries,
+    Resource,
+    ResourceChunk,
     ReviewInteraction,
     ReviewInteractionEntry,
     ReviewSession,
@@ -13,6 +16,7 @@ from .models import (
     ReviewSessionTopic,
     Tag,
     Topic,
+    TopicResource,
 )
 from .engine import get_engine, get_session_factory, init_db
 
@@ -23,7 +27,10 @@ __all__ = [
     "FlashcardEntry",
     "KnowledgeEntry",
     "KnowledgeEntryTag",
+    "LoadingPreference",
     "RelatedKnowledgeEntries",
+    "Resource",
+    "ResourceChunk",
     "ReviewInteraction",
     "ReviewInteractionEntry",
     "ReviewSession",
@@ -31,6 +38,7 @@ __all__ = [
     "ReviewSessionTopic",
     "Tag",
     "Topic",
+    "TopicResource",
     "get_engine",
     "get_session_factory",
     "init_db",
