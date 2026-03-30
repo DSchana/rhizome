@@ -22,32 +22,68 @@ class Question(BaseModel):
 def build_app_tools(session_factory, chat_pane=None) -> dict:
     """Build app control tools with session_factory and chat_pane closed over."""
 
-    @tool("set_topic", description=(
-        "Set the active topic for this chat session. "
-        "Updates the status bar and notifies the user. "
-        "Use this when the user begins learning about a specific topic."
+    @tool("update_app_state", description=(
+        "Update one or more pieces of app state in a single call. All parameters "
+        "are optional — only provided values are applied.\n\n"
+        "- topic_id: Set the active topic for this chat session.\n"
+        "- clear_topic: Clear the active topic (takes precedence over topic_id).\n"
+        "- tab_name: Rename the active chat session tab. Keep it short — around "
+        "20 characters, 2-3 words.\n"
+        "- hint_higher_verbosity: Hint to the user that a higher verbosity setting "
+        "may be needed. Use ONLY in 'terse' verbosity mode."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def set_topic_tool(topic_id: int) -> str:
-        if chat_pane is None:
-            return "Chat pane not available."
-        async with session_factory() as session:
-            topic = await get_topic(session, topic_id)
-            if topic is None:
-                return f"Topic {topic_id} not found."
-            # Walk up parents to build the path
-            path: list[str] = [topic.name]
-            current = topic
-            while current.parent_id is not None:
-                current = await get_topic(session, current.parent_id)
-                if current is None:
-                    break
-                path.append(current.name)
-            path.reverse()
-        chat_pane.active_topic = topic
-        chat_pane._topic_path = path
-        chat_pane.update_status_bar()
-        return f"Active topic set to: {topic.name}"
+    async def update_app_state_tool(
+        topic_id: int | None = None,
+        clear_topic: bool = False,
+        tab_name: str | None = None,
+        hint_higher_verbosity: bool = False,
+    ) -> str:
+        results: list[str] = []
+
+        if clear_topic:
+            if chat_pane is not None:
+                chat_pane.active_topic = None
+                chat_pane._topic_path = []
+                chat_pane.update_status_bar()
+            results.append("Active topic cleared.")
+        elif topic_id is not None:
+            if chat_pane is None:
+                results.append("Chat pane not available.")
+            else:
+                async with session_factory() as session:
+                    topic = await get_topic(session, topic_id)
+                    if topic is None:
+                        results.append(f"Topic {topic_id} not found.")
+                    else:
+                        path: list[str] = [topic.name]
+                        current = topic
+                        while current.parent_id is not None:
+                            current = await get_topic(session, current.parent_id)
+                            if current is None:
+                                break
+                            path.append(current.name)
+                        path.reverse()
+                        chat_pane.active_topic = topic
+                        chat_pane._topic_path = path
+                        chat_pane.update_status_bar()
+                        results.append(f"Active topic set to: {topic.name}")
+
+        if tab_name is not None:
+            if chat_pane is not None:
+                await chat_pane._cmd_rename(tab_name)
+            results.append(f"Tab renamed to: {tab_name}")
+
+        if hint_higher_verbosity:
+            if chat_pane is not None:
+                from rhizome.tui.widgets import HintHigherVerbosity
+                chat_pane.post_message(HintHigherVerbosity())
+            results.append("Higher verbosity hint sent.")
+
+        if not results:
+            return "No updates requested."
+
+        return " ".join(results)
 
     @tool("set_mode", description="Set the active session mode. Accepted values: 'idle', 'learn', 'review'.")
     @tool_visibility(ToolVisibility.LOW)
@@ -64,15 +100,6 @@ def build_app_tools(session_factory, chat_pane=None) -> dict:
                 tool_call_id=runtime.tool_call_id,
             )],
         })
-
-    @tool("rename_tab", description=(
-        "Rename the active chat session tab. Keep the name short — around 20 characters, "
-        "2-3 words. The default max tab width is 20 characters (the user can change this)."
-    ))
-    @tool_visibility(ToolVisibility.LOW)
-    async def rename_tab_tool(name: str) -> str:
-        await chat_pane._cmd_rename(name)
-        return f"Tab renamed to: {name}"
 
     # -----------------------------------------------------------------------
     # User input (interrupt-based)
@@ -109,22 +136,8 @@ def build_app_tools(session_factory, chat_pane=None) -> dict:
             lines = [f"{name}: {answer}" for name, answer in result.items()]
             return "User selections:\n" + "\n".join(lines)
 
-    @tool("hint_higher_verbosity", description=(
-        "Hint to the user that a higher verbosity setting may be needed to properly "
-        "answer their query. Use this ONLY in 'terse' verbosity mode when the question "
-        "warrants a longer answer. Do NOT use in 'standard', 'verbose', or 'auto' mode."
-    ))
-    @tool_visibility(ToolVisibility.LOW)
-    async def hint_higher_verbosity_tool() -> str:
-        if chat_pane is not None:
-            from rhizome.tui.widgets import HintHigherVerbosity
-            chat_pane.post_message(HintHigherVerbosity())
-        return "Hint sent."
-
     return {
-        "set_topic": set_topic_tool,
+        "update_app_state": update_app_state_tool,
         "set_mode": set_mode_tool,
-        "rename_tab": rename_tab_tool,
         "ask_user_input": ask_user_input_tool,
-        "hint_higher_verbosity": hint_higher_verbosity_tool,
     }

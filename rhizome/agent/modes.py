@@ -36,11 +36,9 @@ _DB_WRITE_TOOLS = frozenset({
 })
 
 _APP_TOOLS = frozenset({
-    "set_topic",
+    "update_app_state",
     "set_mode",
-    "rename_tab",
     "ask_user_input",
-    "hint_higher_verbosity",
 })
 
 _COMMIT_TOOLS = frozenset({

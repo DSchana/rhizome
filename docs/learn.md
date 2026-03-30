@@ -16,7 +16,7 @@ The active topic determines where committed entries are stored. It's shown in th
 
 **Setting a topic:**
 - `/topics` opens an interactive `TopicTreeViewer` — navigate with arrow keys, select with `Ctrl+J`
-- The agent can call `set_topic` to set it programmatically
+- The agent can call `update_app_state(topic_id=...)` to set it programmatically
 - The agent receives the active topic name in its context on every invocation
 
 ## Chatting
@@ -80,6 +80,6 @@ On approval, `commit_proposal_accept` writes the entries to the database as `Kno
 ## Available Tools
 
 **Database:** `list_topics`, `list_knowledge_entries`, `read_knowledge_entries`, `list_flashcards`, `read_flashcards`, `create_topics`, `delete_topics`
-**App:** `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
+**App:** `update_app_state`, `set_mode`, `ask_user_input`
 **Commit:** `commit_show_selected_messages`, `commit_proposal_create`, `commit_invoke_subagent`, `commit_proposal_present`, `commit_proposal_accept`
 **Web:** `web_search`, `web_fetch`

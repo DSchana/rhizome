@@ -115,5 +115,5 @@ The flashcard queue supports both **append** (`add_flashcards_to_review`) and **
 ## Other Available Tools
 
 **Database (read-only):** `list_topics`, `list_knowledge_entries`, `read_knowledge_entries`, `list_flashcards`, `read_flashcards`
-**App:** `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
+**App:** `update_app_state`, `set_mode`, `ask_user_input`
 **Web:** `web_search`, `web_fetch`
