@@ -258,7 +258,7 @@ class FlashcardEntry(Base):
 class ReviewInteraction(Base):
     __tablename__ = "review_interaction"
     __table_args__ = (
-        CheckConstraint("score >= 0 AND score <= 5", name="score_range"),
+        CheckConstraint("score >= 0 AND score <= 3", name="score_range"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -268,9 +268,7 @@ class ReviewInteraction(Base):
     flashcard_id: Mapped[int | None] = mapped_column(
         ForeignKey("flashcard.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    question_text: Mapped[str] = mapped_column(Text, nullable=False)
-    user_response: Mapped[str] = mapped_column(Text, nullable=False)
-    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 

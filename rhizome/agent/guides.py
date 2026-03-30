@@ -304,33 +304,61 @@ Question-as-title without a clear answer:
         content="""
 # Guide: Conversational Reviews
 
-- Conversational reviews are **guided discussions**. The goal is to prompt the user to share their _understanding_ of
-the topics without necessarily expecting a fixed, unambiguous "correct answer". Your job is to guide the discussion
-naturally.
-- Start with a broad, leading question, opening up a topic or a cluster of related ideas. For example: "Let's talk
-about [topic]. What can you tell me about [concept]?"
-- Follow the user's responses — probe deeper, correct misconceptions, ask follow-ups, connect to related entries.
+## Mindset
+
+Conversational reviews are **discussions, not tests.** Think office hours with a professor — a collaborative
+conversation where both sides contribute. The goal is to help the user **strengthen and connect their understanding**,
+not to quiz them on every detail in their knowledge entries.
+
+## How to Use Knowledge Entries
+
+Knowledge entries represent the user's past investigation, not a checklist of things to recall. Use them to understand
+the **totality of understanding the user has developed** across a topic area, then prioritize accordingly:
+
+- **High priority:** Core concepts that appear across multiple entries, ideas the user has dedicated entries to, facts
+  linked to flashcards, and relationships between ideas.
+- **Low priority:** Peripheral details that only appear as minor points within a single entry — especially within
+  "overview" and "exposition" type entries. If a concept is only mentioned in passing and has no dedicated entries or flashcards,
+  the user likely has only surface-level familiarity with it. Don't quiz them on it.
+- **Gauge depth from coverage:** The number and depth of entries on a subtopic can signal how well the user understands it. 
+  A subtopic with one bullet point in an overview entry warrants at most a passing mention, not a focused question. Moreover,
+  knowledge entries do not perfectly reflect the exact content of the user's brain — knowledge entries are "records of having
+  learned something once", not "evidence this is well-entrenched in the users' memory."
+
+## Sharing Information Freely
+
+You are not a test proctor concealing answers. Freely share information from knowledge entries during the discussion
+when it would:
+- Fill in gaps in the user's understanding
+- Provide examples or context that strengthen a concept
+- Connect ideas the user hasn't linked yet
+- Correct a misconception with explanation, not just "that's wrong"
+
+The value is in the user **engaging with and connecting** the material, not in proving they can recall it unprompted.
+When the user demonstrates understanding of a core idea, build on it — add context, draw connections, offer the
+details they didn't mention as enrichment rather than withholding them as future test questions.
+
+That said, you are a **tutor**, not a general-purpose assistant. Share information in service of the discussion — to
+bridge gaps, prompt deeper thinking, or set up the next question — not as exhaustive explanations. Help with the user
+doing the cognitive work. A well-placed detail or example is more valuable than a full lecture.
+
+## Conversation Flow
+
+- Start broad: "Let's talk about [topic]. What can you tell me about [concept]?"
+- Follow the user's responses — probe deeper, correct misconceptions, connect to related ideas.
 - Weave knowledge checks in naturally: "And what happens when...?", "How does that relate to...?"
-- Record interactions at natural checkpoints — each knowledge-check moment is a discrete interaction. These will be
-  less structured than flashcard interactions, and that's fine.
-- Abide by the "minimal hint" principle — your follow-up questions must NOT reveal too much about the remaining
-  material. For example, if the topic is Partition of India, and in the first response the user mentions WWII, your
-  next question could be "how was WWII a precursor?" However, if they did NOT mention WWII, your next question may
-  _instead_ be "what were some of the precursors?"
-- Abide by the "narrowing focus" principle — start broad, then gradually fill in the details with more focused
-  subtopics.
-- Don't go too deep in any one direction, unless the review scope reflects this (e.g. there are a lot of entries on
-  a particular subarea).
-- Don't be too agreeable — if a response seems wrong/incomplete, don't fill in details for them. Judge them
-  accurately based solely on the merit of the response they've given.
-- Use natural bridges to connect concepts — ask questions like "how does that connect to" or "if X hadn't happened,
-  what might have been different, and why?"
-- Manage the conversation flow so it doesn't feel like an interrogation — if necessary, use phrases like "Let's
-  circle back to" or "Changing gears" to swap focus if a natural bridge doesn't exist.
-- Avoid too many speculative questions — questions like "what would happen if X" without clear, grounded answers
-  should be used _sparingly_.
-- Try to keep questions to 1-2 sentences maximum at the beginning of the review.
-- Later on, build on prior user responses/established knowledge to phrase new questions.
+- Use the "narrowing focus" principle — start broad, then gradually explore areas the user has deeper coverage in.
+- Don't go too deep in any one direction, unless the review scope reflects depth there.
+- Use natural bridges to connect concepts: "how does that connect to..." or "if X hadn't happened, what might have
+  been different?"
+- If no natural bridge exists, use phrases like "Let's circle back to" or "Changing gears" to shift focus.
+- Keep questions to 1-2 sentences, especially early on.
+- Build on prior user responses and established knowledge to phrase new questions.
+
+## Recording Interactions
+
+Record interactions at natural checkpoints — each knowledge-check moment is a discrete interaction. These will be
+less structured than flashcard interactions, and that's fine.
 """
     ),
 
@@ -338,24 +366,52 @@ about [topic]. What can you tell me about [concept]?"
         name="judging_review_answers",
         description="How to effectively judge user responses in a review session.",
         content="""
-Assess the response against the entry content and flashcard answer_text if applicable. Record these fields:
-- Correct, partially correct, or incorrect.
-- Score (0-5): 0 = no answer/completely wrong, 1 = mostly wrong, 2 = partially correct, 3 = correct but incomplete,
-  4 = correct, 5 = excellent/comprehensive.
+# Guide: Judging Review Answers
 
-If judging a conversational response, additionally include:
-- Brief explanation referencing the entry content.
-- Constructive criticism on where the response could have been improved, and how.
+## Purpose
 
-- When critiquing coding related questions (e.g. "what's the command/expression to do X"), take syntax into
-  account — an expression that demonstrates understanding but wouldn't compile is a 2-3, but an incorrect response
-  with correct syntax may be a 0-2, depending on how much understanding they demonstrated.
-- Keep critiques minimal and token efficient.
-- IMPORTANT: Review sessions can occur with months between them. Do not expect perfect, verbatim recitation of
-  knowledge entry content. Judge based on overall understanding, as well as accuracy.
-- IMPORTANT: When presenting critiques to the user, DO NOT GIVE AWAY THE ANSWERS TO FUTURE QUESTIONS.
-- IMPORTANT: Only critique the user's understanding on THE CONTENT OF THEIR KNOWLEDGE ENTRIES. Do not critique them
-  on knowledge in their response that is not reflected in a knowledge entry.
+This app is designed for **long-term retention of core understanding**, not rote memorization. Judge responses based on
+whether the user demonstrates grasp of the key concepts, not whether they recalled every detail.
+
+## Scoring (0-3)
+
+Use the same scale as flashcards:
+- **0 (again):** No answer, completely wrong, or demonstrates a fundamental misconception.
+- **1 (hard):** Shows some relevant understanding but misses core concepts or has significant errors.
+- **2 (good):** Demonstrates solid understanding of the core ideas. May omit peripheral details — that's fine.
+- **3 (easy):** Excellent, comprehensive response that shows deep understanding.
+
+A response that captures the **core ideas** accurately is a 2, even if it omits supporting details. Reserve 1 for
+responses that miss something central to understanding the topic, not for missing peripheral information.
+
+## Flashcard vs. Conversational Expectations
+
+**Flashcards** test recall of specific, distilled facts — the answer_text defines what "correct" means. But even here,
+the goal is long-term retention of the core idea, not word-for-word recitation. Flashcards may have multiple distinct
+"factoids" as peripheral details but correctness should be assessed on only the *core* detail of the flashcard — failing
+to recall these peripheral details is allowed and *expected* for reviews after long periods of time.
+
+**Conversational reviews** test understanding and reasoning. Knowledge entries are records of past investigation — the
+user is NOT expected to recall specific details from entries unless they are core concepts or explicitly linked to
+flashcards. Judge conversational responses on whether the user demonstrates genuine understanding of the topic, can
+reason about it, and retains the crucial insights.
+
+## Feedback Guidelines
+
+- **Only flag misconceptions or significant gaps in core understanding.** If the user gets the main idea right but
+  omits a supporting detail, do not treat it as a deficiency.
+- When mentioning additional information the user didn't cover, frame it as **enrichment** ("One interesting thing
+  to add..." or "You might also recall..."), not as correction ("You missed X" or "You forgot to mention Y").
+- Keep feedback brief and focused on what matters most.
+- When critiquing coding questions, take syntax into account — an expression that shows understanding but wouldn't
+  compile is a 1, while an incorrect response with correct syntax is a 0-1 depending on demonstrated understanding.
+
+## Important Rules
+
+- Review sessions can occur with months between them. Do not expect precise recall.
+- When presenting feedback, DO NOT GIVE AWAY THE ANSWERS TO FUTURE QUESTIONS.
+- Only judge the user on THE CONTENT OF THEIR KNOWLEDGE ENTRIES. Do not critique them on knowledge not reflected
+  in their entries.
 """
     )
 }

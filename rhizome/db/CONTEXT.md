@@ -15,7 +15,7 @@ Database layer. Defines the ORM schema and provides async engine/session managem
   - `ReviewSessionEntry` — junction table: review session ↔ entry. Composite PK on (`session_id`, `entry_id`).
   - `Flashcard` — reusable question template tied to a topic (`topic_id` FK, indexed) and optionally to the review session that created it (`session_id` FK, nullable, indexed). Has `question_text`, `answer_text`, and optional `testing_notes` (instructions for critiquing user responses). Associated to knowledge entries via `FlashcardEntry` junction (M2M, cascade delete-orphan). When a parent ReviewSession is deleted, the flashcard's `session_id` is set to NULL (the flashcard is preserved).
   - `FlashcardEntry` — junction table: flashcard ↔ knowledge entry. Composite PK on (`flashcard_id`, `entry_id`).
-  - `ReviewInteraction` — one question-answer exchange within a review session. Has optional `flashcard_id` FK (indexed) — present for flashcard-based reviews, null for conversational exchanges. Has `question_text`, `user_response`, optional `feedback` and `score` (0-5, CHECK constraint), and `position` for ordering. References entries tested via `ReviewInteractionEntry` junction.
+  - `ReviewInteraction` — one review checkpoint within a session. Has optional `flashcard_id` FK (indexed) — present for flashcard-based reviews, null for conversational exchanges. Has optional `summary` (brief note on what was covered/assessed), `score` (0-3, CHECK constraint), and `position` for ordering. References entries tested via `ReviewInteractionEntry` junction.
   - `ReviewInteractionEntry` — junction table: review interaction ↔ entry. Composite PK on (`interaction_id`, `entry_id`).
 
 - **engine.py** — Engine, session, and initialization:

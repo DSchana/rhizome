@@ -344,46 +344,17 @@ def build_review_tools(session_factory, scorer=None) -> dict:
 
     @tool_visibility(ToolVisibility.LOW)
     @tool("review_record_interaction", description=(
-        "Record a conversational Q&A interaction during the review. "
+        "Record a conversational review checkpoint. "
         "For flashcard-based interactions use review_present_flashcards instead. "
-        "Extracts question/answer text from message history using message IDs. "
         "Updates entry coverage and interaction count."
     ))
     async def review_record_interaction_tool(
-        question_message_id: int,
-        answer_message_id: int,
         score: int,
         entry_ids: list[int],
         runtime: ToolRuntime,
-        feedback: str | None = None,
+        summary: str | None = None,
     ) -> Command:
         review_state: ReviewState = runtime.state["review"]
-        messages = runtime.state["messages"]
-
-        # Extract question and answer text from message history
-        question_text = None
-        user_response = None
-        for msg in messages:
-            msg_id = (msg.additional_kwargs or {}).get("rhizome", {}).get("message_id")
-            if msg_id == question_message_id:
-                question_text = msg.content if isinstance(msg.content, str) else str(msg.content)
-            elif msg_id == answer_message_id:
-                user_response = msg.content if isinstance(msg.content, str) else str(msg.content)
-
-        if question_text is None:
-            return Command(update={
-                "messages": [ToolMessage(
-                    content=f"Error: message with ID {question_message_id!r} not found.",
-                    tool_call_id=runtime.tool_call_id,
-                )],
-            })
-        if user_response is None:
-            return Command(update={
-                "messages": [ToolMessage(
-                    content=f"Error: message with ID {answer_message_id!r} not found.",
-                    tool_call_id=runtime.tool_call_id,
-                )],
-            })
 
         session_id = review_state["session_id"]
         interaction_count = review_state["interaction_count"]
@@ -394,10 +365,8 @@ def build_review_tools(session_factory, scorer=None) -> dict:
             await add_review_interaction(
                 session,
                 session_id=session_id,
-                question_text=question_text,
-                user_response=user_response,
                 entry_ids=list(entry_ids),
-                feedback=feedback,
+                summary=summary,
                 score=score,
                 position=position,
             )
@@ -416,7 +385,7 @@ def build_review_tools(session_factory, scorer=None) -> dict:
         touched = sum(1 for c in new_coverage.values() if c > 0)
         untouched_ids = [eid for eid, c in new_coverage.items() if c == 0]
 
-        parts = [f"Recorded #{position} (score: {score}/5)."]
+        parts = [f"Recorded #{position} (score: {score}/3)."]
         parts.append(f"Coverage: {touched}/{total_entries} entries touched.")
 
         if untouched_ids:
@@ -546,8 +515,6 @@ def build_review_tools(session_factory, scorer=None) -> dict:
                     await add_review_interaction(
                         session,
                         session_id=session_id,
-                        question_text=fc.question_text,
-                        user_response=user_answer,
                         entry_ids=entry_ids,
                         score=score,
                         position=interaction_count,
@@ -597,10 +564,8 @@ def build_review_tools(session_factory, scorer=None) -> dict:
                             await add_review_interaction(
                                 session,
                                 session_id=session_id,
-                                question_text=ac["question"],
-                                user_response=ac["user_answer"],
                                 entry_ids=ac["entry_ids"],
-                                feedback=feedback,
+                                summary=feedback,
                                 score=auto_score,
                                 position=interaction_count,
                                 flashcard_id=fc_id,
@@ -693,7 +658,7 @@ def build_review_tools(session_factory, scorer=None) -> dict:
         avg_score = stats['average_score']
         summary_parts.append(f"Total interactions: {stats['total']}")
         summary_parts.append(f"Scored interactions: {stats['scored']}")
-        summary_parts.append(f"Average score: {avg_score}/5" if avg_score is not None else "Average score: N/A")
+        summary_parts.append(f"Average score: {avg_score}/3" if avg_score is not None else "Average score: N/A")
 
         if stats["per_entry"]:
             summary_parts.append("\nPer-entry breakdown:")
@@ -719,7 +684,7 @@ def build_review_tools(session_factory, scorer=None) -> dict:
         stat_lines = [
             f"Total interactions: {stats['total']}",
             f"Scored interactions: {stats['scored']}",
-            f"Average score: {avg_score}/5" if avg_score is not None else "Average score: N/A",
+            f"Average score: {avg_score}/3" if avg_score is not None else "Average score: N/A",
         ]
 
         if stats["per_entry"]:

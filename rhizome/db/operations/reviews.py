@@ -67,10 +67,8 @@ async def add_review_interaction(
     session: AsyncSession,
     *,
     session_id: int,
-    question_text: str,
-    user_response: str,
     entry_ids: list[int],
-    feedback: str | None = None,
+    summary: str | None = None,
     score: int | None = None,
     position: int,
     flashcard_id: int | None = None,
@@ -78,9 +76,7 @@ async def add_review_interaction(
     """Add an interaction to a review session."""
     interaction = ReviewInteraction(
         session_id=session_id,
-        question_text=question_text,
-        user_response=user_response,
-        feedback=feedback,
+        summary=summary,
         score=score,
         position=position,
         flashcard_id=flashcard_id,
