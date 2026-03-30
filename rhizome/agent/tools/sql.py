@@ -1,9 +1,8 @@
-"""General-purpose SQL tools for database exploration and modification.
+"""General-purpose SQL tool for database exploration and modification.
 
-These are last-resort tools — the agent should always prefer native tools
+This is a last-resort tool — the agent should always prefer native tools
 (list_topics, list_knowledge_entries, read_knowledge_entries, etc.) for standard operations.
-Each tool creates its own DB session via a closure over ``session_factory``,
-matching the pattern in ``tools.py`` and ``review_tools.py``.
+Schema introspection is handled by the ``database_schema`` guide.
 """
 
 from __future__ import annotations
@@ -88,69 +87,14 @@ def build_sql_tools(session_factory) -> dict:
     ``build_review_tools`` pattern.
     """
 
-    @tool("describe_database", description=(
-        "Describe the database schema: list all tables with their columns, "
-        "types, primary keys, and foreign keys. "
-        "IMPORTANT: Always call this BEFORE execute_sql "
-        "if you are unsure of the exact table names, column names, or data types. "
-        "Do not guess schema details — use this tool to confirm them first. "
-        "This is a last-resort tool — prefer native tools (list_topics, "
-        "list_knowledge_entries, read_knowledge_entries, etc.) for standard operations."
-    ))
-    @tool_visibility(ToolVisibility.DEFAULT)
-    async def describe_database_tool() -> str:
-        async with session_factory() as session:
-            # Get all user tables
-            result = await session.execute(text(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name NOT LIKE 'sqlite_%' "
-                "ORDER BY name"
-            ))
-            tables = [row[0] for row in result.fetchall()]
-
-            if not tables:
-                return "No tables found."
-
-            sections: list[str] = []
-            for table in tables:
-                lines: list[str] = [f"## {table}"]
-
-                # Column info
-                cols = await session.execute(text(f"PRAGMA table_info({table})"))
-                col_rows = cols.fetchall()
-                lines.append("Columns:")
-                for col in col_rows:
-                    # cid, name, type, notnull, dflt_value, pk
-                    cid, name, ctype, notnull, dflt, pk = col
-                    parts = [f"  - {name} ({ctype or 'untyped'})"]
-                    if pk:
-                        parts.append("PK")
-                    if notnull:
-                        parts.append("NOT NULL")
-                    if dflt is not None:
-                        parts.append(f"DEFAULT {dflt}")
-                    lines.append(", ".join(parts))
-
-                # Foreign keys
-                fks = await session.execute(text(f"PRAGMA foreign_key_list({table})"))
-                fk_rows = fks.fetchall()
-                if fk_rows:
-                    lines.append("Foreign keys:")
-                    for fk in fk_rows:
-                        # id, seq, table, from, to, on_update, on_delete, match
-                        lines.append(f"  - {fk[3]} -> {fk[2]}.{fk[4]}")
-
-                sections.append("\n".join(lines))
-
-        return "\n\n".join(sections)
-
     @tool("execute_sql", description=(
         "Execute a SQL statement and return the results. "
         "By default, only read-only statements (SELECT, PRAGMA, EXPLAIN, WITH) "
         "are allowed. Set read_only=False to allow modifications (INSERT, UPDATE, "
         "DELETE) — these require explicit user approval via a confirmation dialog. "
         "Returns up to 200 rows for read queries. "
-        "IMPORTANT: Always run describe_database first to understand the schema. "
+        "IMPORTANT: Load the 'database_schema' guide first if you are unsure of "
+        "table names, column names, or data types. "
         "This is a last-resort tool — prefer native tools (list_topics, "
         "list_knowledge_entries, read_knowledge_entries, create_topics, "
         "delete_topics, etc.) for standard operations."
@@ -237,6 +181,5 @@ def build_sql_tools(session_factory) -> dict:
             return f"SQL error: {exc}"
 
     return {
-        "describe_database": describe_database_tool,
         "execute_sql": execute_sql_tool,
     }

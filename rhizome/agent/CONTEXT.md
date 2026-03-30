@@ -38,4 +38,4 @@ App Commands: `update_app_state`, `set_mode`, `ask_user_input`
 Review: `review_get_past_sessions`, `review_show_session_state`, `review_update_session_state`, `review_record_interaction`, `review_present_flashcards`, `review_finish_session`
 Flashcard Proposals: `flashcard_proposal_create` (with `validate=True` for inline validation), `flashcard_proposal_present`, `flashcard_proposal_edit`, `flashcard_proposal_accept`
 Commit: `commit_show_selected_messages`, `commit_invoke_subagent`, `commit_proposal_create`, `commit_proposal_present`, `commit_proposal_edit`, `commit_proposal_accept`
-SQL: `describe_database`, `execute_sql`
+SQL: `execute_sql`

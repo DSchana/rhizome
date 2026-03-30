@@ -9,8 +9,8 @@ Usage::
     from rhizome.agent.guides import GUIDE_REGISTRY, Guide
 
     # Register a guide
-    GUIDE_REGISTRY["flashcards"] = Guide(
-        name="flashcards",
+    GUIDE_REGISTRY["writing_good_flashcards"] = Guide(
+        name="writing_good_flashcards",
         description="How to craft clear, unambiguous flashcards.",
         content="...",
     )
@@ -31,10 +31,73 @@ class Guide:
 
 
 # ---------------------------------------------------------------------------
+# Schema guide (generated from SQLAlchemy metadata at import time)
+# ---------------------------------------------------------------------------
+
+def _generate_schema_guide() -> str:
+    """Build a database schema reference from SQLAlchemy model metadata.
+
+    Introspects ``Base.metadata`` for table names, columns, types, PKs,
+    FKs, and cascade rules.  No DB connection required.
+    """
+    from rhizome.db.models import Base
+
+    sections: list[str] = ["# Guide: Database Schema\n"]
+
+    for table in Base.metadata.sorted_tables:
+        lines: list[str] = [f"## {table.name}"]
+
+        lines.append("Columns:")
+        for col in table.columns:
+            parts = [f"  - {col.name} ({col.type})"]
+            if col.primary_key:
+                parts.append("PK")
+            if not col.nullable and not col.primary_key:
+                parts.append("NOT NULL")
+            if col.server_default is not None:
+                parts.append(f"DEFAULT {col.server_default.arg}")
+            lines.append(", ".join(parts))
+
+        fks = list(table.foreign_keys)
+        if fks:
+            lines.append("Foreign keys:")
+            for fk in fks:
+                ondelete = fk.ondelete or "NO ACTION"
+                lines.append(
+                    f"  - {fk.parent.name} -> {fk.column.table.name}.{fk.column.name}"
+                    f" (ON DELETE {ondelete})"
+                )
+
+        sections.append("\n".join(lines))
+
+    sections.append("""\
+## Cascade Behavior
+
+SQLite FK enforcement is ON. Cascade rules are visible in the FK definitions above.
+Key implications:
+- Deleting a topic cascades to all its entries, subtopics, and their flashcards.
+- Deleting a review session sets flashcard.session_id = NULL (flashcards are preserved).
+- Deleting a flashcard sets review_interaction.flashcard_id = NULL (interactions are preserved).
+- You do NOT need to manually clean up junction tables.""")
+
+    return "\n\n".join(sections)
+
+
+_DATABASE_SCHEMA_CONTENT = _generate_schema_guide()
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
 GUIDE_REGISTRY: dict[str, Guide] = {
+
+    "database_schema": Guide(
+        name="database_schema",
+        description="Full database schema: tables, columns, types, foreign keys, and cascade behavior.",
+        content=_DATABASE_SCHEMA_CONTENT,
+    ),
+
 
     "knowledge_entries": Guide(
         name="knowledge_entries",
@@ -143,8 +206,8 @@ Question-as-title without a clear answer:
 """,
     ),
     
-    "flashcards": Guide(
-        name="flashcards",
+    "writing_good_flashcards": Guide(
+        name="writing_good_flashcards",
         description="How to craft clear, unambiguous flashcards.",
         content="""
 # Guide: Crafting Effective Flashcards
@@ -206,6 +269,93 @@ Question-as-title without a clear answer:
 - Do NOT create "true/false" questions as flashcards — emphasize _recall_ over recognition.
 - Do NOT create hypothetical questions as flashcards.
 - Respect what the notes actually say — the knowledge entries are the source of truth.
+"""
+    ),
+
+    "flashcard_proposal_workflow": Guide(
+        name="flashcard_proposal_workflow",
+        description="Step-by-step workflow for proposing, validating, and accepting flashcards.",
+        content="""\
+# Guide: Flashcard Proposal Workflow
+
+1. Run `flashcard_proposal_create(flashcards, validate=True)` to propose new flashcards.
+   `validate=True` checks if an independent agent can answer the questions accurately, and provides feedback.
+   If any cards fail validation, revise the failed cards with `flashcard_proposal_edit(edits=..., validate=True)`.
+   Validation is only done on edited/added cards.
+
+   IMPORTANT: Do NOT call with `validate=True` more than twice in a row. If cards still fail after 2 attempts,
+   drop them with `flashcard_proposal_edit(deletions=...)` and move on to step 2.
+
+2. Call `flashcard_proposal_present` to show the proposed flashcards to the user for review. They can approve,
+   request edits, or cancel. If they request edits, use `flashcard_proposal_edit` to make targeted changes (this
+   preserves any direct edits the user made in the widget), then present again. Do NOT use `flashcard_proposal_create`
+   to revise — that overwrites the entire proposal including any user edits.
+
+   Use your discretion on whether to re-validate after editing. Minor wording tweaks don't need validation. New cards
+   or substantial rewrites do.
+
+3. If the user approves, call `flashcard_proposal_accept` to write the approved flashcards to the database.
+""",
+    ),
+
+    "conversational_reviews": Guide(
+        name="conversational_reviews",
+        description="How to effectively guide a conversational review session.",
+        content="""
+# Guide: Conversational Reviews
+
+- Conversational reviews are **guided discussions**. The goal is to prompt the user to share their _understanding_ of
+the topics without necessarily expecting a fixed, unambiguous "correct answer". Your job is to guide the discussion
+naturally.
+- Start with a broad, leading question, opening up a topic or a cluster of related ideas. For example: "Let's talk
+about [topic]. What can you tell me about [concept]?"
+- Follow the user's responses — probe deeper, correct misconceptions, ask follow-ups, connect to related entries.
+- Weave knowledge checks in naturally: "And what happens when...?", "How does that relate to...?"
+- Record interactions at natural checkpoints — each knowledge-check moment is a discrete interaction. These will be
+  less structured than flashcard interactions, and that's fine.
+- Abide by the "minimal hint" principle — your follow-up questions must NOT reveal too much about the remaining
+  material. For example, if the topic is Partition of India, and in the first response the user mentions WWII, your
+  next question could be "how was WWII a precursor?" However, if they did NOT mention WWII, your next question may
+  _instead_ be "what were some of the precursors?"
+- Abide by the "narrowing focus" principle — start broad, then gradually fill in the details with more focused
+  subtopics.
+- Don't go too deep in any one direction, unless the review scope reflects this (e.g. there are a lot of entries on
+  a particular subarea).
+- Don't be too agreeable — if a response seems wrong/incomplete, don't fill in details for them. Judge them
+  accurately based solely on the merit of the response they've given.
+- Use natural bridges to connect concepts — ask questions like "how does that connect to" or "if X hadn't happened,
+  what might have been different, and why?"
+- Manage the conversation flow so it doesn't feel like an interrogation — if necessary, use phrases like "Let's
+  circle back to" or "Changing gears" to swap focus if a natural bridge doesn't exist.
+- Avoid too many speculative questions — questions like "what would happen if X" without clear, grounded answers
+  should be used _sparingly_.
+- Try to keep questions to 1-2 sentences maximum at the beginning of the review.
+- Later on, build on prior user responses/established knowledge to phrase new questions.
+"""
+    ),
+
+    "judging_review_answers": Guide(
+        name="judging_review_answers",
+        description="How to effectively judge user responses in a review session.",
+        content="""
+Assess the response against the entry content and flashcard answer_text if applicable. Record these fields:
+- Correct, partially correct, or incorrect.
+- Score (0-5): 0 = no answer/completely wrong, 1 = mostly wrong, 2 = partially correct, 3 = correct but incomplete,
+  4 = correct, 5 = excellent/comprehensive.
+
+If judging a conversational response, additionally include:
+- Brief explanation referencing the entry content.
+- Constructive criticism on where the response could have been improved, and how.
+
+- When critiquing coding related questions (e.g. "what's the command/expression to do X"), take syntax into
+  account — an expression that demonstrates understanding but wouldn't compile is a 2-3, but an incorrect response
+  with correct syntax may be a 0-2, depending on how much understanding they demonstrated.
+- Keep critiques minimal and token efficient.
+- IMPORTANT: Review sessions can occur with months between them. Do not expect perfect, verbatim recitation of
+  knowledge entry content. Judge based on overall understanding, as well as accuracy.
+- IMPORTANT: When presenting critiques to the user, DO NOT GIVE AWAY THE ANSWERS TO FUTURE QUESTIONS.
+- IMPORTANT: Only critique the user's understanding on THE CONTENT OF THEIR KNOWLEDGE ENTRIES. Do not critique them
+  on knowledge in their response that is not reflected in a knowledge entry.
 """
     )
 }

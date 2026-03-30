@@ -56,7 +56,6 @@ _WEB_TOOLS = frozenset({
 })
 
 _DB_SQL_TOOLS = frozenset({
-    "describe_database",
     "execute_sql",
 })
 
