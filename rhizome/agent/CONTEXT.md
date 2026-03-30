@@ -38,4 +38,4 @@ App Commands: `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_hig
 Review: `get_review_sessions`, `set_review_scope`, `configure_review`, `set_review_flashcards`, `add_flashcards_to_review`, `start_review`, `record_review_interaction`, `complete_review_session`, `save_review_summary`, `inspect_review_state`, `clear_review_state`
 Flashcard Proposals: `flashcard_proposal_create` (with `validate=True` for inline validation), `flashcard_proposal_present`, `flashcard_proposal_edit`, `flashcard_proposal_accept`
 Commit: `commit_show_selected_messages`, `commit_invoke_subagent`, `commit_proposal_create`, `commit_proposal_present`, `commit_proposal_edit`, `commit_proposal_accept`
-SQL: `describe_database`, `run_sql_query`, `run_sql_modification`
+SQL: `describe_database`, `execute_sql`

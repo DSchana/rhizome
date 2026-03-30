@@ -91,7 +91,7 @@ def build_sql_tools(session_factory) -> dict:
     @tool("describe_database", description=(
         "Describe the database schema: list all tables with their columns, "
         "types, primary keys, and foreign keys. "
-        "IMPORTANT: Always call this BEFORE run_sql_query or run_sql_modification "
+        "IMPORTANT: Always call this BEFORE execute_sql "
         "if you are unsure of the exact table names, column names, or data types. "
         "Do not guess schema details — use this tool to confirm them first. "
         "This is a last-resort tool — prefer native tools (list_topics, "
@@ -144,55 +144,51 @@ def build_sql_tools(session_factory) -> dict:
 
         return "\n\n".join(sections)
 
-    @tool("run_sql_query", description=(
-        "Run a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH) and return "
-        "the results as a formatted table. Returns up to 200 rows. "
+    @tool("execute_sql", description=(
+        "Execute a SQL statement and return the results. "
+        "By default, only read-only statements (SELECT, PRAGMA, EXPLAIN, WITH) "
+        "are allowed. Set read_only=False to allow modifications (INSERT, UPDATE, "
+        "DELETE) — these require explicit user approval via a confirmation dialog. "
+        "Returns up to 200 rows for read queries. "
         "IMPORTANT: Always run describe_database first to understand the schema. "
         "This is a last-resort tool — prefer native tools (list_topics, "
-        "list_knowledge_entries, read_knowledge_entries, etc.) for standard operations."
-    ))
-    @tool_visibility(ToolVisibility.DEFAULT)
-    async def run_sql_query_tool(sql: str) -> str:
-        keyword = _first_keyword(sql)
-        if keyword not in _READ_KEYWORDS:
-            return (
-                f"Rejected: first keyword '{keyword}' is not allowed. "
-                f"Only {', '.join(sorted(_READ_KEYWORDS))} are permitted for read queries. "
-                f"Use run_sql_modification for INSERT/UPDATE/DELETE."
-            )
-        try:
-            async with session_factory() as session:
-                result = await session.execute(text(sql))
-                columns = list(result.keys()) if result.returns_rows else []
-                if not columns:
-                    return "(query returned no columns)"
-                rows = [list(row) for row in result.fetchmany(201)]
-                truncated = len(rows) > 200
-                if truncated:
-                    rows = rows[:200]
-                output = _format_rows(columns, rows)
-                if truncated:
-                    output += "\n... (results truncated at 200 rows)"
-                return output
-        except Exception as exc:
-            return f"SQL error: {exc}"
-
-    @tool("run_sql_modification", description=(
-        "Run a SQL modification statement (INSERT, UPDATE, DELETE). "
-        "For UPDATE/DELETE, a preview of affected rows is shown before "
-        "execution. Requires explicit user approval via a confirmation dialog. "
-        "IMPORTANT: Always run describe_database first to understand the schema. "
-        "This is a last-resort tool — prefer native tools (create_topics, "
+        "list_knowledge_entries, read_knowledge_entries, create_topics, "
         "delete_topics, etc.) for standard operations."
     ))
     @tool_visibility(ToolVisibility.DEFAULT)
-    async def run_sql_modification_tool(sql: str) -> str:
+    async def execute_sql_tool(sql: str, read_only: bool = True) -> str:
         keyword = _first_keyword(sql)
+
+        if read_only:
+            if keyword not in _READ_KEYWORDS:
+                return (
+                    f"Rejected: first keyword '{keyword}' is not allowed in read-only mode. "
+                    f"Only {', '.join(sorted(_READ_KEYWORDS))} are permitted. "
+                    f"Set read_only=False to run modifications."
+                )
+            try:
+                async with session_factory() as session:
+                    result = await session.execute(text(sql))
+                    columns = list(result.keys()) if result.returns_rows else []
+                    if not columns:
+                        return "(query returned no columns)"
+                    rows = [list(row) for row in result.fetchmany(201)]
+                    truncated = len(rows) > 200
+                    if truncated:
+                        rows = rows[:200]
+                    output = _format_rows(columns, rows)
+                    if truncated:
+                        output += "\n... (results truncated at 200 rows)"
+                    return output
+            except Exception as exc:
+                return f"SQL error: {exc}"
+
+        # -- Modification path (read_only=False) --
         if keyword not in _WRITE_KEYWORDS:
             return (
                 f"Rejected: first keyword '{keyword}' is not allowed. "
                 f"Only {', '.join(sorted(_WRITE_KEYWORDS))} are permitted for modifications. "
-                f"Use run_sql_query for SELECT/PRAGMA/EXPLAIN."
+                f"Use read_only=True (default) for SELECT/PRAGMA/EXPLAIN."
             )
 
         # Build preview for UPDATE/DELETE
@@ -206,7 +202,6 @@ def build_sql_tools(session_factory) -> dict:
             if preview_sql:
                 try:
                     async with session_factory() as session:
-                        # Count total affected rows
                         count_result = await session.execute(text(preview_sql))
                         all_rows = count_result.fetchall()
                         row_count = len(all_rows)
@@ -219,7 +214,7 @@ def build_sql_tools(session_factory) -> dict:
                     row_count = None
 
         # Interrupt for user confirmation
-        interrupt_payload: dict = {
+        result = interrupt({
             "type": "sql_confirmation",
             "sql": sql,
             "preview": {
@@ -227,14 +222,11 @@ def build_sql_tools(session_factory) -> dict:
                 "rows": preview_rows,
             },
             "row_count": row_count,
-        }
-
-        result = interrupt(interrupt_payload)
+        })
 
         if result != "Approve":
             return f"User denied SQL modification: {result}"
 
-        # Execute the modification
         try:
             async with session_factory() as session:
                 exec_result = await session.execute(text(sql))
@@ -246,6 +238,5 @@ def build_sql_tools(session_factory) -> dict:
 
     return {
         "describe_database": describe_database_tool,
-        "run_sql_query": run_sql_query_tool,
-        "run_sql_modification": run_sql_modification_tool,
+        "execute_sql": execute_sql_tool,
     }

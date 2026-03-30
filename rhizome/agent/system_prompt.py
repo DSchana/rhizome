@@ -115,11 +115,14 @@ For example, `DELETE FROM flashcard WHERE id = 5` automatically deletes related 
 
 ### SQL Tools — Last Resort
 
-You have access to three SQL tools: `describe_database`, `run_sql_query`, and `run_sql_modification`. These are
-**last-resort tools** — always prefer native tools (`list_topics`, `list_knowledge_entries`, `read_knowledge_entries`,
-`create_topics`, `delete_topics`, etc.) for standard operations. Only use SQL tools when:
+You have access to two SQL tools: `describe_database` and `execute_sql`. These are **last-resort tools** — always
+prefer native tools (`list_topics`, `list_knowledge_entries`, `read_knowledge_entries`, `create_topics`,
+`delete_topics`, etc.) for standard operations. Only use SQL tools when:
 - The user explicitly requests raw SQL access
 - No native tool can accomplish the task (e.g., inspecting junction tables, bulk cleanup, complex joins)
+
+`execute_sql` defaults to read-only mode (SELECT, PRAGMA, EXPLAIN, WITH). Set `read_only=False` to run modifications
+(INSERT, UPDATE, DELETE), which require explicit user approval.
 
 ## Planning
 

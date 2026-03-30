@@ -59,8 +59,7 @@ _WEB_TOOLS = frozenset({
 
 _DB_SQL_TOOLS = frozenset({
     "describe_database",
-    "run_sql_query",
-    "run_sql_modification",
+    "execute_sql",
 })
 
 _FLASHCARD_PROPOSAL_TOOLS = frozenset({
