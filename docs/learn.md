@@ -22,7 +22,7 @@ The active topic determines where committed entries are stored. It's shown in th
 ## Chatting
 
 With a topic set, the user chats freely. The agent is instructed to:
-- Ground answers in the knowledge database (browsing existing entries via `show_topics` / `get_entries`)
+- Ground answers in the knowledge database (browsing existing entries via `list_knowledge_entries` / `read_knowledge_entries`)
 - Build on what's already stored rather than repeating it
 - Use web search when needed
 
@@ -79,7 +79,7 @@ On approval, `commit_proposal_accept` writes the entries to the database as `Kno
 
 ## Available Tools
 
-**Database:** `list_all_topics`, `show_topics`, `get_entries`, `list_flashcards`, `get_flashcards`, `create_new_topic`, `delete_topics`
+**Database:** `list_topics`, `list_knowledge_entries`, `read_knowledge_entries`, `list_flashcards`, `read_flashcards`, `create_topics`, `delete_topics`
 **App:** `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
 **Commit:** `commit_show_selected_messages`, `commit_proposal_create`, `commit_invoke_subagent`, `commit_proposal_present`, `commit_proposal_accept`
 **Web:** `web_search`, `web_fetch`

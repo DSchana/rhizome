@@ -1,7 +1,7 @@
 """General-purpose SQL tools for database exploration and modification.
 
 These are last-resort tools — the agent should always prefer native tools
-(list_all_topics, show_topics, get_entries, etc.) for standard operations.
+(list_topics, list_knowledge_entries, read_knowledge_entries, etc.) for standard operations.
 Each tool creates its own DB session via a closure over ``session_factory``,
 matching the pattern in ``tools.py`` and ``review_tools.py``.
 """
@@ -94,8 +94,8 @@ def build_sql_tools(session_factory) -> dict:
         "IMPORTANT: Always call this BEFORE run_sql_query or run_sql_modification "
         "if you are unsure of the exact table names, column names, or data types. "
         "Do not guess schema details — use this tool to confirm them first. "
-        "This is a last-resort tool — prefer native tools (list_all_topics, "
-        "show_topics, get_entries, etc.) for standard operations."
+        "This is a last-resort tool — prefer native tools (list_topics, "
+        "list_knowledge_entries, read_knowledge_entries, etc.) for standard operations."
     ))
     @tool_visibility(ToolVisibility.DEFAULT)
     async def describe_database_tool() -> str:
@@ -148,8 +148,8 @@ def build_sql_tools(session_factory) -> dict:
         "Run a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH) and return "
         "the results as a formatted table. Returns up to 200 rows. "
         "IMPORTANT: Always run describe_database first to understand the schema. "
-        "This is a last-resort tool — prefer native tools (list_all_topics, "
-        "show_topics, get_entries, etc.) for standard operations."
+        "This is a last-resort tool — prefer native tools (list_topics, "
+        "list_knowledge_entries, read_knowledge_entries, etc.) for standard operations."
     ))
     @tool_visibility(ToolVisibility.DEFAULT)
     async def run_sql_query_tool(sql: str) -> str:
@@ -182,7 +182,7 @@ def build_sql_tools(session_factory) -> dict:
         "For UPDATE/DELETE, a preview of affected rows is shown before "
         "execution. Requires explicit user approval via a confirmation dialog. "
         "IMPORTANT: Always run describe_database first to understand the schema. "
-        "This is a last-resort tool — prefer native tools (create_new_topic, "
+        "This is a last-resort tool — prefer native tools (create_topics, "
         "delete_topics, etc.) for standard operations."
     ))
     @tool_visibility(ToolVisibility.DEFAULT)

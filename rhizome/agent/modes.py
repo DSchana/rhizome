@@ -23,15 +23,15 @@ from rhizome.agent.system_prompt import (
 # to the appropriate group(s) here.
 
 _DB_READ_TOOLS = frozenset({
-    "list_all_topics",
-    "show_topics",
-    "get_entries",
+    "list_topics",
+    "list_knowledge_entries",
+    "read_knowledge_entries",
     "list_flashcards",
-    "get_flashcards",
+    "read_flashcards",
 })
 
 _DB_WRITE_TOOLS = frozenset({
-    "create_new_topic",
+    "create_topics",
     "delete_topics",
 })
 
@@ -72,12 +72,12 @@ _FLASHCARD_PROPOSAL_TOOLS = frozenset({
 
 _GUIDE_TOOLS = frozenset({
     "list_guides",
-    "load_guide",
+    "read_guides",
 })
 
 _RESOURCE_TOOLS = frozenset({
     "add_resource",
-    "list_all_resources",
+    "list_resources",
     "get_resource_info",
 })
 

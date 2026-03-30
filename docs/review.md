@@ -21,7 +21,7 @@ State is tracked in two places: `ReviewState` (in-memory graph state, cleared on
 ### Scoping
 
 The agent helps the user decide what to review:
-1. Browse the knowledge base using `list_all_topics`, `show_topics`, `get_entries`
+1. Browse the knowledge base using `list_topics`, `list_knowledge_entries`, `read_knowledge_entries`
 2. Check prior review history via `get_review_sessions` (retrieves up to 5 sessions overlapping the selected topics, ranked by IoU, with `final_summary` for continuity)
 3. Lock in scope by calling `set_review_scope(entry_ids)` — this creates a `ReviewSession` DB record and initializes `ReviewState`
 
@@ -45,7 +45,7 @@ The agent prepares the question sequence before starting:
 
 **For flashcard-based reviews:**
 1. `list_flashcards(entry_ids)` — check which entries already have flashcards
-2. `get_flashcards(flashcard_ids)` — inspect existing card content
+2. `read_flashcards(flashcard_ids)` — inspect existing card content
 3. `add_flashcards_to_review(flashcard_ids)` — queue existing flashcard IDs
 4. For entries that need new flashcards, follow the proposal workflow:
    - `flashcard_proposal_create(flashcards)` — stage cards for user review
@@ -99,7 +99,7 @@ The flashcard queue supports both **append** (`add_flashcards_to_review`) and **
 | `set_review_scope` | Scoping → Configuring | Lock scope, create DB session, init state |
 | `configure_review` | Configuring → Planning | Set style, timing, source, ephemeral, instructions |
 | `list_flashcards` | Planning | Check existing flashcard coverage |
-| `get_flashcards` | Planning | Get flashcard content by ID |
+| `read_flashcards` | Planning | Get flashcard content by ID |
 | `set_review_flashcards` | Planning / Reviewing | Set queue (replace semantics) |
 | `flashcard_proposal_create` | Any (learn or review) | Stage flashcards for user review |
 | `flashcard_proposal_present` | Any (learn or review) | Show proposal interrupt, return user's decision |
@@ -114,6 +114,6 @@ The flashcard queue supports both **append** (`add_flashcards_to_review`) and **
 
 ## Other Available Tools
 
-**Database (read-only):** `list_all_topics`, `show_topics`, `get_entries`, `list_flashcards`, `get_flashcards`
+**Database (read-only):** `list_topics`, `list_knowledge_entries`, `read_knowledge_entries`, `list_flashcards`, `read_flashcards`
 **App:** `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
 **Web:** `web_search`, `web_fetch`

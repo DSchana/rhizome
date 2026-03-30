@@ -225,11 +225,11 @@ def build_resource_tools(session_factory) -> dict:
         )
 
     @tool_visibility(ToolVisibility.DEFAULT)
-    @tool("list_all_resources", description=(
+    @tool("list_resources", description=(
         "List all loaded resources with their IDs, names, token estimates, "
         "loading preferences, and whether they have embeddings."
     ))
-    async def list_all_resources_tool() -> str:
+    async def list_resources_tool() -> str:
         async with session_factory() as session:
             resources = await list_resources(session)
 
@@ -271,6 +271,6 @@ def build_resource_tools(session_factory) -> dict:
 
     return {
         "add_resource": add_resource_tool,
-        "list_all_resources": list_all_resources_tool,
+        "list_resources": list_resources_tool,
         "get_resource_info": get_resource_info_tool,
     }

@@ -37,32 +37,36 @@ def build_guide_tools() -> dict:
             )],
         })
 
-    @tool("load_guide", description=(
-        "Load a guide by name, injecting its reference material into the "
-        "conversation. Use list_guides to see what's available. "
+    @tool("read_guides", description=(
+        "Load one or more guides by name, injecting their reference material "
+        "into the conversation. Use list_guides to see what's available. "
         "Guides contain detailed instructions for specific workflows "
         "(e.g. crafting flashcards, commit proposals)."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def load_guide_tool(guide_name: str, runtime: ToolRuntime) -> Command:
-        guide = GUIDE_REGISTRY.get(guide_name)
-        if guide is None:
-            available = ", ".join(GUIDE_REGISTRY.keys()) or "(none)"
-            return Command(update={
-                "messages": [ToolMessage(
-                    content=f"Guide {guide_name!r} not found. Available: {available}",
-                    tool_call_id=runtime.tool_call_id,
-                )],
-            })
+    async def read_guides_tool(guide_names: list[str], runtime: ToolRuntime) -> Command:
+        parts: list[str] = []
+        errors: list[str] = []
+        for name in guide_names:
+            guide = GUIDE_REGISTRY.get(name)
+            if guide is None:
+                available = ", ".join(GUIDE_REGISTRY.keys()) or "(none)"
+                errors.append(f"Guide {name!r} not found. Available: {available}")
+            else:
+                parts.append(f"[Guide: {guide.name}]\n\n{guide.content}")
+
+        content = "\n\n---\n\n".join(parts) if parts else ""
+        if errors:
+            content = (content + "\n\n" if content else "") + "\n".join(errors)
 
         return Command(update={
             "messages": [ToolMessage(
-                content=f"[Guide: {guide.name}]\n\n{guide.content}",
+                content=content,
                 tool_call_id=runtime.tool_call_id,
             )],
         })
 
     return {
         "list_guides": list_guides_tool,
-        "load_guide": load_guide_tool,
+        "read_guides": read_guides_tool,
     }

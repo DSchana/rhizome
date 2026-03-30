@@ -1,7 +1,10 @@
 """Core tools — topics, entries, and flashcard lookup for the agent."""
 
+from __future__ import annotations
+
 from langchain.tools import tool
 from langgraph.types import interrupt
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
@@ -16,7 +19,19 @@ from rhizome.db.operations import (
     get_topic,
     list_entries,
     list_flashcards_by_entries,
+    list_flashcards_by_topic,
 )
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
+
+class TopicNode(BaseModel):
+    """A node in a topic subtree to create."""
+    name: str = Field(description="Name of the topic")
+    description: str | None = Field(default=None, description="Optional description")
+    children: list["TopicNode"] = Field(default_factory=list, description="Child topics to create under this one")
 
 
 def build_core_tools(session_factory) -> dict:
@@ -27,12 +42,12 @@ def build_core_tools(session_factory) -> dict:
     # -----------------------------------------------------------------------
 
     @tool_visibility(ToolVisibility.DEFAULT)
-    @tool("list_all_topics", description=(
+    @tool("list_topics", description=(
         "List the entire topic tree with entry counts. "
         "Returns a nested, indented view of all topics showing [id], name, "
         "and how many knowledge entries each topic contains."
     ))
-    async def list_all_topics_tool() -> str:
+    async def list_topics_tool() -> str:
         async with session_factory() as session:
             # Fetch all topics and entry counts in two queries
             all_topics = (await session.execute(
@@ -64,11 +79,11 @@ def build_core_tools(session_factory) -> dict:
         return "\n".join(lines)
 
     @tool_visibility(ToolVisibility.DEFAULT)
-    @tool("show_topics", description=(
+    @tool("list_knowledge_entries", description=(
         "Show one or more topics' details and list all their knowledge entries by title and ID. "
-        "Use get_entries to read the full content of specific entries."
+        "Use read_knowledge_entries to read the full content of specific entries."
     ))
-    async def show_topics_tool(topic_ids: list[int]) -> str:
+    async def list_knowledge_entries_tool(topic_ids: list[int]) -> str:
         results: list[str] = []
         async with session_factory() as session:
             for topic_id in topic_ids:
@@ -93,16 +108,34 @@ def build_core_tools(session_factory) -> dict:
         return "\n\n---\n\n".join(results)
 
     @tool_visibility(ToolVisibility.DEFAULT)
-    @tool("create_new_topic", description="Create a new topic, optionally under a parent topic.")
-    async def create_new_topic_tool(
-        name: str,
+    @tool("create_topics", description=(
+        "Create one or more topics, optionally as subtrees. Each TopicNode has a "
+        "name, optional description, and optional children (which nest recursively). "
+        "Use parent_id to attach the new topics under an existing topic."
+    ))
+    async def create_topics_tool(
+        topics: list[TopicNode],
         parent_id: int | None = None,
-        description: str | None = None,
     ) -> str:
+        created: list[str] = []
+
+        async def _create_recursive(
+            session, nodes: list[TopicNode], pid: int | None,
+        ) -> None:
+            for node in nodes:
+                topic = await create_topic(
+                    session, name=node.name, parent_id=pid,
+                    description=node.description,
+                )
+                created.append(f"[{topic.id}] {topic.name}")
+                if node.children:
+                    await _create_recursive(session, node.children, topic.id)
+
         async with session_factory() as session:
-            topic = await create_topic(session, name=name, parent_id=parent_id, description=description)
+            await _create_recursive(session, topics, parent_id)
             await session.commit()
-        return f"Created topic [{topic.id}] {topic.name}"
+
+        return f"Created {len(created)} topic(s):\n" + "\n".join(f"  - {c}" for c in created)
 
     @tool_visibility(ToolVisibility.DEFAULT)
     @tool("delete_topics", description=(
@@ -167,13 +200,13 @@ def build_core_tools(session_factory) -> dict:
     # -----------------------------------------------------------------------
 
     @tool_visibility(ToolVisibility.DEFAULT)
-    @tool("get_entries", description=(
+    @tool("read_knowledge_entries", description=(
         "Get the full details of one or more knowledge entries by their IDs."
     ))
-    async def get_entries_tool(entry_ids: list[int]) -> str:
+    async def read_knowledge_entries_tool(knowledge_entry_ids: list[int]) -> str:
         results: list[str] = []
         async with session_factory() as session:
-            for eid in entry_ids:
+            for eid in knowledge_entry_ids:
                 entry = await get_entry(session, eid)
                 if entry is None:
                     results.append(f"[{eid}] Not found.")
@@ -196,11 +229,43 @@ def build_core_tools(session_factory) -> dict:
 
     @tool_visibility(ToolVisibility.DEFAULT)
     @tool("list_flashcards", description=(
-        "List existing flashcards linked to the given entry IDs. "
-        "Excludes flashcards from ephemeral sessions. "
-        "Returns a summary of which entries have flashcards and which don't."
+        "List existing flashcards by topic or by knowledge entry. "
+        "Provide exactly one of topic_ids or knowledge_entry_ids. "
+        "When querying by knowledge_entry_ids, excludes flashcards from ephemeral sessions. "
+        "Returns a summary of flashcard IDs and coverage."
     ))
-    async def list_flashcards_tool(entry_ids: list[int]) -> str:
+    async def list_flashcards_tool(
+        topic_ids: list[int] | None = None,
+        knowledge_entry_ids: list[int] | None = None,
+    ) -> str:
+        if (topic_ids is None) == (knowledge_entry_ids is None):
+            return "Error: provide exactly one of topic_ids or knowledge_entry_ids."
+
+        if topic_ids is not None:
+            all_flashcards = []
+            async with session_factory() as session:
+                for tid in topic_ids:
+                    fcs = await list_flashcards_by_topic(session, tid)
+                    all_flashcards.extend(fcs)
+
+            if not all_flashcards:
+                return f"No flashcards found for {len(topic_ids)} topic(s)."
+
+            # Deduplicate by ID
+            seen: set[int] = set()
+            unique: list = []
+            for fc in all_flashcards:
+                if fc.id not in seen:
+                    seen.add(fc.id)
+                    unique.append(fc)
+
+            lines = [f"Found {len(unique)} flashcard(s) across {len(topic_ids)} topic(s):"]
+            for fc in unique:
+                lines.append(f"  - [{fc.id}] Q: {fc.question_text[:60]}...")
+            return "\n".join(lines)
+
+        # knowledge_entry_ids path
+        entry_ids = knowledge_entry_ids
         async with session_factory() as session:
             flashcards = await list_flashcards_by_entries(session, entry_ids)
 
@@ -227,12 +292,12 @@ def build_core_tools(session_factory) -> dict:
         return "\n".join(lines)
 
     @tool_visibility(ToolVisibility.DEFAULT)
-    @tool("get_flashcards", description=(
+    @tool("read_flashcards", description=(
         "Get full flashcard content by IDs: question_text, answer_text, "
         "testing_notes, and linked entry_ids. This does NOT present the cards "
         "to the user, only as an internal tool message for the agent."
     ))
-    async def get_flashcards_tool(flashcard_ids: list[int]) -> str:
+    async def read_flashcards_tool(flashcard_ids: list[int]) -> str:
         async with session_factory() as session:
             flashcards = await get_flashcards_by_ids(session, flashcard_ids)
 
@@ -256,11 +321,11 @@ def build_core_tools(session_factory) -> dict:
         return "\n\n---\n\n".join(lines)
 
     return {
-        "list_all_topics": list_all_topics_tool,
-        "show_topics": show_topics_tool,
-        "create_new_topic": create_new_topic_tool,
+        "list_topics": list_topics_tool,
+        "list_knowledge_entries": list_knowledge_entries_tool,
+        "create_topics": create_topics_tool,
         "delete_topics": delete_topics_tool,
-        "get_entries": get_entries_tool,
+        "read_knowledge_entries": read_knowledge_entries_tool,
         "list_flashcards": list_flashcards_tool,
-        "get_flashcards": get_flashcards_tool,
+        "read_flashcards": read_flashcards_tool,
     }

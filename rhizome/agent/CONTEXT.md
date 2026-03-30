@@ -31,9 +31,9 @@ The system message is seeded into graph state on init with a well-known ID (`SYS
 
 ## Tool List
 
-Topics: `list_all_topics`, `show_topics`, `create_new_topic`, `delete_topics`
-Entries: `get_entries`
-Flashcards: `list_flashcards`, `get_flashcards`
+Topics: `list_topics`, `create_topics`, `delete_topics`
+Entries: `list_knowledge_entries`, `read_knowledge_entries`
+Flashcards: `list_flashcards`, `read_flashcards`
 App Commands: `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
 Review: `get_review_sessions`, `set_review_scope`, `configure_review`, `set_review_flashcards`, `add_flashcards_to_review`, `start_review`, `record_review_interaction`, `complete_review_session`, `save_review_summary`, `inspect_review_state`, `clear_review_state`
 Flashcard Proposals: `flashcard_proposal_create` (with `validate=True` for inline validation), `flashcard_proposal_present`, `flashcard_proposal_edit`, `flashcard_proposal_accept`
