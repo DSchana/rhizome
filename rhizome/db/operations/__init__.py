@@ -45,6 +45,19 @@ from .reviews import (
     update_session_plan,
     update_session_summary,
 )
+from .resources import (
+    add_chunks,
+    clear_chunks,
+    create_resource,
+    delete_resource,
+    get_chunks,
+    get_resource,
+    link_resource_to_topic,
+    list_resources,
+    list_resources_for_topic,
+    unlink_resource_from_topic,
+    update_resource,
+)
 from .topics import (
     create_topic,
     delete_topic,
@@ -104,4 +117,16 @@ __all__ = [
     "get_flashcards_by_ids",
     "list_flashcards_by_entries",
     "list_flashcards_by_topic",
+    # resources
+    "add_chunks",
+    "clear_chunks",
+    "create_resource",
+    "delete_resource",
+    "get_chunks",
+    "get_resource",
+    "link_resource_to_topic",
+    "list_resources",
+    "list_resources_for_topic",
+    "unlink_resource_from_topic",
+    "update_resource",
 ]

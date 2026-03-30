@@ -75,6 +75,12 @@ _GUIDE_TOOLS = frozenset({
     "load_guide",
 })
 
+_RESOURCE_TOOLS = frozenset({
+    "add_resource",
+    "list_all_resources",
+    "get_resource_info",
+})
+
 _REVIEW_TOOLS = frozenset({
     "get_review_sessions",
     "set_review_scope",
@@ -141,13 +147,14 @@ class IdleAgentMode(AgentMode):
 
     @property
     def allowed_tools(self) -> frozenset[str]:
-        return _DB_READ_TOOLS  | \
-               _DB_WRITE_TOOLS | \
-               _APP_TOOLS      | \
-               _COMMIT_TOOLS   | \
-               _WEB_TOOLS      | \
-               _DB_SQL_TOOLS   | \
-               _GUIDE_TOOLS
+        return _DB_READ_TOOLS   | \
+               _DB_WRITE_TOOLS  | \
+               _APP_TOOLS       | \
+               _COMMIT_TOOLS    | \
+               _WEB_TOOLS       | \
+               _DB_SQL_TOOLS    | \
+               _GUIDE_TOOLS     | \
+               _RESOURCE_TOOLS
 
 
 class LearnAgentMode(AgentMode):
@@ -174,7 +181,8 @@ class LearnAgentMode(AgentMode):
                _FLASHCARD_PROPOSAL_TOOLS | \
                _WEB_TOOLS                | \
                _DB_SQL_TOOLS             | \
-               _GUIDE_TOOLS
+               _GUIDE_TOOLS              | \
+               _RESOURCE_TOOLS
 
 
 class ReviewAgentMode(AgentMode):
@@ -200,7 +208,8 @@ class ReviewAgentMode(AgentMode):
                _REVIEW_TOOLS             | \
                _FLASHCARD_PROPOSAL_TOOLS | \
                _DB_SQL_TOOLS             | \
-               _GUIDE_TOOLS
+               _GUIDE_TOOLS              | \
+               _RESOURCE_TOOLS
 
 
 # -- Registry ----------------------------------------------------------------

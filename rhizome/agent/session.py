@@ -22,6 +22,7 @@ from rhizome.agent.tools.app import build_app_tools
 from rhizome.agent.tools.core import build_core_tools
 from rhizome.agent.tools.flashcard_proposal import build_flashcard_proposal_tools
 from rhizome.agent.tools.guide import build_guide_tools
+from rhizome.agent.tools.resources import build_resource_tools
 from rhizome.agent.tools.review import build_review_tools
 from rhizome.agent.tools.sql import build_sql_tools
 from rhizome.agent.utils import TokenUsageData, compute_chat_model_max_tokens
@@ -117,6 +118,7 @@ class AgentSession:
             *build_flashcard_proposal_tools(session_factory, answerer, comparator).values(),
             *build_sql_tools(session_factory).values(),
             *build_guide_tools().values(),
+            *build_resource_tools(session_factory).values(),
         ]
 
         # Build the commit subagent and add its tools to the root agent's tool list.
