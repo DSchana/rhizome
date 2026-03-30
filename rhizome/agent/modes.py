@@ -79,18 +79,12 @@ _RESOURCE_TOOLS = frozenset({
 })
 
 _REVIEW_TOOLS = frozenset({
-    "get_review_sessions",
-    "set_review_scope",
-    "configure_review",
-    "set_review_flashcards",
-    "add_flashcards_to_review",
-    "start_review",
-    "record_review_interaction",
-    "present_flashcards",
-    "complete_review_session",
-    "save_review_summary",
-    "inspect_review_state",
-    "clear_review_state",
+    "review_get_past_sessions",
+    "review_show_session_state",
+    "review_update_session_state",
+    "review_record_interaction",
+    "review_present_flashcards",
+    "review_finish_session",
 })
 
 

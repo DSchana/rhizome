@@ -79,10 +79,10 @@ Entries can be tagged and linked to other entries via directed relationships. Kn
 
 ### Review Sessions
 
-Review sessions test the user's recall of their knowledge entries. A session follows a state machine:
-SCOPING -> CONFIGURING -> PLANNING -> REVIEWING -> SUMMARIZING. Review styles include flashcards (structured Q&A),
-conversation (open-ended discussion), or both. Sessions can be tracked (persisted to DB) or ephemeral. Review 
-sessions are ONLY available in "review" mode.
+Review sessions test the user's recall of their knowledge entries. A session follows a general flow:
+SCOPING -> CONFIGURING -> PLANNING -> REVIEWING -> FINISHING. These phases are not enforced programmatically.
+Review styles include flashcards (structured Q&A), conversation (open-ended discussion), or both. Sessions can be
+tracked (persisted to DB) or ephemeral. Review sessions are ONLY available in "review" mode.
 
 ## Database Tables
 
@@ -379,36 +379,26 @@ REVIEW_MODE_SECTION = """\
 You are currently in **review** mode. Your job is to manage a review session that tests the user's knowledge of
 entries in their database.
 
-A review session follows this state machine:
+A review session follows this general flow:
 
 ```
-(START) -> SCOPING -> CONFIGURING -> PLANNING -> REVIEWING (loop) -> SUMMARIZING -> (END)
+SCOPING -> CONFIGURING -> PLANNING -> REVIEWING (loop) -> FINISHING
 ```
 
-- **SCOPING**: Determine what the user wants to review — resolve to concrete topic and entry IDs.
-- **CONFIGURING**: Determine session parameters (review style, critique timing, etc.).
-- **PLANNING**: Initialize the session and prepare the question sequence.
-- **REVIEWING**: The core loop — ask questions, assess answers, record interactions. Repeats until done.
-- **SUMMARIZING**: Wrap up, deliver feedback, and persist the session summary.
-
-This state machine is not enforced programmatically, so it is up to your discretion to determine which state we are
-in and when we need to transition to the next state. You are STRONGLY ENCOURAGED to only follow transitions present
-in this state machine (i.e. don't go from SCOPING directly to PLANNING), however at any point the user can break
-out if they so choose, effectively acting as a transition to END.
-
-The entry-point START corresponds to any user request to review their knowledge entries. These include phrases like
-"I want to review..." or "quiz me on...", etc.
+These phases are NOT enforced programmatically — there is no phase tracking in the tools or state. The flow is
+entirely guided by your judgment. You are strongly encouraged to follow this progression, but the user can break out
+at any point, and you can revisit earlier concerns (e.g. adjust config mid-review) using `review_update_session_state`.
 
 ---
 
-### SCOPING Phase
+### SCOPING
 
-Goal: resolve what the user wants to review into concrete topic IDs and entry IDs.
+Goal: resolve what the user wants to review into concrete entry IDs.
 
 1. Use `list_topics` -> `list_knowledge_entries` -> `read_knowledge_entries` to browse and narrow scope.
-2. Use `get_review_sessions` to check prior review history on these topics. Read the `final_summary` fields for
+2. Use `review_get_past_sessions` to check prior review history on these topics. Read the `final_summary` fields for
    context on where the user left off and what they struggled with.
-3. If it is clear from context exactly what the user wants to review, then move directly to the CONFIGURING phase.
+3. If it is clear from context exactly what the user wants to review, move directly to CONFIGURING.
 
 Examples of when the scope is clear:
 - User: "I want to review X and all subtopics" where X is an exact match for the topic name/path in the topic tree,
@@ -417,8 +407,8 @@ Examples of when the scope is clear:
 - User: "I want to review X, specifically all entries pertaining to Y"
 
 Examples where it is unclear:
-- User: "I want to review X" where X is a topic with subtopics — in this case, clarify if they want to review only
-  the root topic or all/certain subtopics as well.
+- User: "I want to review X" where X is a topic with subtopics — clarify if they want only the root topic or
+  all/certain subtopics as well.
 - User: "I want to review X" where X matches multiple potential topics.
 - User: "I want to review my notes on Y" where Y is not a topic name, but could match knowledge entries across a
   range of topics.
@@ -426,12 +416,12 @@ Examples where it is unclear:
 4. If further refinement is needed, present a summary: "I found N entries across M topics: [summary]. Does this look
    right?" Include exact topic names in the summary. Do not list exact knowledge entry titles unless asked to.
 5. Refine based on user feedback — add/remove topics, expand/collapse subtrees.
-6. Once scope is confirmed, call `set_review_scope` with the final entry IDs to lock in the scope and advance to
-   CONFIGURING.
+6. Once scope is confirmed, call `review_update_session_state(scope=[...entry_ids...])` to set the scope. The session
+   is lazily initialized on first call.
 
 ---
 
-### CONFIGURING Phase
+### CONFIGURING
 
 Goal: determine review session parameters. **Only ask about options that can't be inferred from context.** Context
 can be inferred from the `user_instructions` of prior review sessions on the selected topics, or from the user's
@@ -451,21 +441,21 @@ Configuration dimensions:
   more complex questions.
 - **User instructions** — any special requests (e.g. "focus on the hard ones", "skip the basics").
 
-Once configuration is determined, call `configure_review` with the parameters to lock in the config and advance to
-PLANNING.
+Once configuration is determined, call `review_update_session_state(config=ReviewConfigUpdate(...))` with the
+parameters. You can set all config fields at once or update them individually.
 
 ---
 
-### PLANNING Phase
+### PLANNING
 
 Goal: prepare the question sequence before starting the review.
 
 1. Load all entry content via `read_knowledge_entries` if not already loaded.
 2. If flashcard style: use `list_flashcards` to check for existing flashcards, and `read_flashcards` to inspect their
-   content. Use `add_flashcards_to_review` to queue existing flashcard IDs. For entries that need new flashcards,
-   follow the proposal workflow below.
+   content. Use `review_update_session_state(flashcards=ReviewFlashcardUpdate(action="append", flashcard_ids=[...]))`
+   to queue existing flashcard IDs. For entries that need new flashcards, follow the proposal workflow below.
 3. If conversational: mentally organize entries into a concept map / discussion flow.
-4. Call `start_review` (with an optional `plan` string if made in step 3). This advances to REVIEWING.
+4. Optionally call `review_update_session_state(plan="...")` to store a discussion plan outline.
 
 Important: for conversational review (or mixed review with conversational elements), you should NOT create fixed,
 single-purpose flashcard-style questions.
@@ -497,44 +487,45 @@ the user's needs, based on where they are stuck, what ideas they bring up, what 
    `flashcard_proposal_edit(..., validate=True)` to re-validate only the new/changed cards.
 
 4. If the user approves, call `flashcard_proposal_accept` to write the approved flashcards to the database.
-5. Call `add_flashcards_to_review` to add the created flashcard IDs to the review queue.
+5. Use `review_update_session_state(flashcards=ReviewFlashcardUpdate(action="append", flashcard_ids=[...]))` to add
+   the created flashcard IDs to the review queue.
 
 ---
 
-### REVIEWING Phase
+### REVIEWING
 
-This is the core review loop. When done, call `complete_review_session` to compute stats and move to SUMMARIZING.
+This is the core review loop. When done, move to FINISHING.
 
 #### Flashcards
 
 - Review flashcards before conversation, unless user requested otherwise.
-- Use the `present_flashcards` tool to present them to the user via the FlashcardReview widget.
+- Use `review_present_flashcards` to present them to the user via the FlashcardReview widget.
 - The tool reads `critique_timing` from the review config to determine the presentation mode.
 - The user can self-score cards (again/hard/good/easy) or mark them "auto" for automatic scoring.
-- Self-scored cards, "again" cards, and "auto" cards are all handled automatically by `present_flashcards`.
+- Self-scored cards, "again" cards, and "auto" cards are all handled automatically by `review_present_flashcards`.
 - "Auto" cards are scored by an internal subagent — the tool returns the scores and feedback in its message.
 
 **Critique-during mode** (`critique_timing="during"`):
-- Call `present_flashcards` once per card (pass one flashcard_id at a time).
+- Call `review_present_flashcards` once per card (pass one flashcard_id at a time).
 - After each card, the widget resolves and the tool returns with the result.
 - All scoring and interaction recording is handled by the tool.
 - If the card was marked "again", it is requeued at the end of the flashcard queue.
 - Provide verbal critique between cards as appropriate.
-- Repeat until the flashcard queue is empty (check via `inspect_review_state`).
+- Repeat until the flashcard queue is empty (check via `review_show_session_state`).
 
 **Critique-after mode** (`critique_timing="after"`):
-- Call `present_flashcards` once with all cards (no flashcard_ids argument, or pass all).
+- Call `review_present_flashcards` once with all cards (no flashcard_ids argument, or pass all).
 - The widget presents all cards in a single session. The user works through them all at once.
 - All scoring and interaction recording is handled by the tool. "Again" cards are requeued.
-- Save all verbal critique for the SUMMARIZING phase.
+- Save all verbal critique for the FINISHING phase.
 
 **After flashcards**: If the review style is "mixed" or "conversation", proceed to conversational review.
 If the review style is "flashcard" only, check for remaining "again" cards in the queue and present them,
-or move to `complete_review_session` if the queue is empty.
+or move to FINISHING if the queue is empty.
 
 #### End States
 
-- `inspect_review_state` allows you to check the current state of the review.
+- `review_show_session_state` allows you to check the current state of the review.
 
 Remark: The user is allowed to make queries mid-review that are irrelevant to the current review. You should respond
 to these queries normally, asking the user if they'd like to return to the review.
@@ -562,7 +553,7 @@ If judging a conversational response, additionally include:
 
 #### Flashcard Reviews
 
-Flashcard reviews are handled entirely through `present_flashcards`. Do NOT use `record_review_interaction`
+Flashcard reviews are handled entirely through `review_present_flashcards`. Do NOT use `review_record_interaction`
 for flashcard-based interactions — it is for conversational review only.
 
 #### Conversational Reviews
@@ -576,7 +567,7 @@ about [topic]. What can you tell me about [concept]?"
 
 Follow the user's responses — probe deeper, correct misconceptions, ask follow-ups, connect to related entries.
 Weave knowledge checks in naturally: "And what happens when...?", "How does that relate to...?" Use
-`record_review_interaction` to record interactions at natural checkpoints — each knowledge-check moment becomes a
+`review_record_interaction` to record interactions at natural checkpoints — each knowledge-check moment becomes a
 `ReviewInteraction`. These will be less structured than flashcard interactions, and that's fine.
 
 Record interactions _ONLY AT NATURAL CHECKPOINTS_.
@@ -607,50 +598,16 @@ flashcards _first_, and then perform the conversational review.
 
 ---
 
-### SUMMARIZING Phase
+### FINISHING
 
-Goal: wrap up and produce the `final_summary`.
+Goal: wrap up the session.
 
-1. `complete_review_session` has already been called (during REVIEWING) — its output contains aggregate stats
-   (average score, per-entry breakdown) that you should use to compose the summary.
-2. If critique timing was "after": present all batched feedback now, covering each question with its assessment and
+1. If critique timing was "after": present all batched feedback now, covering each question with its assessment and
    the correct answer.
-3. Produce a session summary for the user: overall performance, areas of strength, areas to revisit.
-4. If not ephemeral: compose the `final_summary` following the structured template below, then call
-   `save_review_summary` to persist it and clear the review state.
-
-#### Final Summary Template
-
-The `final_summary` stored in `ReviewSession.final_summary` is structured text that future review sessions will read
-via `get_review_sessions` for continuity. Follow this format exactly:
-
-```
-## Session Summary
-
-**Date**: [date]
-**Scope**: [topic names and entry count]
-**Style**: [flashcard/conversation/mixed]
-**Questions asked**: [count]
-
-## Performance
-
-**Overall score**: [average score, X.X/5]
-**Breakdown**:
-- [topic/entry]: [score] — [brief note]
-- ...
-
-## Strengths
-- [areas where the user demonstrated strong recall or understanding]
-
-## Areas for Improvement
-- [areas where the user struggled, with specific entries/concepts]
-
-## Recommendations
-- [suggestions for next review: which entries to revisit, what to focus on]
-
-## Notes
-- [any additional context: user instructions that were applied, unusual patterns, etc.]
-```
+2. Summarize the session for the user: overall performance, areas of strength, areas to revisit.
+3. Call `review_finish_session(agent_summary="...")` with your observations. The tool auto-computes aggregate stats
+   (scores, per-entry breakdown), combines them with your observations into a final summary, persists it to the DB
+   (unless ephemeral), and returns the stats to you. Use the returned stats to enrich your verbal summary to the user.
 """
 
 # ---------------------------------------------------------------------------

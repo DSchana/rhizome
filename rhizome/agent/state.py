@@ -40,14 +40,12 @@ class ReviewConfig(TypedDict):
 
 
 class ReviewState(TypedDict):
-    """State machine for an active review session.
+    """State for an active review session.
 
     Stored in ``RhizomeAgentState.review``.  ``None`` when no review
-    session is active.
+    session is active.  Lazily initialized by the first call to
+    ``review_update_session_state``.
     """
-    phase: str
-    """Current phase: ``"scoping"``, ``"configuring"``, ``"planning"``,
-    ``"reviewing"``, or ``"summarizing"``."""
 
     session_id: int
     """Database session ID.  Always set — ephemeral sessions still get a DB record."""
@@ -62,7 +60,7 @@ class ReviewState(TypedDict):
     """Flashcard DB IDs to present, popped as used."""
 
     entry_coverage: dict[int, int]
-    """Map of entry_id to touch count, incremented by ``record_review_interaction``."""
+    """Map of entry_id to touch count, incremented by ``review_record_interaction``."""
 
     interaction_count: int
     """Total number of review interactions recorded this session."""
