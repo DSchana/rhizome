@@ -7,7 +7,7 @@ Two subagents work in sequence:
 2. **Comparator** — receives the expected answers, the answerer's answers, and
    any testing notes, then evaluates whether each flashcard is clear and unambiguous.
 
-The validation logic itself lives in ``create_flashcard_proposal`` (in
+The validation logic itself lives in ``flashcard_proposal_create`` (in
 ``rhizome.agent.tools.flashcard_proposal``) — this module only defines the subagent
 builders and their response schemas.
 """

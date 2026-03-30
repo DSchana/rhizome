@@ -197,7 +197,7 @@ def build_review_tools(session_factory, scorer=None) -> dict:
     @tool_visibility(ToolVisibility.LOW)
     @tool("add_flashcards_to_review", description=(
         "Append flashcard IDs to the review queue. Use this after "
-        "accept_flashcard_proposal or with existing flashcard IDs from "
+        "flashcard_proposal_accept or with existing flashcard IDs from "
         "list_flashcards."
     ))
     async def add_flashcards_to_review_tool(

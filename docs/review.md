@@ -48,9 +48,9 @@ The agent prepares the question sequence before starting:
 2. `get_flashcards(flashcard_ids)` — inspect existing card content
 3. `add_flashcards_to_review(flashcard_ids)` — queue existing flashcard IDs
 4. For entries that need new flashcards, follow the proposal workflow:
-   - `create_flashcard_proposal(flashcards)` — stage cards for user review
-   - `present_flashcard_proposal()` — show proposal to user (approve / edit / cancel)
-   - `accept_flashcard_proposal()` — write approved cards to DB
+   - `flashcard_proposal_create(flashcards)` — stage cards for user review
+   - `flashcard_proposal_present()` — show proposal to user (approve / edit / cancel)
+   - `flashcard_proposal_accept()` — write approved cards to DB
    - `add_flashcards_to_review(flashcard_ids)` — add created IDs to the queue
 5. `set_review_flashcards(flashcard_ids)` — replace the full queue order if needed
 
@@ -101,9 +101,9 @@ The flashcard queue supports both **append** (`add_flashcards_to_review`) and **
 | `list_flashcards` | Planning | Check existing flashcard coverage |
 | `get_flashcards` | Planning | Get flashcard content by ID |
 | `set_review_flashcards` | Planning / Reviewing | Set queue (replace semantics) |
-| `create_flashcard_proposal` | Any (learn or review) | Stage flashcards for user review |
-| `present_flashcard_proposal` | Any (learn or review) | Show proposal interrupt, return user's decision |
-| `accept_flashcard_proposal` | Any (learn or review) | Write approved flashcards to DB |
+| `flashcard_proposal_create` | Any (learn or review) | Stage flashcards for user review |
+| `flashcard_proposal_present` | Any (learn or review) | Show proposal interrupt, return user's decision |
+| `flashcard_proposal_accept` | Any (learn or review) | Write approved flashcards to DB |
 | `add_flashcards_to_review` | Planning / Reviewing | Append flashcard IDs to queue |
 | `start_review` | Planning → Reviewing | Store discussion plan, begin review |
 | `record_review_interaction` | Reviewing | Record Q&A, update coverage and queue |

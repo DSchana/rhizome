@@ -243,13 +243,13 @@ def build_flashcard_proposal_tools(
     ----------
     answerer, comparator:
         Optional ``StructuredSubagent`` instances for flashcard validation.
-        Required if the ``validate`` flag on ``create_flashcard_proposal``
-        or ``edit_flashcard_proposal`` is to be used.
+        Required if the ``validate`` flag on ``flashcard_proposal_create``
+        or ``flashcard_proposal_edit`` is to be used.
     """
 
-    @tool("create_flashcard_proposal", description=(
+    @tool("flashcard_proposal_create", description=(
         "Stage flashcards for user review without writing to the database. "
-        "Stores the proposal in agent state. Call present_flashcard_proposal "
+        "Stores the proposal in agent state. Call flashcard_proposal_present "
         "next to show it to the user. Each flashcard needs: topic_id, "
         "question_text, answer_text, entry_ids, and optionally testing_notes. "
         "Set validate=True to run an automated clarity check before presenting "
@@ -278,7 +278,7 @@ def build_flashcard_proposal_tools(
         if not validate:
             msg = (
                 f"Flashcard proposal staged: {len(items)} card(s). "
-                f"Call present_flashcard_proposal to show it to the user."
+                f"Call flashcard_proposal_present to show it to the user."
             )
             return Command(update={
                 "flashcard_proposal_state": proposal_state,
@@ -310,14 +310,14 @@ def build_flashcard_proposal_tools(
             msg = (
                 f"Flashcard proposal staged and validated: "
                 f"all {vr.total} card(s) are clear and unambiguous. "
-                f"Proceed with present_flashcard_proposal."
+                f"Proceed with flashcard_proposal_present."
             )
         else:
             msg = (
                 f"Flashcard proposal staged. Validation: "
                 f"{vr.passed}/{vr.total} passed, {vr.failed} failed. "
                 f"Review the feedback, revise failed cards with "
-                f"edit_flashcard_proposal(edits=..., validate=True)."
+                f"flashcard_proposal_edit(edits=..., validate=True)."
             )
 
         return Command(update={
@@ -328,12 +328,12 @@ def build_flashcard_proposal_tools(
             )],
         })
 
-    @tool("present_flashcard_proposal", description=(
+    @tool("flashcard_proposal_present", description=(
         "Display the staged flashcard proposal to the user for review. "
         "The user can approve, request edits, reset, or cancel. "
-        "Returns the user's choice. If approved, call accept_flashcard_proposal "
+        "Returns the user's choice. If approved, call flashcard_proposal_accept "
         "to write them to the database. If edits requested, use "
-        "edit_flashcard_proposal to make targeted changes (preserving any "
+        "flashcard_proposal_edit to make targeted changes (preserving any "
         "direct edits the user made), then present again."
     ))
     @tool_visibility(ToolVisibility.LOW)
@@ -345,7 +345,7 @@ def build_flashcard_proposal_tools(
         if not fp_state or not fp_state.get("items"):
             return Command(update={
                 "messages": [ToolMessage(
-                    content="Error: no flashcard proposal staged. Call create_flashcard_proposal first.",
+                    content="Error: no flashcard proposal staged. Call flashcard_proposal_create first.",
                     tool_call_id=runtime.tool_call_id,
                 )],
             })
@@ -394,7 +394,7 @@ def build_flashcard_proposal_tools(
             msg_lines = [
                 f"User approved {len(updated_items)} flashcard(s).",
                 *diff_parts,
-                "Call accept_flashcard_proposal to write them to the database.",
+                "Call flashcard_proposal_accept to write them to the database.",
             ]
             return Command(update={
                 "flashcard_proposal_state": {**fp_state, "items": updated_items},
@@ -407,8 +407,8 @@ def build_flashcard_proposal_tools(
                 f"User requested edits: {instructions}",
                 *diff_parts,
                 f"Proposal state updated ({len(updated_items)} card(s) remaining).",
-                "Use edit_flashcard_proposal to make further changes, then "
-                "present_flashcard_proposal to show the revised proposal.",
+                "Use flashcard_proposal_edit to make further changes, then "
+                "flashcard_proposal_present to show the revised proposal.",
             ]
             return Command(update={
                 "flashcard_proposal_state": {**fp_state, "items": updated_items},
@@ -422,14 +422,14 @@ def build_flashcard_proposal_tools(
                 "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
             })
 
-    @tool("edit_flashcard_proposal", description=(
+    @tool("flashcard_proposal_edit", description=(
         "Make targeted edits to the current flashcard proposal without overwriting it. "
         "Supports in-place edits (partial field updates by stable ID), deletions (by ID), "
         "and additions (new flashcards appended with auto-assigned IDs). "
         "Processing order: edits, then deletions, then additions. "
         "Set validate=True to run an automated clarity check on only the "
         "edited and added cards (unchanged cards are not re-validated). "
-        "Call present_flashcard_proposal afterwards to show the revised proposal to the user."
+        "Call flashcard_proposal_present afterwards to show the revised proposal to the user."
     ))
     @tool_visibility(ToolVisibility.LOW)
     async def edit_flashcard_proposal_tool(
@@ -531,14 +531,14 @@ def build_flashcard_proposal_tools(
                 msg = (
                     f"Flashcard proposal updated ({len(items)} card(s)): {edit_summary}. "
                     f"Validation: all {vr.total} edited/added card(s) passed. "
-                    f"Proceed with present_flashcard_proposal."
+                    f"Proceed with flashcard_proposal_present."
                 )
             else:
                 msg = (
                     f"Flashcard proposal updated ({len(items)} card(s)): {edit_summary}. "
                     f"Validation: {vr.passed}/{vr.total} edited/added card(s) passed, "
                     f"{vr.failed} failed. Review the feedback and revise with "
-                    f"edit_flashcard_proposal(edits=..., validate=True)."
+                    f"flashcard_proposal_edit(edits=..., validate=True)."
                 )
 
             return Command(update={
@@ -555,9 +555,9 @@ def build_flashcard_proposal_tools(
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
-    @tool("accept_flashcard_proposal", description=(
+    @tool("flashcard_proposal_accept", description=(
         "Write the approved flashcard proposal to the database. "
-        "Call this after the user has approved via present_flashcard_proposal. "
+        "Call this after the user has approved via flashcard_proposal_present. "
         "Returns the created flashcard IDs."
     ))
     @tool_visibility(ToolVisibility.LOW)
@@ -602,8 +602,8 @@ def build_flashcard_proposal_tools(
         })
 
     return {
-        "create_flashcard_proposal": create_flashcard_proposal_tool,
-        "present_flashcard_proposal": present_flashcard_proposal_tool,
-        "edit_flashcard_proposal": edit_flashcard_proposal_tool,
-        "accept_flashcard_proposal": accept_flashcard_proposal_tool,
+        "flashcard_proposal_create": create_flashcard_proposal_tool,
+        "flashcard_proposal_present": present_flashcard_proposal_tool,
+        "flashcard_proposal_edit": edit_flashcard_proposal_tool,
+        "flashcard_proposal_accept": accept_flashcard_proposal_tool,
     }

@@ -280,13 +280,13 @@ def build_commit_subagent_tools(
     fields) and accessed via ``ToolRuntime``.
     """
 
-    @tool("inspect_commit_payload", description=(
+    @tool("commit_show_selected_messages", description=(
         "Return the selected conversation messages that the user chose to commit. "
-        "Call this before create_commit_proposal so you can see the message contents "
+        "Call this before commit_proposal_create so you can see the message contents "
         "and propose appropriate knowledge entries."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def inspect_commit_payload(runtime: ToolRuntime) -> Command:
+    async def commit_show_selected_messages(runtime: ToolRuntime) -> Command:
         commit_state = runtime.state.get("commit_proposal_state")
         payload = commit_state.get("payload") if commit_state else None
         if not payload:
@@ -301,7 +301,7 @@ def build_commit_subagent_tools(
             "messages": [ToolMessage(content=content, tool_call_id=runtime.tool_call_id)],
         })
 
-    @tool("invoke_commit_subagent", description=(
+    @tool("commit_invoke_subagent", description=(
         "Send selected conversation messages to the commit subagent for knowledge extraction. "
         "The subagent will analyze the messages and propose structured knowledge entries. "
         "Use this for larger or more complex selections that benefit from dedicated processing. "
@@ -311,7 +311,7 @@ def build_commit_subagent_tools(
         "the user's diff are automatically passed to the subagent."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def invoke_commit_subagent(
+    async def commit_invoke_subagent(
         runtime: ToolRuntime,
         instructions: str | None = None,
         context: str | None = None,
@@ -369,7 +369,7 @@ def build_commit_subagent_tools(
             msg = (
                 f"Commit proposal staged: {len(proposal)} entry/entries. "
                 f"conversation_id={conv_id}. "
-                f"Call present_commit_proposal to show it to the user."
+                f"Call commit_proposal_present to show it to the user."
             )
         else:
             state_update = {}
@@ -382,13 +382,13 @@ def build_commit_subagent_tools(
         state_update["messages"] = [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)]
         return Command(update=state_update)
 
-    @tool("create_commit_proposal", description=(
+    @tool("commit_proposal_create", description=(
         "Directly propose knowledge entries for commit without invoking the commit subagent. "
         "Use this when the selected messages are short and simple enough that you can propose "
-        "entries yourself. Call inspect_commit_payload first to see the selected messages."
+        "entries yourself. Call commit_show_selected_messages first to see the selected messages."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def create_commit_proposal(
+    async def commit_proposal_create(
         entries: list[KnowledgeEntryProposalSchema],
         runtime: ToolRuntime,
     ) -> Command:
@@ -408,7 +408,7 @@ def build_commit_subagent_tools(
             for i, e in enumerate(entries)
         ]
         commit_state = runtime.state.get("commit_proposal_state")
-        msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries. Call present_commit_proposal to show it to the user."
+        msg = f"Commit proposal staged: {len(proposal_entries)} entry/entries. Call commit_proposal_present to show it to the user."
         return Command(update={
             "commit_proposal_state": CommitProposalState(
                 payload=commit_state["payload"] if commit_state else [],
@@ -418,17 +418,17 @@ def build_commit_subagent_tools(
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
-    @tool("present_commit_proposal", description=(
+    @tool("commit_proposal_present", description=(
         "Display the current commit proposal to the user for review. "
         "The user can approve, request edits, reset, or cancel. "
-        "If edits requested, use edit_commit_proposal to make targeted "
+        "If edits requested, use commit_proposal_edit to make targeted "
         "changes (preserving any direct edits the user made), then present again. "
         "If the proposal was originally created by the subagent, you can also "
-        "call invoke_commit_subagent with the conversation_id and instructions "
+        "call commit_invoke_subagent with the conversation_id and instructions "
         "to have the subagent revise it."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def present_commit_proposal(runtime: ToolRuntime) -> Command:
+    async def commit_proposal_present(runtime: ToolRuntime) -> Command:
         commit_state = runtime.state.get("commit_proposal_state")
         proposal = commit_state.get("proposal") if commit_state else None
         if not proposal:
@@ -469,7 +469,7 @@ def build_commit_subagent_tools(
             msg_lines = [
                 f"User approved {len(new_proposal)} entry/entries.",
                 *diff_parts,
-                "Call accept_commit_proposal to write them to the database.",
+                "Call commit_proposal_accept to write them to the database.",
             ]
             return Command(update={
                 "commit_proposal_state": CommitProposalState(
@@ -488,10 +488,10 @@ def build_commit_subagent_tools(
                 f"User requested edits: {instructions}",
                 *diff_parts,
                 f"Proposal state updated ({len(new_proposal)} entry/entries remaining).",
-                "Use edit_commit_proposal to make further changes, then "
-                "present_commit_proposal to show the revised proposal. "
+                "Use commit_proposal_edit to make further changes, then "
+                "commit_proposal_present to show the revised proposal. "
                 "Alternatively, if the proposal was created by the subagent, "
-                "call invoke_commit_subagent with the conversation_id and "
+                "call commit_invoke_subagent with the conversation_id and "
                 "instructions to have the subagent revise it.",
             ]
             return Command(update={
@@ -514,15 +514,15 @@ def build_commit_subagent_tools(
                 )],
             })
 
-    @tool("edit_commit_proposal", description=(
+    @tool("commit_proposal_edit", description=(
         "Make targeted edits to the current commit proposal without overwriting it. "
         "Supports in-place edits (partial field updates by stable ID), deletions (by ID), "
         "and additions (new entries appended with auto-assigned IDs). "
         "Processing order: edits, then deletions, then additions. "
-        "Call present_commit_proposal afterwards to show the revised proposal to the user."
+        "Call commit_proposal_present afterwards to show the revised proposal to the user."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def edit_commit_proposal(
+    async def commit_proposal_edit(
         runtime: ToolRuntime,
         edits: list[CommitEntryEdit] | None = None,
         additions: list[KnowledgeEntryProposalSchema] | None = None,
@@ -583,12 +583,12 @@ def build_commit_subagent_tools(
             "messages": [ToolMessage(content=msg, tool_call_id=runtime.tool_call_id)],
         })
 
-    @tool("accept_commit_proposal", description=(
+    @tool("commit_proposal_accept", description=(
         "Write the accepted commit proposal to the database. "
-        "Call this after the user has approved the proposal via present_commit_proposal."
+        "Call this after the user has approved the proposal via commit_proposal_present."
     ))
     @tool_visibility(ToolVisibility.LOW)
-    async def accept_commit_proposal(runtime: ToolRuntime) -> Command:
+    async def commit_proposal_accept(runtime: ToolRuntime) -> Command:
         commit_state = runtime.state.get("commit_proposal_state")
         proposal = commit_state.get("proposal") if commit_state else None
         if not proposal:
@@ -623,10 +623,10 @@ def build_commit_subagent_tools(
         })
 
     return [
-        inspect_commit_payload,
-        invoke_commit_subagent,
-        create_commit_proposal,
-        present_commit_proposal,
-        edit_commit_proposal,
-        accept_commit_proposal,
+        commit_show_selected_messages,
+        commit_invoke_subagent,
+        commit_proposal_create,
+        commit_proposal_present,
+        commit_proposal_edit,
+        commit_proposal_accept,
     ]

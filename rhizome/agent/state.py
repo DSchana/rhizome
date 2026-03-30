@@ -116,8 +116,8 @@ class CommitProposalState(TypedDict):
 
     proposal_diff: str | None
     """Human-readable diff summary from the most recent user edit session.
-    Written by ``present_commit_proposal`` on Edit; read by
-    ``invoke_commit_subagent`` to inform the subagent of user changes."""
+    Written by ``commit_proposal_present`` on Edit; read by
+    ``commit_invoke_subagent`` to inform the subagent of user changes."""
 
 
 class RhizomeAgentState(AgentState):

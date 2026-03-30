@@ -104,7 +104,7 @@ class AgentSession:
             self._dump_dir = log_dir / f"agent-stream-{max_idx + 1}"
             self._dump_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build the flashcard validation subagents so create_flashcard_proposal
+        # Build the flashcard validation subagents so flashcard_proposal_create
         # can run inline validation when validate=True.
         answerer = build_answerer_subagent(**dict(self._agent_kwargs))
         comparator = build_comparator_subagent(**dict(self._agent_kwargs))

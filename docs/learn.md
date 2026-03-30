@@ -65,21 +65,21 @@ The proposal is presented to the user via an interrupt widget. The user can:
 
 ### 4. Commit
 
-On approval, `accept_commit_proposal` writes the entries to the database as `KnowledgeEntry` records and posts a summary of what was committed.
+On approval, `commit_proposal_accept` writes the entries to the database as `KnowledgeEntry` records and posts a summary of what was committed.
 
 ### Commit Tools
 
 | Tool | Path | Purpose |
 |------|------|---------|
-| `inspect_commit_payload` | Direct | Retrieve the selected messages as JSON |
-| `create_commit_proposal` | Direct | Root agent proposes entries |
-| `invoke_commit_subagent` | Subagent | Delegate to commit subagent (supports multi-turn refinement) |
-| `present_commit_proposal` | Both | Show proposal to user via interrupt |
-| `accept_commit_proposal` | Both | Write approved entries to database |
+| `commit_show_selected_messages` | Direct | Retrieve the selected messages as JSON |
+| `commit_proposal_create` | Direct | Root agent proposes entries |
+| `commit_invoke_subagent` | Subagent | Delegate to commit subagent (supports multi-turn refinement) |
+| `commit_proposal_present` | Both | Show proposal to user via interrupt |
+| `commit_proposal_accept` | Both | Write approved entries to database |
 
 ## Available Tools
 
 **Database:** `list_all_topics`, `show_topics`, `get_entries`, `list_flashcards`, `get_flashcards`, `create_new_topic`, `delete_topics`
 **App:** `set_topic`, `set_mode`, `rename_tab`, `ask_user_input`, `hint_higher_verbosity`
-**Commit:** `inspect_commit_payload`, `create_commit_proposal`, `invoke_commit_subagent`, `present_commit_proposal`, `accept_commit_proposal`
+**Commit:** `commit_show_selected_messages`, `commit_proposal_create`, `commit_invoke_subagent`, `commit_proposal_present`, `commit_proposal_accept`
 **Web:** `web_search`, `web_fetch`

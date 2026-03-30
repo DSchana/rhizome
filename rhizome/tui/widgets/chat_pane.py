@@ -1106,7 +1106,7 @@ class ChatPane(Widget):
         if auto:
             notification = (
                 "User requested an automatic commit. Review the conversation history and your "
-                "knowledge of the user's database, then use create_commit_proposal to draft "
+                "knowledge of the user's database, then use commit_proposal_create to draft "
                 "knowledge entries based on your own judgment. Present the proposal to the user."
             )
             if instructions:
@@ -1306,15 +1306,15 @@ class ChatPane(Widget):
         if use_subagent:
             self._agent_session.add_system_notification(
                 f"User selected {num_messages} message(s) for commit "
-                f"(~{approx_tokens} tokens). Use invoke_commit_subagent to delegate "
+                f"(~{approx_tokens} tokens). Use commit_invoke_subagent to delegate "
                 "knowledge entry extraction, then present the proposal to the user."
                 + instructions_note
             )
         else:
             self._agent_session.add_system_notification(
                 f"User selected {num_messages} message(s) for commit "
-                f"(~{approx_tokens} tokens). Use inspect_commit_payload and "
-                "create_commit_proposal to draft entries directly, then present "
+                f"(~{approx_tokens} tokens). Use commit_show_selected_messages and "
+                "commit_proposal_create to draft entries directly, then present "
                 "the proposal to the user."
                 + instructions_note
             )

@@ -357,15 +357,15 @@ tool to give the user the option.
 
 When the user confirms a commit selection, a system notification will tell you which path to use:
 
-- **Direct path**: Call `inspect_commit_payload`, then `create_commit_proposal`.
-- **Subagent path**: Call `invoke_commit_subagent` for larger selections.
+- **Direct path**: Call `commit_show_selected_messages`, then `commit_proposal_create`.
+- **Subagent path**: Call `commit_invoke_subagent` for larger selections.
 
 IMPORTANT: If following the direct path, you MUST `load_guide('knowledge_entries')` to view the best practices on
 proposing knowledge entries. The subagent automatically loads this guide.
 
-After either path, call `present_commit_proposal` to show the proposal, then `accept_commit_proposal` if approved.
-If the user requests edits, use `edit_commit_proposal` to make targeted changes (this preserves any direct edits
-the user made in the widget), then call `present_commit_proposal` again. Do NOT use `create_commit_proposal` to
+After either path, call `commit_proposal_present` to show the proposal, then `commit_proposal_accept` if approved.
+If the user requests edits, use `commit_proposal_edit` to make targeted changes (this preserves any direct edits
+the user made in the widget), then call `commit_proposal_present` again. Do NOT use `commit_proposal_create` to
 revise — that overwrites the entire proposal including any user edits.
 """
 
@@ -475,25 +475,25 @@ the user's needs, based on where they are stuck, what ideas they bring up, what 
 
 1. Before creating flashcards, always run `load_guide('flashcards')` to read the flashcard creation guide.
 
-2. First, run `create_flashcard_proposal(flashcards, validate=True)` to propose a new batch of flashcards.
+2. First, run `flashcard_proposal_create(flashcards, validate=True)` to propose a new batch of flashcards.
    The `validate=True` flag triggers an automated clarity check, where an independent agent answers each question
    in a single word/short paragraph, without any context. If any cards fail validation, revise the failed cards
-   with `edit_flashcard_proposal(edits=..., validate=True)` — this only re-validates the edited/added cards,
+   with `flashcard_proposal_edit(edits=..., validate=True)` — this only re-validates the edited/added cards,
    preserving stable IDs and skipping cards that already passed.
 
    IMPORTANT: Do NOT call with `validate=True` more than twice in a row. If cards still fail after 2 attempts,
-   drop them with `edit_flashcard_proposal(deletions=...)` and move on to step 2.
+   drop them with `flashcard_proposal_edit(deletions=...)` and move on to step 2.
 
-3. Call `present_flashcard_proposal` to show the proposed flashcards to the user for review. They can approve,
-   request edits, or cancel. If they request edits, use `edit_flashcard_proposal` to make targeted changes (this
-   preserves any direct edits the user made in the widget), then present again. Do NOT use `create_flashcard_proposal`
+3. Call `flashcard_proposal_present` to show the proposed flashcards to the user for review. They can approve,
+   request edits, or cancel. If they request edits, use `flashcard_proposal_edit` to make targeted changes (this
+   preserves any direct edits the user made in the widget), then present again. Do NOT use `flashcard_proposal_create`
    to revise — that overwrites the entire proposal including any user edits.
 
    Use your discretion on whether to re-validate after editing: if the edits are minor wording tweaks, skip
    validation; if adding new cards or substantially different concepts, use
-   `edit_flashcard_proposal(..., validate=True)` to re-validate only the new/changed cards.
+   `flashcard_proposal_edit(..., validate=True)` to re-validate only the new/changed cards.
 
-4. If the user approves, call `accept_flashcard_proposal` to write the approved flashcards to the database.
+4. If the user approves, call `flashcard_proposal_accept` to write the approved flashcards to the database.
 5. Call `add_flashcards_to_review` to add the created flashcard IDs to the review queue.
 
 ---

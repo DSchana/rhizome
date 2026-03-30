@@ -44,12 +44,12 @@ _APP_TOOLS = frozenset({
 })
 
 _COMMIT_TOOLS = frozenset({
-    "inspect_commit_payload",
-    "create_commit_proposal",
-    "invoke_commit_subagent",
-    "present_commit_proposal",
-    "edit_commit_proposal",
-    "accept_commit_proposal",
+    "commit_show_selected_messages",
+    "commit_proposal_create",
+    "commit_invoke_subagent",
+    "commit_proposal_present",
+    "commit_proposal_edit",
+    "commit_proposal_accept",
 })
 
 _WEB_TOOLS = frozenset({
@@ -64,10 +64,10 @@ _DB_SQL_TOOLS = frozenset({
 })
 
 _FLASHCARD_PROPOSAL_TOOLS = frozenset({
-    "create_flashcard_proposal",
-    "present_flashcard_proposal",
-    "edit_flashcard_proposal",
-    "accept_flashcard_proposal",
+    "flashcard_proposal_create",
+    "flashcard_proposal_present",
+    "flashcard_proposal_edit",
+    "flashcard_proposal_accept",
 })
 
 _GUIDE_TOOLS = frozenset({
