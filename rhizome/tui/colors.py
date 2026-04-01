@@ -20,6 +20,9 @@ class Colors:
     REVIEW_AGENT_BORDER = "rgb(120, 60, 160)"
     REVIEW_SYSTEM_TEXT = "rgb(170, 90, 220)"
 
+    # -- Shell mode --
+    SHELL_BORDER = "rgb(200, 60, 60)"
+
     # -- Commit selection borders --
     COMMIT_SELECTABLE = "rgb(140, 120, 50)"
     COMMIT_CURSOR = "rgb(220, 190, 60)"

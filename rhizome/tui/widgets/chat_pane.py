@@ -37,6 +37,7 @@ from rhizome.tui.types import ChatMessageData, Mode, Role
 from .chat_input import ChatInput
 from .command_palette import CommandPalette
 from .agent_message_harness import AgentMessageHarness
+from .shell_message import ShellCommandMessage
 from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
 from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
@@ -95,6 +96,10 @@ class ChatPane(Widget):
         max-height: 10;
         padding: 0 1;
         background: rgb(12, 12, 12);
+    }
+    #chat-input.--shell-mode,
+    #chat-input.--shell-mode:focus {
+        border: tall rgb(200, 60, 60);
     }
     #commit-instructions {
         height: auto;
@@ -414,6 +419,16 @@ class ChatPane(Widget):
         if not text:
             return
 
+        # Shell commands (!cmd) — ungated, can run while agent is busy.
+        if text.startswith("!"):
+            chat_input = self.query_one("#chat-input", ChatInput)
+            chat_input.clear()
+            chat_input.push_history(text)
+            shell_cmd = text[1:].strip()
+            if shell_cmd:
+                self._handle_shell_command(shell_cmd)
+            return
+
         command = parse_input(text)
         needs_idle = command is None or command.name in self._AGENT_GATED_COMMANDS
 
@@ -456,6 +471,20 @@ class ChatPane(Widget):
 
         self.run_worker(_run())
 
+    def _handle_shell_command(self, cmd: str) -> None:
+        """Run a shell command and display output in a ShellCommandMessage widget."""
+        self._log.debug("shell command dispatched: !%s", cmd)
+        area = self.query_one("#message-area", VerticalScroll)
+        widget = ShellCommandMessage(cmd)
+        area.mount(widget)
+        area.scroll_end(animate=False)
+
+        async def _run() -> None:
+            await widget.execute()
+            area.scroll_end(animate=False)
+
+        self.run_worker(_run())
+
     def _handle_chat(self, text: str) -> None:
         self._log.debug("Chat submitted (%d chars)", len(text))
 
@@ -473,6 +502,12 @@ class ChatPane(Widget):
 
         palette = self.query_one("#command-palette", CommandPalette)
         chat_input = self.query_one("#chat-input", ChatInput)
+
+        # Toggle shell-mode border color when input starts with '!'
+        if text.startswith("!"):
+            chat_input.add_class("--shell-mode")
+        else:
+            chat_input.remove_class("--shell-mode")
 
         if chat_input._history_index >= 0:
             palette.remove_class("visible")
