@@ -8,7 +8,7 @@ from textual.screen import Screen
 from textual.widgets import TabbedContent, TabPane
 
 from rhizome.tui.options import Options
-from rhizome.tui.types import ChatMessageData, Role, UserFeedback
+from rhizome.tui.types import ChatMessageData, DatabaseCommitted, Role, UserFeedback
 from rhizome.tui.widgets import ChatPane, LoggingPane
 
 
@@ -47,8 +47,9 @@ class ChatTabPane(TabPane):
     the displayed label when ``tab_name_len`` changes.
     """
 
-    def __init__(self, title: str, *, tab_max_length: int = 20, show_welcome: bool = False, **kwargs) -> None:
+    def __init__(self, title: str, *, session_factory=None, tab_max_length: int = 20, show_welcome: bool = False, **kwargs) -> None:
         self.full_name: str = title
+        self._session_factory = session_factory
         self._tab_max_length: int = tab_max_length
         self._show_welcome = show_welcome
         super().__init__(self._truncated_label(), **kwargs)
@@ -70,12 +71,16 @@ class ChatTabPane(TabPane):
         tab_widget = tabbed_content.get_tab(self.id)
         tab_widget.label = self._truncated_label()
 
+    def on_database_committed(self, event: DatabaseCommitted) -> None:
+        """Propagate to the ChatPane."""
+        self.query_one(ChatPane).post_message(event)
+
     def on_user_feedback(self, event: UserFeedback) -> None:
         chat_pane = self.query_one(ChatPane)
         chat_pane.append_message(ChatMessageData(role=Role.SYSTEM, content=event.text))
 
     def compose(self) -> ComposeResult:
-        yield ChatPane(show_welcome=self._show_welcome)
+        yield ChatPane(session_factory=self._session_factory, show_welcome=self._show_welcome)
 
 
 class MainScreen(Screen):
@@ -113,10 +118,15 @@ class MainScreen(Screen):
         super().__init__(**kwargs)
         self._tab_counter: int = 1
 
+    def on_database_committed(self, event: DatabaseCommitted) -> None:
+        """Propagate to all tab panes."""
+        for pane in self.query(TabPane):
+            pane.post_message(event)
+
     def compose(self) -> ComposeResult:
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
         with TabbedContent(id="tabs"):
-            yield ChatTabPane("Session 1", tab_max_length=max_len, show_welcome=True, id="session-1")
+            yield ChatTabPane("Session 1", session_factory=self.app.session_factory, tab_max_length=max_len, show_welcome=True, id="session-1")
 
     async def _add_log_tab(self) -> None:
         """Open the logs tab, or switch to it if it already exists."""
@@ -139,7 +149,7 @@ class MainScreen(Screen):
         tab_label = label or f"Session {self._tab_counter}"
         tabs = self.query_one("#tabs", TabbedContent)
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]
-        pane = ChatTabPane(tab_label, tab_max_length=max_len, id=tab_id)
+        pane = ChatTabPane(tab_label, session_factory=self.app.session_factory, tab_max_length=max_len, id=tab_id)
         await tabs.add_pane(pane)
         tabs.active = tab_id
 

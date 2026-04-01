@@ -32,8 +32,18 @@ class UserFeedback(Message):
         self.severity = severity
 
 
-class DataChanged(Message):
-    """Posted when a DB commit occurs, signalling widgets to refresh stale data."""
+class DatabaseCommitted(Message):
+    """Posted when a DB commit occurs, signalling widgets to refresh stale data.
+
+    ``changed_tables`` contains the set of table names that had inserts,
+    updates, or deletes in the committed transaction.  Consumers can inspect
+    this to skip unnecessary refreshes (e.g. the explorer viewer doesn't
+    need to reload when only ``topic_resource`` rows changed).
+    """
+
+    def __init__(self, changed_tables: frozenset[str] | None = None) -> None:
+        super().__init__()
+        self.changed_tables: frozenset[str] = changed_tables or frozenset()
 
 
 @dataclass

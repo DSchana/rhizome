@@ -18,9 +18,10 @@ from .entry_list import EntryList
 class TopicTree(Tree[Topic]):
     """The actual Tree widget — used inside TopicTree container."""
 
-    def __init__(self) -> None:
+    def __init__(self, session_factory=None) -> None:
         super().__init__("Topics")
         self.show_root = False
+        self._session_factory = session_factory
 
     def _refresh_height(self) -> None:
         """Set height to match the number of visible lines."""
@@ -28,7 +29,7 @@ class TopicTree(Tree[Topic]):
         self.styles.height = max(line_count, 1)
 
     async def on_mount(self) -> None:
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         async with session_factory() as session:
             roots = await list_root_topics(session)
             has_children = {
@@ -51,7 +52,7 @@ class TopicTree(Tree[Topic]):
             prev_topic_id = self.cursor_node.data.id
         self.root.remove_children()
         self._refresh_height()
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         async with session_factory() as session:
             roots = await list_root_topics(session)
             has_children = {
@@ -79,7 +80,7 @@ class TopicTree(Tree[Topic]):
         if node.children:
             self._refresh_height()
             return
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         async with session_factory() as session:
             children = await list_children(session, node.data.id)
             has_grandchildren = {
@@ -228,8 +229,9 @@ class TopicTreeViewer(Vertical):
 
     show_entries: reactive[bool] = reactive(False)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, session_factory=None, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._session_factory = session_factory
         self._entry_cache: dict[int, list[KnowledgeEntry]] = {}
         self._entry_count_cache: dict[int, int] = {}
         self._entry_cursor_cache: dict[int, int] = {}
@@ -244,7 +246,7 @@ class TopicTreeViewer(Vertical):
         with Horizontal(id="topic-tree-split"):
             with Vertical(id="topic-tree-left"):
                 with ScrollableContainer(id="topic-tree-scroll"):
-                    yield TopicTree()
+                    yield TopicTree(self._session_factory)
                 yield Static("", id="entry-count-hint")
             yield EntryList(id="topic-entry-viewer")
 
@@ -284,7 +286,7 @@ class TopicTreeViewer(Vertical):
             return
         topic = node.data
         if topic.id not in self._entry_cache:
-            session_factory = self.app.session_factory  # type: ignore[attr-defined]
+            session_factory = self._session_factory
             async with session_factory() as session:
                 entries = await list_entries(session, topic.id)
                 self._entry_cache[topic.id] = entries
@@ -340,7 +342,7 @@ class TopicTreeViewer(Vertical):
         if self._current_topic_id is not None:
             self._entry_cursor_cache[self._current_topic_id] = viewer.cursor
         self._current_topic_id = topic.id
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         if self.show_entries:
             # Panel is open — fetch full entries (needed for display)
             if topic.id not in self._entry_cache:

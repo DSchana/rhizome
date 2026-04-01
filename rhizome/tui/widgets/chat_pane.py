@@ -32,7 +32,7 @@ from rhizome.logs import get_logger
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
 from rhizome.tui.options import Options, OptionScope, build_jsonc_snapshot, parse_jsonc
-from rhizome.tui.types import ChatMessageData, Mode, Role
+from rhizome.tui.types import ChatMessageData, DatabaseCommitted, Mode, Role
 
 from .chat_input import ChatInput
 from .command_palette import CommandPalette
@@ -127,8 +127,9 @@ class ChatPane(Widget):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def __init__(self, *, show_welcome: bool = False, **kwargs) -> None:
+    def __init__(self, *, session_factory=None, show_welcome: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._session_factory = session_factory
 
         # Whether to show the welcome header on mount, or start with an empty message area.
         self._show_welcome = show_welcome
@@ -178,7 +179,7 @@ class ChatPane(Widget):
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield ChatInput(placeholder="Add instructions for the commit (Enter to skip)...", id="commit-instructions")
         yield CommandPalette(id="command-palette")
-        yield ResourceViewer(id="resource-viewer")
+        yield ResourceViewer(session_factory=self._session_factory, id="resource-viewer")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -195,7 +196,7 @@ class ChatPane(Widget):
         model_name = self.options.get(Options.Agent.Model)
         agent_kwargs = get_agent_kwargs(self.options)
         self._agent_session = AgentSession(
-            self.app.session_factory,  # type: ignore[attr-defined]
+            self._session_factory,
             chat_pane=self,
             provider=provider,
             model_name=model_name,
@@ -886,7 +887,7 @@ class ChatPane(Widget):
             tree.focus()
         else:
             area = self.query_one("#message-area")
-            tree = ExplorerViewer(id="explorer")
+            tree = ExplorerViewer(session_factory=self._session_factory, id="explorer")
             await area.mount(tree)
             area.scroll_end(animate=False)
             self._active_widgets.append(tree)
@@ -1214,6 +1215,12 @@ class ChatPane(Widget):
         for viewer in self.query(ExplorerViewer):
             viewer.remove()
         self._restore_chat_input()
+
+    def on_database_committed(self, event: DatabaseCommitted) -> None:
+        """Route DB change notifications to data-displaying widgets."""
+        for viewer in self.query(ExplorerViewer):
+            viewer.post_message(event)
+        self.query_one("#resource-viewer", ResourceViewer).post_message(event)
 
     def on_resource_viewer_dismissed(self, event: ResourceViewer.Dismissed) -> None:
         viewer = self.query_one("#resource-viewer", ResourceViewer)

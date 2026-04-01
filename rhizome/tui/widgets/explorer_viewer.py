@@ -19,6 +19,8 @@ from rhizome.db.operations import (
     list_flashcards_by_topic,
 )
 
+from rhizome.tui.types import DatabaseCommitted
+
 from .entry_list import EntryList
 from .flashcard_list import FlashcardList
 from .navigable import NavigableWidgetMixin
@@ -229,8 +231,9 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
 
     view_mode: reactive[ViewMode] = reactive(ViewMode.TOPICS)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, session_factory=None, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._session_factory = session_factory
         # Entry data/cursor caches (keyed by topic_id, shared across all entry-showing modes)
         self._entry_cache: dict[int, list[KnowledgeEntry]] = {}
         self._entry_count_cache: dict[int, int] = {}
@@ -250,7 +253,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
             with Vertical(id="explorer-tree-pane"):
                 yield Static("Topics", classes="pane-title")
                 with ScrollableContainer(id="explorer-tree-scroll"):
-                    yield TopicTree()
+                    yield TopicTree(self._session_factory)
                 yield Static("", id="explorer-count-hint")
             with Vertical(id="explorer-entry-pane"):
                 yield Static("Entries", classes="pane-title")
@@ -268,18 +271,41 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
     # Data refresh (called when DB state changes externally)
     # ------------------------------------------------------------------
 
-    async def invalidate_and_refresh(self) -> None:
-        """Clear all caches and reload data for the current view."""
-        self._entry_cache.clear()
-        self._entry_count_cache.clear()
-        self._fc_by_topic_cache.clear()
-        self._fc_count_cache.clear()
-        self._fc_by_entry_cache.clear()
-        # Reload the topic tree structure (new/deleted topics)
-        tree = self.query_one(TopicTree)
-        await tree.invalidate_and_refresh()
-        # Reload data for the currently highlighted topic
-        await self._load_data_for_current_topic()
+    async def on_database_committed(self, event: DatabaseCommitted) -> None:
+        tables = event.changed_tables
+
+        if not tables:
+            # Unknown change — full refresh
+            self._entry_cache.clear()
+            self._entry_count_cache.clear()
+            self._fc_by_topic_cache.clear()
+            self._fc_count_cache.clear()
+            self._fc_by_entry_cache.clear()
+            tree = self.query_one(TopicTree)
+            await tree.invalidate_and_refresh()
+            await self._load_data_for_current_topic()
+            return
+
+        refreshed_tree = False
+        if tables & {"topic"}:
+            tree = self.query_one(TopicTree)
+            await tree.invalidate_and_refresh()
+            refreshed_tree = True
+
+        if tables & {"knowledge_entry", "tag", "knowledge_entry_tag"}:
+            self._entry_cache.clear()
+            self._entry_count_cache.clear()
+
+        if tables & {"flashcard"}:
+            self._fc_by_topic_cache.clear()
+            self._fc_count_cache.clear()
+            self._fc_by_entry_cache.clear()
+
+        # Reload the current topic's data if any relevant cache was cleared
+        if tables & {"topic", "knowledge_entry", "tag", "knowledge_entry_tag", "flashcard"}:
+            if not refreshed_tree:
+                # Topic tree is fine, just reload the data panes
+                await self._load_data_for_current_topic()
 
     # ------------------------------------------------------------------
     # Help text
@@ -413,7 +439,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
 
     async def _load_for_topic(self, topic: Topic) -> None:
         """Load and display data for a topic based on the current view mode."""
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         mode = self.view_mode
 
         # Entries (needed for TOPICS_ENTRIES and TOPICS_ENTRIES_FLASHCARDS)
@@ -530,7 +556,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
 
         entry_id = event.entry.id
         if entry_id not in self._fc_by_entry_cache:
-            session_factory = self.app.session_factory  # type: ignore[attr-defined]
+            session_factory = self._session_factory
             async with session_factory() as session:
                 flashcards = await list_flashcards_by_entries(session, [entry_id])
                 self._fc_by_entry_cache[entry_id] = flashcards

@@ -16,9 +16,8 @@ from rhizome.db import get_engine, get_session_factory
 from rhizome.tui.session import NotifyingSessionFactory
 from rhizome.tui.screens.main import MainScreen, ChatTabPane, LogTabPane
 from rhizome.tui.screens.setup import SetupScreen
-from rhizome.tui.types import DataChanged
+from rhizome.tui.types import DatabaseCommitted
 from rhizome.tui.widgets import ChatPane
-from rhizome.tui.widgets.explorer_viewer import ExplorerViewer
 
 
 class RhizomeApp(App):
@@ -50,7 +49,7 @@ class RhizomeApp(App):
         engine = get_engine(db_path or get_default_db_path())
         self.session_factory = NotifyingSessionFactory(
             get_session_factory(engine),
-            on_commit=lambda: self.post_message(DataChanged()),
+            on_commit=lambda tables: self.post_message(DatabaseCommitted(tables)),
         )
         self.options: Options = Options.load()
         self.options.subscribe(Options.Theme, self._on_theme_changed)
@@ -86,10 +85,10 @@ class RhizomeApp(App):
     def _on_setup_complete(self, completed: bool) -> None:
         self.push_screen(MainScreen())
 
-    async def on_data_changed(self, event: DataChanged) -> None:
-        """A DB commit occurred — tell active data-displaying widgets to refresh."""
-        for viewer in self.screen.query(ExplorerViewer):
-            await viewer.invalidate_and_refresh()
+    def on_database_committed(self, event: DatabaseCommitted) -> None:
+        """A DB commit occurred — propagate to direct children of the screen."""
+        for child in self.screen.children:
+            child.post_message(event)
 
     def on_exit_app(self, event: messages.ExitApp) -> None:
         for pane in self.query(ChatPane):

@@ -18,6 +18,8 @@ from rhizome.db.operations import (
     unlink_resource_from_topic,
 )
 
+from rhizome.tui.types import DatabaseCommitted
+
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
 from .topic_tree import TopicTree
@@ -130,8 +132,9 @@ class ResourceViewer(Vertical):
 
     view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, session_factory=None, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._session_factory = session_factory
         self._resource_cache: dict[int, list[Resource]] = {}
         self._resource_cursor_cache: dict[int, int] = {}
         self._all_resources: list[Resource] | None = None
@@ -143,7 +146,7 @@ class ResourceViewer(Vertical):
         with Horizontal(id="rv-split"):
             with Vertical(id="rv-tree-pane"):
                 yield Static("Topics", classes="pane-title")
-                yield TopicTree()
+                yield TopicTree(self._session_factory)
             with Vertical(id="rv-resource-pane"):
                 yield Static("Resources", classes="pane-title")
                 yield ResourceList(id="rv-resource-list")
@@ -213,7 +216,7 @@ class ResourceViewer(Vertical):
         await self._load_for_topic(node.data)
 
     async def _load_for_topic(self, topic: Topic) -> None:
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         mode = self.view_mode
 
         if mode == ResourceViewMode.TOPIC_RESOURCES:
@@ -270,7 +273,7 @@ class ResourceViewer(Vertical):
         if self._current_topic_id is None:
             return
 
-        session_factory = self.app.session_factory  # type: ignore[attr-defined]
+        session_factory = self._session_factory
         async with session_factory() as session:
             if event.linked:
                 await link_resource_to_topic(
@@ -331,13 +334,38 @@ class ResourceViewer(Vertical):
     # Data refresh (called on DB changes)
     # ------------------------------------------------------------------
 
-    async def invalidate_and_refresh(self) -> None:
-        self._resource_cache.clear()
-        self._all_resources = None
-        self._linked_ids_cache.clear()
-        tree = self.query_one(TopicTree)
-        await tree.invalidate_and_refresh()
-        await self._load_data_for_current_topic()
+    async def on_database_committed(self, event: DatabaseCommitted) -> None:
+        if not self.has_class("--visible"):
+            return
+        tables = event.changed_tables
+
+        if not tables:
+            # Unknown change — full refresh
+            self._resource_cache.clear()
+            self._all_resources = None
+            self._linked_ids_cache.clear()
+            tree = self.query_one(TopicTree)
+            await tree.invalidate_and_refresh()
+            await self._load_data_for_current_topic()
+            return
+
+        refreshed_tree = False
+        if tables & {"topic"}:
+            tree = self.query_one(TopicTree)
+            await tree.invalidate_and_refresh()
+            refreshed_tree = True
+
+        if tables & {"resource"}:
+            self._all_resources = None
+            self._resource_cache.clear()
+
+        if tables & {"topic_resource"}:
+            self._resource_cache.clear()
+            self._linked_ids_cache.clear()
+
+        if tables & {"topic", "resource", "topic_resource"}:
+            if not refreshed_tree:
+                await self._load_data_for_current_topic()
 
     # ------------------------------------------------------------------
     # Dismiss / focus
