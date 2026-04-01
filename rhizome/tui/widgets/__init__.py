@@ -19,6 +19,7 @@ from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
 from .options_editor import OptionsEditor
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
+from .resource_loader import ResourceLoader
 from .resource_viewer import ResourceViewer
 from .status_bar import StatusBar
 from .thinking import ThinkingIndicator
@@ -48,6 +49,7 @@ __all__ = [
     "OptionsEditor",
     "ResourceLinker",
     "ResourceList",
+    "ResourceLoader",
     "ResourceViewer",
     "RichChatMessage",
     "SqlConfirmation",

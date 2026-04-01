@@ -78,6 +78,7 @@ class ChatPane(Widget):
         layout: grid;
         grid-size: 1;
         grid-rows: 1fr auto auto auto auto auto;
+        background: rgb(12, 12, 12);
     }
     #status-bar {
         height: auto;
@@ -1206,6 +1207,7 @@ class ChatPane(Widget):
         self.active_topic = event.topic
         self._topic_path = event.path
         self.update_status_bar()
+        self.query_one("#resource-viewer", ResourceViewer).set_active_topic(event.topic, event.path)
         self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {self.active_topic.name}"))
         for viewer in self.query(ExplorerViewer):
             viewer.remove()

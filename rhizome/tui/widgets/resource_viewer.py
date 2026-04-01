@@ -22,26 +22,27 @@ from rhizome.tui.types import DatabaseCommitted
 
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
+from .resource_loader import ResourceLoader
 from .topic_tree import TopicTree
 
 
 class ResourceViewMode(enum.IntEnum):
     TOPIC_RESOURCES = 0
     LINK_RESOURCES = 1
-    EXPANDED = 2
+    LOAD_RESOURCES = 2
 
 
 _MODE_LABELS = {
     ResourceViewMode.TOPIC_RESOURCES: "topic resources",
     ResourceViewMode.LINK_RESOURCES: "link resources",
-    ResourceViewMode.EXPANDED: "expanded (coming soon)",
+    ResourceViewMode.LOAD_RESOURCES: "load resources",
 }
 
 # Pane IDs visible in each mode (for ctrl+left/right focus cycling).
 _MODE_PANES: dict[ResourceViewMode, list[str]] = {
     ResourceViewMode.TOPIC_RESOURCES: ["rv-tree-pane", "rv-resource-pane"],
     ResourceViewMode.LINK_RESOURCES: ["rv-tree-pane", "rv-linker-pane"],
-    ResourceViewMode.EXPANDED: ["rv-tree-pane"],
+    ResourceViewMode.LOAD_RESOURCES: ["rv-loader-pane"],
 }
 
 
@@ -52,6 +53,7 @@ class ResourceViewer(Vertical):
     ResourceViewer {
         height: auto;
         padding: 0 0 0 1;
+        margin-top: 1;
         background: $surface-darken-1;
         border-top: solid rgb(60, 60, 60);
         border-title-color: rgb(180, 180, 180);
@@ -66,6 +68,7 @@ class ResourceViewer(Vertical):
     ResourceViewer #rv-tree-pane {
         width: 30%;
         height: auto;
+        padding-left: 3;
     }
     ResourceViewer #rv-resource-pane {
         width: 70%;
@@ -76,7 +79,7 @@ class ResourceViewer(Vertical):
         width: 70%;
         height: auto;
     }
-    ResourceViewer #rv-expanded-pane {
+    ResourceViewer #rv-loader-pane {
         display: none;
         width: 70%;
         height: auto;
@@ -113,12 +116,16 @@ class ResourceViewer(Vertical):
         display: block;
     }
 
-    /* -- Mode: expanded -- */
-    ResourceViewer.--mode-expanded #rv-resource-pane {
+    /* -- Mode: load resources (no tree, loader takes full width) -- */
+    ResourceViewer.--mode-load #rv-tree-pane {
         display: none;
     }
-    ResourceViewer.--mode-expanded #rv-expanded-pane {
+    ResourceViewer.--mode-load #rv-resource-pane {
+        display: none;
+    }
+    ResourceViewer.--mode-load #rv-loader-pane {
         display: block;
+        width: 100%;
     }
     """
 
@@ -142,6 +149,8 @@ class ResourceViewer(Vertical):
         self._all_resources: list[Resource] | None = None
         self._linked_ids_cache: dict[int, set[int]] = {}
         self._current_topic_id: int | None = None
+        self._active_topic: Topic | None = None
+        self._active_topic_path: list[str] = []
 
     def compose(self):
         yield Static("", id="rv-help")
@@ -155,8 +164,10 @@ class ResourceViewer(Vertical):
             with Vertical(id="rv-linker-pane"):
                 yield Static("Link Resources", classes="pane-title")
                 yield ResourceLinker(id="rv-resource-linker")
-            with Vertical(id="rv-expanded-pane"):
-                yield Static("(Coming soon)", classes="pane-title")
+            with Vertical(id="rv-loader-pane"):
+                yield Static("Load Resources", id="rv-loader-title", classes="pane-title")
+                yield ResourceLoader(id="rv-resource-loader")
+        yield Static(" ", id="rv-bottom-spacer")
 
     def on_mount(self) -> None:
         self.border_title = "Resources [dim]ctrl+r to focus[/dim]"
@@ -181,7 +192,7 @@ class ResourceViewer(Vertical):
     _MODE_CSS_CLASSES = {
         ResourceViewMode.TOPIC_RESOURCES: None,
         ResourceViewMode.LINK_RESOURCES: "--mode-link",
-        ResourceViewMode.EXPANDED: "--mode-expanded",
+        ResourceViewMode.LOAD_RESOURCES: "--mode-load",
     }
 
     def watch_view_mode(self, old_value: ResourceViewMode, new_value: ResourceViewMode) -> None:
@@ -199,8 +210,12 @@ class ResourceViewer(Vertical):
             self.add_class(new_cls)
 
         self._update_help_text()
-        self.query_one(TopicTree).focus()
-        self.call_after_refresh(self._load_data_for_current_topic)
+        if new_value == ResourceViewMode.LOAD_RESOURCES:
+            self.query_one("#rv-resource-loader", ResourceLoader).focus()
+            self.call_after_refresh(self._load_loader_for_active_topic)
+        else:
+            self.query_one(TopicTree).focus()
+            self.call_after_refresh(self._load_data_for_current_topic)
 
     def action_cycle_mode(self) -> None:
         next_val = (self.view_mode + 1) % len(ResourceViewMode)
@@ -211,6 +226,9 @@ class ResourceViewer(Vertical):
     # ------------------------------------------------------------------
 
     async def _load_data_for_current_topic(self) -> None:
+        if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
+            await self._load_loader_for_active_topic()
+            return
         tree = self.query_one(TopicTree)
         node = tree.cursor_node
         if node is None or node.data is None:
@@ -249,11 +267,37 @@ class ResourceViewer(Vertical):
             linker = self.query_one("#rv-resource-linker", ResourceLinker)
             linker.set_resources(self._all_resources, self._linked_ids_cache[topic.id])
 
+    def set_active_topic(self, topic: Topic | None, path: list[str] | None = None) -> None:
+        """Called by ChatPane when the active topic changes."""
+        self._active_topic = topic
+        self._active_topic_path = path or []
+        if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
+            self.call_after_refresh(self._load_loader_for_active_topic)
+
+    async def _load_loader_for_active_topic(self) -> None:
+        """Load the resource loader using the stored active topic."""
+        topic = self._active_topic
+        loader = self.query_one("#rv-resource-loader", ResourceLoader)
+        title_static = self.query_one("#rv-loader-title", Static)
+        if topic is None:
+            title_static.update("Load Resources [dim](no active topic)[/dim]")
+            loader.set_resources([])
+            return
+        path_str = " > ".join(self._active_topic_path) if self._active_topic_path else topic.name
+        title_static.update(f"Load Resources [dim]— {path_str}[/dim]")
+        if topic.id not in self._resource_cache:
+            async with self._session_factory() as session:
+                resources = await list_resources_for_topic(session, topic.id)
+                self._resource_cache[topic.id] = resources
+        loader.set_resources(self._resource_cache[topic.id])
+
     # ------------------------------------------------------------------
     # Topic highlight — load data when cursor moves in the tree
     # ------------------------------------------------------------------
 
     async def on_tree_node_highlighted(self, event: Tree.NodeHighlighted[Topic]) -> None:
+        if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
+            return
         topic = event.node.data
         if topic is None:
             return
@@ -306,6 +350,8 @@ class ResourceViewer(Vertical):
             return self.query_one("#rv-resource-list", ResourceList)
         elif mode == ResourceViewMode.LINK_RESOURCES:
             return self.query_one("#rv-resource-linker", ResourceLinker)
+        elif mode == ResourceViewMode.LOAD_RESOURCES:
+            return self.query_one("#rv-resource-loader", ResourceLoader)
         return None
 
     def action_focus_next_pane(self) -> None:
@@ -331,6 +377,10 @@ class ResourceViewer(Vertical):
     def on_resource_linker_dismissed(self, event: ResourceLinker.Dismissed) -> None:
         event.stop()
         self.query_one(TopicTree).focus()
+
+    def on_resource_loader_dismissed(self, event: ResourceLoader.Dismissed) -> None:
+        event.stop()
+        self.action_dismiss_viewer()
 
     # ------------------------------------------------------------------
     # Data refresh (called on DB changes)
@@ -377,4 +427,7 @@ class ResourceViewer(Vertical):
         self.post_message(self.Dismissed())
 
     def focus(self, scroll_visible: bool = True) -> None:
-        self.query_one(TopicTree).focus(scroll_visible)
+        if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
+            self.query_one("#rv-resource-loader", ResourceLoader).focus(scroll_visible)
+        else:
+            self.query_one(TopicTree).focus(scroll_visible)
