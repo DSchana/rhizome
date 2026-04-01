@@ -10,7 +10,7 @@ from typing import Literal
 
 import httpx
 from langchain.tools import tool
-from langchain_community.document_loaders import PyPDFLoader
+import pymupdf
 from langchain_core.messages import HumanMessage
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -35,9 +35,8 @@ def _extract_text(source: str, source_type: str) -> str:
         return source
 
     if source_type == "pdf":
-        loader = PyPDFLoader(source)
-        pages = loader.load()
-        return "\n\n".join(page.page_content for page in pages)
+        doc = pymupdf.open(source)
+        return "\n\n".join(page.get_text() for page in doc)
 
     raise ValueError(f"Unsupported source type: {source_type}")
 

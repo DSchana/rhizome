@@ -255,7 +255,7 @@ class OptionsEditor(Widget):
                     if new_val in choices:
                         select.value = new_val
                     else:
-                        select.value = choices[0] if choices else Select.BLANK
+                        select.value = choices[0] if choices else Select.NULL
 
                 self._options.subscribe(spec.condition, _update_dependent)
 
@@ -284,7 +284,7 @@ class OptionsEditor(Widget):
     def on_select_changed(self, event: Select.Changed) -> None:
         spec = self._spec_for_widget(event.select.id)
 
-        if spec is None or event.value == Select.BLANK:
+        if spec is None or event.value == Select.NULL:
             return
 
         self._set_option(spec, event.value)
