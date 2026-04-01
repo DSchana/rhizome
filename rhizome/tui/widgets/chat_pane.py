@@ -43,6 +43,7 @@ from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
+from .resource_viewer import ResourceViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
 from .flashcard_review import AgainBehaviour, FlashcardReview
@@ -69,13 +70,14 @@ class ChatPane(Widget):
         Binding("ctrl+b", "cycle_verbosity", "Cycle verbosity", show=False, priority=True),
         Binding("ctrl+up", "focus_prev_widget", "Prev widget", show=False, priority=True),
         Binding("ctrl+down", "focus_next_widget", "Next widget", show=False, priority=True),
+        Binding("ctrl+r", "refocus_resources", "Refocus resources", show=False, priority=True),
     ]
 
     DEFAULT_CSS = """
     ChatPane {
         layout: grid;
         grid-size: 1;
-        grid-rows: 1fr auto auto auto;
+        grid-rows: 1fr auto auto auto auto auto;
     }
     #status-bar {
         height: auto;
@@ -108,6 +110,13 @@ class ChatPane(Widget):
         padding: 0 1;
         background: rgb(12, 12, 12);
         display: none;
+    }
+    #resource-viewer {
+        height: auto;
+        display: none;
+    }
+    #resource-viewer.--visible {
+        display: block;
     }
     #command-palette {
         background: rgb(12, 12, 12);
@@ -169,6 +178,7 @@ class ChatPane(Widget):
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield ChatInput(placeholder="Add instructions for the commit (Enter to skip)...", id="commit-instructions")
         yield CommandPalette(id="command-palette")
+        yield ResourceViewer(id="resource-viewer")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -700,6 +710,10 @@ class ChatPane(Widget):
         async def explore():
             await self._cmd_explore()
 
+        @registry.command(name="resources", help="Toggle the resources panel (ctrl+r)")
+        async def resources():
+            await self._cmd_resources()
+
         @registry.command(name="idle", help="Return to idle mode")
         async def idle():
             await self._cmd_idle()
@@ -880,6 +894,22 @@ class ChatPane(Widget):
         self.query_one("#chat-input").placeholder = (
             "Ctrl+l to refocus chat input"
         )
+
+    async def _cmd_resources(self) -> None:
+        """Toggle the resources panel."""
+        viewer = self.query_one("#resource-viewer", ResourceViewer)
+        if viewer.has_class("--visible"):
+            viewer.remove_class("--visible")
+            self.query_one("#chat-input", ChatInput).focus()
+        else:
+            viewer.add_class("--visible")
+            viewer.focus()
+
+    def action_refocus_resources(self) -> None:
+        """Ctrl+R — focus the resources panel if visible."""
+        viewer = self.query_one("#resource-viewer", ResourceViewer)
+        if viewer.has_class("--visible"):
+            viewer.focus()
 
     async def _cmd_test_flashcards(
         self,
@@ -1183,6 +1213,11 @@ class ChatPane(Widget):
     def on_explorer_viewer_dismissed(self, event: ExplorerViewer.Dismissed) -> None:
         for viewer in self.query(ExplorerViewer):
             viewer.remove()
+        self._restore_chat_input()
+
+    def on_resource_viewer_dismissed(self, event: ResourceViewer.Dismissed) -> None:
+        viewer = self.query_one("#resource-viewer", ResourceViewer)
+        viewer.remove_class("--visible")
         self._restore_chat_input()
 
     def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:

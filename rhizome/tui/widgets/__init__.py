@@ -17,6 +17,9 @@ from .warning import WarningChoices
 from .logging_pane import LoggingPane
 from .message import ChatMessage, MarkdownChatMessage, RichChatMessage
 from .options_editor import OptionsEditor
+from .resource_linker import ResourceLinker
+from .resource_list import ResourceList
+from .resource_viewer import ResourceViewer
 from .status_bar import StatusBar
 from .thinking import ThinkingIndicator
 from .tool_call_list import ToolCallList
@@ -43,6 +46,9 @@ __all__ = [
     "NavigableWidgetMixin",
     "MultipleChoices",
     "OptionsEditor",
+    "ResourceLinker",
+    "ResourceList",
+    "ResourceViewer",
     "RichChatMessage",
     "SqlConfirmation",
     "StatusBar",
