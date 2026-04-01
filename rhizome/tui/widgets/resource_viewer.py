@@ -52,7 +52,9 @@ class ResourceViewer(Vertical):
     ResourceViewer {
         height: auto;
         padding: 0 0 0 1;
+        background: $surface-darken-1;
         border-top: solid rgb(60, 60, 60);
+        border-title-color: rgb(180, 180, 180);
     }
     ResourceViewer #rv-help {
         color: $text-muted;
@@ -157,7 +159,7 @@ class ResourceViewer(Vertical):
                 yield Static("(Coming soon)", classes="pane-title")
 
     def on_mount(self) -> None:
-        self.border_title = "Resources"
+        self.border_title = "Resources [dim]ctrl+r to focus[/dim]"
         self._update_help_text()
 
     # ------------------------------------------------------------------
@@ -334,7 +336,7 @@ class ResourceViewer(Vertical):
     # Data refresh (called on DB changes)
     # ------------------------------------------------------------------
 
-    async def on_database_committed(self, event: DatabaseCommitted) -> None:
+    async def notify_database_committed(self, event: DatabaseCommitted) -> None:
         if not self.has_class("--visible"):
             return
         tables = event.changed_tables

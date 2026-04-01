@@ -1216,11 +1216,12 @@ class ChatPane(Widget):
             viewer.remove()
         self._restore_chat_input()
 
-    def on_database_committed(self, event: DatabaseCommitted) -> None:
+    def notify_database_committed(self, event: DatabaseCommitted) -> None:
         """Route DB change notifications to data-displaying widgets."""
         for viewer in self.query(ExplorerViewer):
-            viewer.post_message(event)
-        self.query_one("#resource-viewer", ResourceViewer).post_message(event)
+            viewer.run_worker(viewer.notify_database_committed(event))
+        resource_viewer = self.query_one("#resource-viewer", ResourceViewer)
+        resource_viewer.run_worker(resource_viewer.notify_database_committed(event))
 
     def on_resource_viewer_dismissed(self, event: ResourceViewer.Dismissed) -> None:
         viewer = self.query_one("#resource-viewer", ResourceViewer)

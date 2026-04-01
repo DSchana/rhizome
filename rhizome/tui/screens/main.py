@@ -71,9 +71,9 @@ class ChatTabPane(TabPane):
         tab_widget = tabbed_content.get_tab(self.id)
         tab_widget.label = self._truncated_label()
 
-    def on_database_committed(self, event: DatabaseCommitted) -> None:
+    def notify_database_committed(self, event: DatabaseCommitted) -> None:
         """Propagate to the ChatPane."""
-        self.query_one(ChatPane).post_message(event)
+        self.query_one(ChatPane).notify_database_committed(event)
 
     def on_user_feedback(self, event: UserFeedback) -> None:
         chat_pane = self.query_one(ChatPane)
@@ -118,10 +118,10 @@ class MainScreen(Screen):
         super().__init__(**kwargs)
         self._tab_counter: int = 1
 
-    def on_database_committed(self, event: DatabaseCommitted) -> None:
-        """Propagate to all tab panes."""
-        for pane in self.query(TabPane):
-            pane.post_message(event)
+    def notify_database_committed(self, event: DatabaseCommitted) -> None:
+        """Propagate to all ChatTabPanes (LogTabPanes don't need DB notifications)."""
+        for pane in self.query(ChatTabPane):
+            pane.notify_database_committed(event)
 
     def compose(self) -> ComposeResult:
         max_len = self.app.options.get(Options.TabMaxLength)  # type: ignore[attr-defined]

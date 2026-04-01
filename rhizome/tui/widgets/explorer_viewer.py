@@ -271,7 +271,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
     # Data refresh (called when DB state changes externally)
     # ------------------------------------------------------------------
 
-    async def on_database_committed(self, event: DatabaseCommitted) -> None:
+    async def notify_database_committed(self, event: DatabaseCommitted) -> None:
         tables = event.changed_tables
 
         if not tables:

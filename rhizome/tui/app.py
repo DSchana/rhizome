@@ -49,7 +49,7 @@ class RhizomeApp(App):
         engine = get_engine(db_path or get_default_db_path())
         self.session_factory = NotifyingSessionFactory(
             get_session_factory(engine),
-            on_commit=lambda tables: self.post_message(DatabaseCommitted(tables)),
+            on_commit=lambda tables: self._notify_database_committed(tables),
         )
         self.options: Options = Options.load()
         self.options.subscribe(Options.Theme, self._on_theme_changed)
@@ -85,10 +85,12 @@ class RhizomeApp(App):
     def _on_setup_complete(self, completed: bool) -> None:
         self.push_screen(MainScreen())
 
-    def on_database_committed(self, event: DatabaseCommitted) -> None:
-        """A DB commit occurred — propagate to direct children of the screen."""
-        for child in self.screen.children:
-            child.post_message(event)
+    def _notify_database_committed(self, tables: frozenset[str]) -> None:
+        """A DB commit occurred — propagate to the active screen."""
+        event = DatabaseCommitted(tables)
+        screen = self.screen
+        if isinstance(screen, MainScreen):
+            screen.notify_database_committed(event)
 
     def on_exit_app(self, event: messages.ExitApp) -> None:
         for pane in self.query(ChatPane):
