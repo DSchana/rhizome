@@ -308,6 +308,9 @@ class Resource(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     estimated_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     loading_preference: Mapped[LoadingPreference] = mapped_column(
         Enum(LoadingPreference), nullable=False, server_default="auto"
     )
@@ -317,6 +320,9 @@ class Resource(Base):
     )
 
     chunks: Mapped[list["ResourceChunk"]] = relationship(
+        back_populates="resource", cascade="all, delete-orphan"
+    )
+    sections: Mapped[list["ResourceSection"]] = relationship(
         back_populates="resource", cascade="all, delete-orphan"
     )
 
@@ -345,6 +351,9 @@ class ResourceChunk(Base):
     resource_id: Mapped[int] = mapped_column(
         ForeignKey("resource.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    section_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resource_section.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -352,6 +361,37 @@ class ResourceChunk(Base):
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     resource: Mapped["Resource"] = relationship(back_populates="chunks")
+    section: Mapped["ResourceSection | None"] = relationship(back_populates="chunks")
 
     def __repr__(self) -> str:
         return f"<ResourceChunk id={self.id} resource={self.resource_id} index={self.chunk_index}>"
+
+
+class ResourceSection(Base):
+    __tablename__ = "resource_section"
+    __table_args__ = (UniqueConstraint("resource_id", "position"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    resource_id: Mapped[int] = mapped_column(
+        ForeignKey("resource.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resource_section.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    resource: Mapped["Resource"] = relationship(back_populates="sections")
+    parent: Mapped["ResourceSection | None"] = relationship(
+        back_populates="children", remote_side="ResourceSection.id"
+    )
+    children: Mapped[list["ResourceSection"]] = relationship(back_populates="parent")
+    chunks: Mapped[list["ResourceChunk"]] = relationship(back_populates="section")
+
+    def __repr__(self) -> str:
+        return f"<ResourceSection id={self.id} resource={self.resource_id} title={self.title!r}>"
