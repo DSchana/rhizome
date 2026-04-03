@@ -29,6 +29,7 @@ from rhizome.agent import AgentSession
 from rhizome.agent.session import get_agent_kwargs
 from rhizome.db import Topic
 from rhizome.logs import get_logger
+from rhizome.resources import ResourceManager
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
 from rhizome.tui.options import Options, OptionScope, build_jsonc_snapshot, parse_jsonc
@@ -159,6 +160,8 @@ class ChatPane(Widget):
         self._agent_worker: Worker[None] | None = None
         # Commit mode state — see CommitState dataclass.
         self._commit = CommitState()
+        # Resource manager — shared between agent session and resource viewer.
+        self._resource_manager = ResourceManager()
 
         self._log = get_logger("tui.chat_pane")
 
@@ -180,7 +183,7 @@ class ChatPane(Widget):
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield ChatInput(placeholder="Add instructions for the commit (Enter to skip)...", id="commit-instructions")
         yield CommandPalette(id="command-palette")
-        yield ResourceViewer(session_factory=self._session_factory, id="resource-viewer")
+        yield ResourceViewer(session_factory=self._session_factory, resource_manager=self._resource_manager, id="resource-viewer")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -199,6 +202,7 @@ class ChatPane(Widget):
         self._agent_session = AgentSession(
             self._session_factory,
             chat_pane=self,
+            resource_manager=self._resource_manager,
             provider=provider,
             model_name=model_name,
             agent_kwargs=agent_kwargs,

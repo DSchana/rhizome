@@ -35,6 +35,7 @@ from rhizome.agent.subagents.flashcard_validator import (
 )
 
 from rhizome.logs import get_logger
+from rhizome.resources import ResourceManager
 from rhizome.tui.options import Options
 
 
@@ -78,6 +79,7 @@ class AgentSession:
             session_factory,
             *,
             chat_pane=None,
+            resource_manager: ResourceManager | None = None,
             provider: str = "anthropic",
             model_name: str | None = None,
             agent_kwargs: dict[str, Any] | None = None,
@@ -86,6 +88,7 @@ class AgentSession:
             thread_id: str | None = None,
             debug: bool = False,
         ):
+        self._resource_manager = resource_manager
         self._provider = provider
         self._model_name = model_name
         self._agent_kwargs = agent_kwargs or {}
@@ -276,6 +279,12 @@ class AgentSession:
         # the graph.  The checkpointer restores previous state and the
         # add_messages reducer appends these new messages.
         queued = self._drain_queue()
+
+        # Consume resource changes since the last stream() call.
+        if self._resource_manager is not None:
+            _resource_changes = self._resource_manager.consume()
+            # TODO: act on resource changes (context-stuff injection,
+            # vector store updates, agent notifications, etc.)
 
         # Build the initial state input.  Only include state fields when we
         # actually have new values — omitted keys are left untouched in the

@@ -11,18 +11,20 @@ from textual.reactive import reactive
 from textual.widgets import Static, Tree
 
 from rhizome.db import Resource, Topic
+from rhizome.db.models import LoadingPreference
 from rhizome.db.operations import (
     link_resource_to_topic,
     list_resources,
     list_resources_for_topic,
     unlink_resource_from_topic,
 )
+from rhizome.resources import ResourceManager
 
 from rhizome.tui.types import DatabaseCommitted
 
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
-from .resource_loader import ResourceLoader
+from .resource_loader import LoadState, ResourceLoader
 from .topic_tree import TopicTree
 
 
@@ -141,9 +143,10 @@ class ResourceViewer(Vertical):
 
     view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
 
-    def __init__(self, session_factory=None, **kwargs) -> None:
+    def __init__(self, session_factory=None, resource_manager: ResourceManager | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._session_factory = session_factory
+        self._resource_manager = resource_manager
         self._resource_cache: dict[int, list[Resource]] = {}
         self._resource_cursor_cache: dict[int, int] = {}
         self._all_resources: list[Resource] | None = None
@@ -338,6 +341,49 @@ class ResourceViewer(Vertical):
             self._linked_ids_cache.setdefault(self._current_topic_id, set()).add(event.resource.id)
         else:
             self._linked_ids_cache.get(self._current_topic_id, set()).discard(event.resource.id)
+
+    # ------------------------------------------------------------------
+    # Load state changes (from ResourceLoader)
+    # ------------------------------------------------------------------
+
+    # Token threshold for the "auto" loading preference: resources below
+    # this estimate are context-stuffed, above are vector-embedded.
+    AUTO_CONTEXT_STUFF_TOKEN_LIMIT = 20_000
+
+    def on_resource_loader_state_changed(self, event: ResourceLoader.StateChanged) -> None:
+        event.stop()
+        if self._resource_manager is None:
+            return
+
+        resource = event.resource
+        rid = resource.id
+        new = event.new_state
+
+        if new == LoadState.UNLOADED:
+            self._resource_manager.full_unload(rid)
+        elif new == LoadState.CONTEXT_STUFFED:
+            self._resource_manager.set_context_stuffed(rid, True)
+        elif new == LoadState.DEFAULT:
+            self._apply_loading_preference(resource)
+
+    def _apply_loading_preference(self, resource: Resource) -> None:
+        """Route a DEFAULT (auto) load through the resource's loading preference."""
+        rid = resource.id
+        pref = resource.loading_preference
+
+        if pref == LoadingPreference.context_stuff:
+            self._resource_manager.set_context_stuffed(rid, True)
+        elif pref == LoadingPreference.vector_store:
+            self._resource_manager.set_context_stuffed(rid, False)
+            self._resource_manager.set_vector_loaded(rid, True)
+        else:
+            # auto: context-stuff if small enough, otherwise vector-embed
+            tokens = resource.estimated_tokens or 0
+            if tokens <= self.AUTO_CONTEXT_STUFF_TOKEN_LIMIT:
+                self._resource_manager.set_context_stuffed(rid, True)
+            else:
+                self._resource_manager.set_context_stuffed(rid, False)
+                self._resource_manager.set_vector_loaded(rid, True)
 
     # ------------------------------------------------------------------
     # Pane focus navigation (ctrl+left / ctrl+right)
