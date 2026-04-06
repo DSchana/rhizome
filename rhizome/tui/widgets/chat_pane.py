@@ -44,6 +44,7 @@ from .options_editor import OptionsEditor
 from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
+from .messages import ActiveTopicChanged
 from .resource_viewer import ResourceViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
@@ -1207,15 +1208,19 @@ class ChatPane(Widget):
     # Child widget events (topic tree, options editor)
     # ------------------------------------------------------------------
 
-    def on_explorer_viewer_topic_selected(self, event: ExplorerViewer.TopicSelected) -> None:
+    def on_active_topic_changed(self, event: ActiveTopicChanged) -> None:
         self.active_topic = event.topic
         self._topic_path = event.path
         self.update_status_bar()
         self.query_one("#resource-viewer", ResourceViewer).set_active_topic(event.topic, event.path)
-        self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {self.active_topic.name}"))
+        if event.topic is not None:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Selected topic: {event.topic.name}"))
+        else:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content="Cleared active topic"))
+        # If posted from the explorer viewer, dismiss it.
         for viewer in self.query(ExplorerViewer):
             viewer.remove()
-        self._restore_chat_input()
+            self._restore_chat_input()
 
     def on_explorer_viewer_dismissed(self, event: ExplorerViewer.Dismissed) -> None:
         for viewer in self.query(ExplorerViewer):

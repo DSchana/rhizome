@@ -22,6 +22,7 @@ from rhizome.resources import ResourceManager
 
 from rhizome.tui.types import DatabaseCommitted
 
+from .messages import ActiveTopicChanged
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
 from .resource_loader import LoadState, ResourceLoader
@@ -135,6 +136,7 @@ class ResourceViewer(Vertical):
         Binding("tab", "cycle_mode", show=False),
         Binding("ctrl+left", "focus_prev_pane", show=False),
         Binding("ctrl+right", "focus_next_pane", show=False),
+        Binding("ctrl+j", "select_active_topic", show=False, priority=True),
         Binding("escape", "dismiss_viewer", show=False),
     ]
 
@@ -185,6 +187,8 @@ class ResourceViewer(Vertical):
         parts = [f"\\[{mode_label}]", "tab: cycle view"]
         if len(_MODE_PANES[self.view_mode]) > 1:
             parts.append("ctrl+\u2190/\u2192: switch pane")
+        if self.view_mode != ResourceViewMode.LOAD_RESOURCES:
+            parts.append("ctrl+enter: set topic")
         parts.append("esc: close")
         self.query_one("#rv-help", Static).update("  ".join(parts))
 
@@ -274,6 +278,7 @@ class ResourceViewer(Vertical):
         """Called by ChatPane when the active topic changes."""
         self._active_topic = topic
         self._active_topic_path = path or []
+        self.query_one(TopicTree).active_topic_id = topic.id if topic else None
         if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
             self.call_after_refresh(self._load_loader_for_active_topic)
 
@@ -484,6 +489,36 @@ class ResourceViewer(Vertical):
         if tables & {"topic", "resource", "topic_resource"}:
             if not refreshed_tree:
                 await self._load_data_for_current_topic()
+
+    # ------------------------------------------------------------------
+    # Active topic selection (ctrl+enter from topic tree)
+    # ------------------------------------------------------------------
+
+    def action_select_active_topic(self) -> None:
+        """Toggle the active topic: select if different, clear if same."""
+        if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
+            return  # tree not visible in load mode
+        tree = self.query_one(TopicTree)
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return
+
+        topic = node.data
+        if tree.active_topic_id == topic.id:
+            # Clear: re-selecting the same topic deactivates it
+            tree.active_topic_id = None
+            self.post_message(ActiveTopicChanged(None, []))
+        else:
+            # Select
+            path: list[str] = []
+            current = node
+            while current.parent is not None:
+                if current.data is not None:
+                    path.append(current.data.name)
+                current = current.parent
+            path.reverse()
+            tree.active_topic_id = topic.id
+            self.post_message(ActiveTopicChanged(topic, path))
 
     # ------------------------------------------------------------------
     # Dismiss / focus

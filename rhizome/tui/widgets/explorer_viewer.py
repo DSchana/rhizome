@@ -23,6 +23,7 @@ from rhizome.tui.types import DatabaseCommitted
 
 from .entry_list import EntryList
 from .flashcard_list import FlashcardList
+from .messages import ActiveTopicChanged
 from .navigable import NavigableWidgetMixin
 from .topic_tree import TopicTree
 
@@ -217,14 +218,6 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
         Binding("ctrl+j", "select_topic", show=False),
         Binding("escape", "dismiss_viewer", show=False),
     ]
-
-    class TopicSelected(Message):
-        """Posted when the user selects a topic."""
-
-        def __init__(self, topic: Topic, path: list[str]) -> None:
-            super().__init__()
-            self.topic = topic
-            self.path = path
 
     class Dismissed(Message):
         """Posted when the user dismisses the explorer."""
@@ -589,7 +582,7 @@ class ExplorerViewer(NavigableWidgetMixin, Vertical):
             current = current.parent
         path.reverse()
         self.deactivate_navigation()
-        self.post_message(self.TopicSelected(node.data, path))
+        self.post_message(ActiveTopicChanged(node.data, path))
 
     # ------------------------------------------------------------------
     # Child viewer dismissed — return focus to appropriate pane

@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-from textual.binding import Binding
-from textual.containers import Horizontal, ScrollableContainer, Vertical
-from textual.message import Message
+from rich.style import Style
+from rich.text import Text
+
 from textual.reactive import reactive
-from textual.widgets import Button, Static, Tree
-from textual.widgets._tree import TreeNode
+from textual.widgets import Tree
+from textual.widgets._tree import TreeNode, TOGGLE_STYLE
 
-from rhizome.db import KnowledgeEntry, Topic
-from rhizome.db.operations import count_entries, list_children, list_entries, list_root_topics
+from rhizome.db import Topic
+from rhizome.db.operations import list_children, list_root_topics
 
-from .entry_list import EntryList
+_ACTIVE_TOPIC_COLOR = Style(color="rgb(0,191,255)")
+_ACTIVE_TOPIC_SELECTED = Style(color="rgb(100,210,255)", bold=True)
 
 
 class TopicTree(Tree[Topic]):
     """The actual Tree widget — used inside TopicTree container."""
+
+    active_topic_id: reactive[int | None] = reactive(None)
 
     def __init__(self, session_factory=None) -> None:
         super().__init__("Topics")
@@ -124,316 +127,63 @@ class TopicTree(Tree[Topic]):
         else:
             super()._on_key(event) # pyright: ignore[reportUnusedCoroutine]
 
-
-class TopicTreeViewer(Vertical):
-    """A bordered container with a tree viewer for browsing topics."""
-
-    DEFAULT_CSS = """
-    TopicTreeViewer {
-        height: auto;
-        margin-top: 1;
-        border: round rgb(86, 126, 160);
-        padding: 0 0 1 1;
-    }
-    TopicTreeViewer #topic-tree-split {
-        height: auto;
-    }
-    TopicTreeViewer #topic-tree-left {
-        width: 1fr;
-        height: auto;
-    }
-    TopicTreeViewer #topic-tree-help {
-        color: $text-muted;
-        margin: 1 0 0 1;
-    }
-    TopicTreeViewer #topic-tree-scroll {
-        height: auto;
-        overflow-x: auto;
-        overflow-y: hidden;
-        margin-top: 1;
-    }
-    TopicTreeViewer TopicTree {
-        height: auto;
-        width: auto;
-        scrollbar-size: 0 0;
-        padding-left: 2;
-        margin-bottom: 1;
-        background: transparent;
-    }
-    TopicTreeViewer TopicTree:focus > .tree--cursor {
-        background: transparent;
-        color: rgb(255,80,80);
-        text-style: bold;
-    }
-    TopicTreeViewer TopicTree > .tree--cursor {
-        background: transparent;
-        color: rgb(180,60,60);
-        text-style: bold;
-    }
-    TopicTreeViewer #entry-count-hint {
-        color: $text-muted;
-        margin: 0 0 0 3;
-    }
-    TopicTreeViewer #topic-entry-viewer {
-        display: none;
-    }
-    TopicTreeViewer #topic-tree-dismiss {
-        dock: right;
-        width: 3;
-        min-width: 3;
-        height: 1;
-        background: transparent;
-        border: none;
-        color: $text-muted;
-        margin: 0;
-        padding: 0;
-    }
-    TopicTreeViewer #topic-tree-dismiss:hover {
-        color: $error;
-    }
-    TopicTreeViewer.--show-entries {
-        height: auto;
-    }
-    TopicTreeViewer.--show-entries #topic-tree-split {
-        height: auto;
-    }
-    TopicTreeViewer.--show-entries #topic-tree-left {
-        width: 30%;
-    }
-    TopicTreeViewer.--show-entries #topic-entry-viewer {
-        display: block;
-        width: 70%;
-        height: auto;
-    }
-    TopicTreeViewer.--show-entries #entry-count-hint {
-        display: none;
-    }
-    """
-
-    BINDINGS = [
-        Binding("ctrl+a", "toggle_entries", show=False),
-        Binding("ctrl+j", "select_topic", show=False),
-        Binding("escape", "dismiss_viewer", show=False),
-    ]
-
-    class TopicSelected(Message):
-        """Posted when the user selects a topic with Enter."""
-
-        def __init__(self, topic: Topic, path: list[str]) -> None:
-            super().__init__()
-            self.topic = topic
-            self.path = path
-
-    class Dismissed(Message):
-        """Posted when the user clicks the dismiss button."""
-
-    show_entries: reactive[bool] = reactive(False)
-
-    def __init__(self, session_factory=None, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._session_factory = session_factory
-        self._entry_cache: dict[int, list[KnowledgeEntry]] = {}
-        self._entry_count_cache: dict[int, int] = {}
-        self._entry_cursor_cache: dict[int, int] = {}
-        self._current_topic_id: int | None = None
-
-    def compose(self):
-        yield Button("x", id="topic-tree-dismiss")
-        yield Static(
-            "arrows: navigate  ctrl+a: show entries  enter: select topic  esc: dismiss",
-            id="topic-tree-help",
-        )
-        with Horizontal(id="topic-tree-split"):
-            with Vertical(id="topic-tree-left"):
-                with ScrollableContainer(id="topic-tree-scroll"):
-                    yield TopicTree(self._session_factory)
-                yield Static("", id="entry-count-hint")
-            yield EntryList(id="topic-entry-viewer")
-
-    def on_mount(self) -> None:
-        self.border_title = "Topics"
-
     # ------------------------------------------------------------------
-    # Help text
+    # Active topic indicator
     # ------------------------------------------------------------------
 
-    def _update_help_text(self) -> None:
-        if self.show_entries:
-            text = "arrows: navigate  enter: view entries  ctrl+j: select topic  ctrl+a: hide entries  esc: dismiss"
+    def watch_active_topic_id(self) -> None:
+        # Textual's Tree widget caches rendered lines in self._line_cache,
+        # keyed partly on self._updates (an internal counter). Calling
+        # self.refresh() schedules a repaint, but if _updates hasn't
+        # changed, Tree.render_line will return the cached (stale) strip
+        # instead of calling render_label again. Bumping _updates
+        # invalidates those cache entries so our render_label override
+        # (which reads active_topic_id to color the active topic and its
+        # ancestors) actually runs on the next paint.
+        self._updates += 1
+        self.refresh()
+
+    def _is_ancestor_of_active(self, node: TreeNode[Topic]) -> bool:
+        """Check if node is a strict ancestor of the active topic node."""
+        if self.active_topic_id is None:
+            return False
+        # Walk all descendants of this node looking for the active topic.
+        # Since the tree is lazy-loaded, we only check expanded children.
+        stack = list(node.children)
+        while stack:
+            child = stack.pop()
+            if child.data is not None and child.data.id == self.active_topic_id:
+                return True
+            if child.is_expanded:
+                stack.extend(child.children)
+        return False
+
+    def render_label(
+        self, node: TreeNode[Topic], base_style: Style, style: Style,
+    ) -> Text:
+        if node.data is not None and self.active_topic_id is not None:
+            is_active = node.data.id == self.active_topic_id
+            is_ancestor = not is_active and self._is_ancestor_of_active(node)
         else:
-            text = "arrows: navigate  ctrl+a: show entries  enter: select topic  esc: dismiss"
-        self.query_one("#topic-tree-help", Static).update(text)
+            is_active = False
+            is_ancestor = False
 
-    # ------------------------------------------------------------------
-    # Toggle entry viewer
-    # ------------------------------------------------------------------
-
-    async def watch_show_entries(self, value: bool) -> None:
-        if value:
-            self.add_class("--show-entries")
-            await self._load_entries_for_current_topic()
+        # Build the expand/collapse icon prefix.
+        if node._allow_expand:
+            icon = self.ICON_NODE_EXPANDED if node.is_expanded else self.ICON_NODE
+            if is_active or is_ancestor:
+                icon_style = base_style + TOGGLE_STYLE + _ACTIVE_TOPIC_COLOR
+            else:
+                icon_style = base_style + TOGGLE_STYLE
         else:
-            self.remove_class("--show-entries")
-        self._update_help_text()
+            icon = ""
+            icon_style = base_style
 
-    def action_toggle_entries(self) -> None:
-        self.show_entries = not self.show_entries
-
-    async def _load_entries_for_current_topic(self) -> None:
-        tree = self.query_one(TopicTree)
-        node = tree.cursor_node
-        if node is None or node.data is None:
-            return
-        topic = node.data
-        if topic.id not in self._entry_cache:
-            session_factory = self._session_factory
-            async with session_factory() as session:
-                entries = await list_entries(session, topic.id)
-                self._entry_cache[topic.id] = entries
-                self._entry_count_cache[topic.id] = len(entries)
-        viewer = self.query_one("#topic-entry-viewer", EntryList)
-        viewer.set_entries(self._entry_cache[topic.id])
-        if topic.id in self._entry_cursor_cache:
-            viewer.cursor = min(
-                self._entry_cursor_cache[topic.id],
-                max(len(self._entry_cache[topic.id]) - 1, 0),
-            )
-        viewer._scroll_cursor_visible()
-
-    # ------------------------------------------------------------------
-    # Horizontal scroll to keep highlighted node visible
-    # ------------------------------------------------------------------
-
-    def _scroll_to_node(self, node: TreeNode[Topic]) -> None:
-        """Scroll the tree container so the highlighted node is visible."""
-        scroll = self.query_one("#topic-tree-scroll", ScrollableContainer)
-        # Compute the node's depth (number of ancestors before root)
-        depth = 0
-        current = node
-        tree = self.query_one(TopicTree)
-        while current.parent is not None and current is not tree.root:
-            depth += 1
-            current = current.parent
-        # guide_depth (default 4) chars per level, plus padding
-        indent = depth * tree.guide_depth
-        label_len = len(str(node.label))
-        # Scroll so the node's label is visible with some margin
-        container_width = scroll.size.width
-        node_left = max(indent - 4, 0)  # small left padding to show siblings
-        node_right = indent + label_len + 4
-        # Only scroll if the label isn't fully visible
-        if node_left >= scroll.scroll_x and node_right <= scroll.scroll_x + container_width:
-            return  # fully visible, nothing to do
-        # Anchor to the beginning of the name
-        scroll.scroll_x = node_left
-
-    # ------------------------------------------------------------------
-    # Entry count hint + entry loading on cursor move
-    # ------------------------------------------------------------------
-
-    async def on_tree_node_highlighted(self, event: Tree.NodeHighlighted[Topic]) -> None:
-        topic = event.node.data
-        if topic is None:
-            return
-        # Scroll the container so the highlighted node's label is visible
-        self._scroll_to_node(event.node)
-        # Save cursor position for the previous topic
-        viewer = self.query_one("#topic-entry-viewer", EntryList)
-        if self._current_topic_id is not None:
-            self._entry_cursor_cache[self._current_topic_id] = viewer.cursor
-        self._current_topic_id = topic.id
-        session_factory = self._session_factory
-        if self.show_entries:
-            # Panel is open — fetch full entries (needed for display)
-            if topic.id not in self._entry_cache:
-                async with session_factory() as session:
-                    entries = await list_entries(session, topic.id)
-                    self._entry_cache[topic.id] = entries
-                    self._entry_count_cache[topic.id] = len(entries)
-            viewer.set_entries(self._entry_cache[topic.id])
-            # Restore saved cursor position
-            if topic.id in self._entry_cursor_cache:
-                viewer.cursor = min(
-                    self._entry_cursor_cache[topic.id],
-                    max(len(self._entry_cache[topic.id]) - 1, 0),
-                )
-            viewer._scroll_cursor_visible()
+        node_label = node._label.copy()
+        if is_active:
+            is_cursor = node is self.cursor_node
+            node_label.stylize(_ACTIVE_TOPIC_SELECTED if is_cursor else _ACTIVE_TOPIC_COLOR)
         else:
-            # Panel is closed — only fetch count (lightweight)
-            if topic.id not in self._entry_count_cache:
-                async with session_factory() as session:
-                    count = await count_entries(session, topic.id)
-                    self._entry_count_cache[topic.id] = count
-        # Update the count hint
-        count = self._entry_count_cache[topic.id]
-        if count == 0:
-            hint_text = "(no entries in this topic)"
-        elif count == 1:
-            hint_text = "(1 entry in this topic)"
-        else:
-            hint_text = f"({count} entries in this topic)"
-        self.query_one("#entry-count-hint", Static).update(hint_text)
+            node_label.stylize(style)
 
-    # ------------------------------------------------------------------
-    # Topic selection (Enter / Ctrl+J)
-    # ------------------------------------------------------------------
-
-    def on_tree_node_selected(self, event: Tree.NodeSelected[Topic]) -> None:
-        if event.node.data is None:
-            return
-        event.stop()
-        if self.show_entries:
-            # Enter with panel open → focus the entry viewer
-            self.query_one("#topic-entry-viewer", EntryList).focus()
-        else:
-            # Enter with panel closed → select topic and exit
-            self._post_topic_selected(event.node)
-
-    def action_select_topic(self) -> None:
-        """Ctrl+J — select the currently highlighted topic and exit."""
-        tree = self.query_one(TopicTree)
-        node = tree.cursor_node
-        if node is not None and node.data is not None:
-            self._post_topic_selected(node)
-
-    def _post_topic_selected(self, node: TreeNode[Topic]) -> None:
-        """Build the path and post TopicSelected."""
-        path: list[str] = []
-        current = node
-        while current.parent is not None:
-            if current.data is not None:
-                path.append(current.data.name)
-            current = current.parent
-        path.reverse()
-        self.post_message(self.TopicSelected(node.data, path))
-
-    # ------------------------------------------------------------------
-    # Entry viewer dismissed → return focus to tree
-    # ------------------------------------------------------------------
-
-    def on_entry_list_dismissed(self, event: EntryList.Dismissed) -> None:
-        event.stop()
-        self.query_one(TopicTree).focus()
-
-    # ------------------------------------------------------------------
-    # Dismiss viewer (Escape from tree)
-    # ------------------------------------------------------------------
-
-    def action_dismiss_viewer(self) -> None:
-        self.post_message(self.Dismissed())
-
-    # ------------------------------------------------------------------
-    # Dismiss button
-    # ------------------------------------------------------------------
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "topic-tree-dismiss":
-            self.post_message(self.Dismissed())
-
-    # ------------------------------------------------------------------
-    # Focus delegation
-    # ------------------------------------------------------------------
-
-    def focus(self, scroll_visible: bool = True) -> None:
-        """Delegate focus to the inner tree."""
-        self.query_one(TopicTree).focus(scroll_visible)
+        return Text.assemble((icon, icon_style), node_label)

@@ -24,7 +24,7 @@ from .resource_viewer import ResourceViewer
 from .status_bar import StatusBar
 from .thinking import ThinkingIndicator
 from .tool_call_list import ToolCallList
-from .topic_tree import TopicTree, TopicTreeViewer
+from .topic_tree import TopicTree
 from .welcome import WelcomeHeader
 
 __all__ = [
@@ -57,7 +57,6 @@ __all__ = [
     "ThinkingIndicator",
     "ToolCallList",
     "TopicTree",
-    "TopicTreeViewer",
     "WarningChoices",
     "WelcomeHeader",
     "WidgetDeactivated",
