@@ -19,6 +19,7 @@ _ALT_BG_1 = "rgb(25,25,25)"
 _ALT_BG_2 = "rgb(35,35,35)"
 _CHECKED_COLOR = "rgb(100,200,100)"
 _UNCHECKED_COLOR = "rgb(80,80,80)"
+_ID_COLOR = "rgb(80,80,80)"
 
 
 class ResourceLinker(Widget, can_focus=True):
@@ -69,6 +70,7 @@ class ResourceLinker(Widget, can_focus=True):
             self.linked = linked
 
     cursor: reactive[int] = reactive(0)
+    show_ids: reactive[bool] = reactive(False)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -115,6 +117,10 @@ class ResourceLinker(Widget, can_focus=True):
             self._render_list()
             self._update_hint()
             self._scroll_cursor_visible()
+
+    def watch_show_ids(self) -> None:
+        if self._resources:
+            self._render_list()
 
     def _scroll_cursor_visible(self) -> None:
         self.call_after_refresh(self._do_scroll_cursor_visible)
@@ -168,6 +174,8 @@ class ResourceLinker(Widget, can_focus=True):
             text.append(marker, style=name_style)
             text.append(checkbox, style=checkbox_color)
             text.append(resource.name, style=name_style)
+            if self.show_ids:
+                text.append(f"  [{resource.id}]", style=_ID_COLOR)
 
         self.query_one("#rlk-list", Static).update(text)
 

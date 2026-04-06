@@ -145,6 +145,7 @@ class ResourceViewer(Vertical):
         """Posted when the user dismisses the resource viewer."""
 
     view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
+    show_ids: reactive[bool] = reactive(False)
 
     def __init__(self, session_factory=None, resource_manager: ResourceManager | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -158,6 +159,7 @@ class ResourceViewer(Vertical):
         self._current_topic_id: int | None = None
         self._active_topic: Topic | None = None
         self._active_topic_path: list[str] = []
+        self._linker_toggle_in_progress: bool = False
 
     def compose(self):
         yield Static("", id="rv-help")
@@ -275,7 +277,11 @@ class ResourceViewer(Vertical):
                     self._linked_ids_cache[topic.id] = {r.id for r in linked}
 
             linker = self.query_one("#rv-resource-linker", ResourceLinker)
-            linker.set_resources(self._all_resources, self._linked_ids_cache[topic.id])
+            if self._linker_toggle_in_progress:
+                self._linker_toggle_in_progress = False
+                linker.update_linked_ids(self._linked_ids_cache[topic.id])
+            else:
+                linker.set_resources(self._all_resources, self._linked_ids_cache[topic.id])
 
     def set_active_topic(self, topic: Topic | None, path: list[str] | None = None) -> None:
         """Called by ChatPane when the active topic changes."""
@@ -333,6 +339,7 @@ class ResourceViewer(Vertical):
         if self._current_topic_id is None:
             return
 
+        self._linker_toggle_in_progress = True
         session_factory = self._session_factory
         async with session_factory() as session:
             if event.linked:
@@ -441,6 +448,9 @@ class ResourceViewer(Vertical):
         return None
 
     def action_focus_next_pane(self) -> None:
+        pane_ids = _MODE_PANES[self.view_mode]
+        if len(pane_ids) < 2:
+            return  # single-pane mode (e.g. LOAD_RESOURCES), nothing to cycle
         focused = self.screen.focused
         tree = self.query_one(TopicTree)
         right = self._get_right_pane_widget()
@@ -545,10 +555,13 @@ class ResourceViewer(Vertical):
     # ------------------------------------------------------------------
 
     def action_toggle_ids(self) -> None:
-        show = not self.query_one(TopicTree).show_ids
-        self.query_one(TopicTree).show_ids = show
-        self.query_one("#rv-resource-list", ResourceList).show_ids = show
-        self.query_one("#rv-resource-loader", ResourceLoader).show_ids = show
+        self.show_ids = not self.show_ids
+
+    def watch_show_ids(self, value: bool) -> None:
+        self.query_one(TopicTree).show_ids = value
+        self.query_one("#rv-resource-list", ResourceList).show_ids = value
+        self.query_one("#rv-resource-linker", ResourceLinker).show_ids = value
+        self.query_one("#rv-resource-loader", ResourceLoader).show_ids = value
 
     # ------------------------------------------------------------------
     # Dismiss / focus
