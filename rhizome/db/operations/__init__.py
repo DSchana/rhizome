@@ -45,6 +45,13 @@ from .reviews import (
     update_session_plan,
     update_session_summary,
 )
+from .resolve import (
+    AmbiguousResource,
+    AmbiguousTopic,
+    get_topic_path,
+    resolve_resource,
+    resolve_topic,
+)
 from .resources import (
     add_chunks,
     clear_chunks,
@@ -117,6 +124,12 @@ __all__ = [
     "get_flashcards_by_ids",
     "list_flashcards_by_entries",
     "list_flashcards_by_topic",
+    # resolve
+    "AmbiguousResource",
+    "AmbiguousTopic",
+    "get_topic_path",
+    "resolve_resource",
+    "resolve_topic",
     # resources
     "add_chunks",
     "clear_chunks",

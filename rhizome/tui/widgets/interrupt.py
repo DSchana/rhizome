@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from textual.binding import Binding
 from textual.widget import Widget
 
 from .navigable import NavigableWidgetMixin
@@ -15,7 +16,12 @@ class InterruptWidgetBase(NavigableWidgetMixin, Widget, can_focus=True):
 
     Subclasses get ``_future``, ``resolve()``, ``wait_for_selection()``,
     ``cancel()``, and the full ``NavigableWidgetMixin`` lifecycle for free.
+    Ctrl+C cancels the pending future when the widget has focus.
     """
+
+    BINDINGS = [
+        Binding("ctrl+c", "cancel_interrupt", "Cancel", show=False),
+    ]
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -43,3 +49,7 @@ class InterruptWidgetBase(NavigableWidgetMixin, Widget, can_focus=True):
         if not self._future.done():
             self._future.cancel()
             self.deactivate_navigation()
+
+    def action_cancel_interrupt(self) -> None:
+        """Handle ctrl+c — cancel the pending future."""
+        self.cancel()

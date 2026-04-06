@@ -187,9 +187,9 @@ class MultipleChoices(InterruptWidgetBase):
         else:
             all_answered = len(self._answers) == len(self._questions)
             if all_answered:
-                hint = "  (ctrl+left/right to navigate, ctrl+enter to submit)"
+                hint = "  (ctrl+left/right to navigate, ctrl+enter to submit, ctrl+c to cancel)"
             else:
-                hint = "  (ctrl+left/right to navigate between questions)"
+                hint = "  (ctrl+left/right to navigate between questions, ctrl+c to cancel)"
         self.query_one("#mc-hint", Static).update(hint)
 
     def _render_prompt(self) -> None:

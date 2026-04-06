@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import traceback
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Literal
@@ -28,7 +29,13 @@ from textual.worker import Worker
 from rhizome.agent import AgentSession
 from rhizome.agent.session import get_agent_kwargs
 from rhizome.db import Topic
-from rhizome.db.operations import delete_resource, get_resource, link_resource_to_topic, unlink_resource_from_topic
+from rhizome.db.operations import (
+    delete_resource,
+    link_resource_to_topic,
+    resolve_resource,
+    resolve_topic,
+    unlink_resource_from_topic,
+)
 from rhizome.logs import get_logger
 from rhizome.resources import ResourceManager
 from rhizome.resources.ingest import extract_text_from_file, fetch_webpage_text, ingest_resource
@@ -51,11 +58,21 @@ from .resource_viewer import ResourceViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
 from .flashcard_review import AgainBehaviour, FlashcardReview
+from .choices import Choices
+from .multiple_choices import MultipleChoices
 from .navigable import WidgetDeactivated
 
 
 class HintHigherVerbosity(Message):
     """Posted by the hint_higher_verbosity tool to suggest the user raise verbosity."""
+
+
+@dataclass
+class _AmbiguousSpec:
+    """One ambiguous identifier awaiting user disambiguation."""
+    key: str        # unique key to identify this in the results dict
+    prompt: str     # e.g. "Multiple topics match 'Types':"
+    options: list[str]  # e.g. ["[14] Linux > ... > Types", "[31] Programming > ... > Types"]
 
 
 class ChatPane(Widget):
@@ -729,7 +746,7 @@ class ChatPane(Widget):
         @resources_group.command(name="add", help="Add a resource from a file or webpage")
         @click.argument("source")
         @click.argument("name", required=False, default=None)
-        @click.option("--topics", default=None, help="Comma-separated topic IDs to link")
+        @click.option("--topics", default=None, help="Comma-separated topic IDs or names to link")
         @click.option("--no-active-topic", is_flag=True, help="Don't auto-link to active topic")
         async def resources_add(source, name, topics, no_active_topic):
             await self._cmd_resources_add(source, name=name, topics=topics, no_active_topic=no_active_topic)
@@ -739,19 +756,19 @@ class ChatPane(Widget):
             await self._cmd_resources_new()
 
         @resources_group.command(name="link", help="Link a resource to topics (defaults to active topic)")
-        @click.argument("resource_id", type=int)
-        @click.argument("topic_ids", nargs=-1, type=int)
+        @click.argument("resource_id")
+        @click.argument("topic_ids", nargs=-1)
         async def resources_link(resource_id, topic_ids):
             await self._cmd_resources_link(resource_id, list(topic_ids))
 
         @resources_group.command(name="unlink", help="Unlink a resource from topics (defaults to active topic)")
-        @click.argument("resource_id", type=int)
-        @click.argument("topic_ids", nargs=-1, type=int)
+        @click.argument("resource_id")
+        @click.argument("topic_ids", nargs=-1)
         async def resources_unlink(resource_id, topic_ids):
             await self._cmd_resources_unlink(resource_id, list(topic_ids))
 
         @resources_group.command(name="delete", help="Delete a resource")
-        @click.argument("resource_id", type=int)
+        @click.argument("resource_id")
         async def resources_delete(resource_id):
             await self._cmd_resources_delete(resource_id)
 
@@ -1031,11 +1048,11 @@ class ChatPane(Widget):
         # Build topic ID list
         topic_ids: list[int] = []
         if topics:
-            try:
-                topic_ids = [int(t.strip()) for t in topics.split(",") if t.strip()]
-            except ValueError:
-                self.append_message(ChatMessageData(role=Role.SYSTEM, content="Invalid topic IDs — expected comma-separated integers."))
+            identifiers = [t.strip() for t in topics.split(",") if t.strip()]
+            resolved = await self._resolve_identifiers(topics=identifiers)
+            if resolved is None:
                 return
+            topic_ids = resolved["topics"]
 
         if not no_active_topic and self.active_topic is not None:
             if self.active_topic.id not in topic_ids:
@@ -1059,23 +1076,144 @@ class ChatPane(Widget):
             parts.append(f"Linked to topic(s): {', '.join(str(t) for t in topic_ids)}")
         self.append_message(ChatMessageData(role=Role.SYSTEM, content=".  ".join(parts) + "."))
 
-    async def _check_resource_exists(self, resource_id: int) -> bool:
-        async with self._session_factory() as session:
-            resource = await get_resource(session, resource_id)
-        if resource is None:
-            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Resource {resource_id} not found."))
-            return False
-        return True
+    # ------------------------------------------------------------------
+    # Name resolution helpers
+    # ------------------------------------------------------------------
 
-    async def _cmd_resources_link(self, resource_id: int, topic_ids: list[int]) -> None:
+    async def _resolve_identifiers(
+        self,
+        *,
+        resource: str | None = None,
+        topics: list[str] | None = None,
+    ) -> dict[str, int | list[int]] | None:
+        """Resolve resource and/or topic identifiers, batching all ambiguities.
+
+        Returns a dict with ``"resource"`` (int) and/or ``"topics"`` (list[int])
+        keys on success, or ``None`` on error/cancel.  Only keys whose arguments
+        were provided are included in the result.
+        """
+        specs: list[_AmbiguousSpec] = []
+        result: dict[str, int | list[int]] = {}
+
+        # Placeholder bookkeeping for ambiguous topics: index in topic_ids → spec key.
+        topic_ids: list[int] = []
+        ambiguous_topic_map: dict[str, int] = {}  # spec key → index in topic_ids
+
+        async with self._session_factory() as session:
+            if resource is not None:
+                try:
+                    res = await resolve_resource(session, resource)
+                except ValueError as e:
+                    self.append_message(ChatMessageData(role=Role.SYSTEM, content=str(e)))
+                    return None
+                if isinstance(res, list):
+                    specs.append(_AmbiguousSpec(
+                        key="resource",
+                        prompt=f"Multiple resources match '{resource}':",
+                        options=[f"[{ar.resource.id}] {ar.resource.name}" for ar in res],
+                    ))
+                else:
+                    result["resource"] = res.id
+
+            if topics is not None:
+                for i, ident in enumerate(topics):
+                    try:
+                        top = await resolve_topic(session, ident)
+                    except ValueError as e:
+                        self.append_message(ChatMessageData(role=Role.SYSTEM, content=str(e)))
+                        return None
+                    if isinstance(top, list):
+                        key = f"topic:{i}"
+                        specs.append(_AmbiguousSpec(
+                            key=key,
+                            prompt=f"Multiple topics match '{ident}':",
+                            options=[f"[{at.topic.id}] {at.path}" for at in top],
+                        ))
+                        ambiguous_topic_map[key] = len(topic_ids)
+                        topic_ids.append(-1)  # placeholder
+                    else:
+                        topic_ids.append(top.id)
+
+        # Disambiguate all at once
+        if specs:
+            answers = await self._disambiguate_identifiers(specs)
+            if answers is None:
+                return None
+            if "resource" in answers:
+                result["resource"] = answers["resource"]
+            for key, idx in ambiguous_topic_map.items():
+                topic_ids[idx] = answers[key]
+
+        if topics is not None:
+            result["topics"] = topic_ids
+
+        return result
+
+    async def _disambiguate_identifiers(self, specs: list[_AmbiguousSpec]) -> dict[str, int] | None:
+        """Show a disambiguation widget for all ambiguous specifiers at once.
+
+        Uses ``Choices`` for a single spec, ``MultipleChoices`` for several.
+        A "Cancel" option is appended to each question.
+
+        Returns ``{spec.key: resolved_id}`` on success, or ``None`` on cancel.
+        """
+        if not specs:
+            return {}
+
+        questions = [
+            {"name": s.key, "prompt": s.prompt, "options": s.options}
+            for s in specs
+        ]
+
+        area = self.query_one("#message-area", VerticalScroll)
+        if len(questions) == 1:
+            q = questions[0]
+            widget = Choices(prompt=q["prompt"], options=q["options"])
+        else:
+            widget = MultipleChoices(questions=questions)
+
+        await area.mount(widget)
+        area.scroll_end(animate=False)
+
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = True
+        chat_input.placeholder = "Select an option above..."
+        self._active_widgets.append(widget)
+        widget.focus()
+
+        try:
+            raw = await widget.wait_for_selection()
+        except asyncio.CancelledError:
+            return None
+        finally:
+            self._restore_chat_input()
+
+        # Normalise: Choices returns a bare string; MultipleChoices returns a dict.
+        if isinstance(raw, str):
+            results = {questions[0]["name"]: raw}
+        else:
+            results = raw
+
+        # Extract numeric IDs from "[123] label" format.
+        return {k: int(v.split("]")[0].lstrip("[")) for k, v in results.items()}
+
+    async def _cmd_resources_link(self, resource_identifier: str, topic_identifiers: list[str]) -> None:
         """Link a resource to one or more topics."""
-        if not await self._check_resource_exists(resource_id):
+        resolved = await self._resolve_identifiers(
+            resource=resource_identifier,
+            topics=topic_identifiers or None,
+        )
+        if resolved is None:
             return
-        if not topic_ids:
-            if self.active_topic is None:
-                self.append_message(ChatMessageData(role=Role.SYSTEM, content="No topic IDs provided and no active topic set."))
-                return
+        resource_id = resolved["resource"]
+
+        if "topics" in resolved:
+            topic_ids = resolved["topics"]
+        elif self.active_topic is not None:
             topic_ids = [self.active_topic.id]
+        else:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content="No topic IDs provided and no active topic set."))
+            return
 
         try:
             async with self._session_factory() as session:
@@ -1091,15 +1229,23 @@ class ChatPane(Widget):
             content=f"Resource [{resource_id}] linked to topic(s): {', '.join(str(t) for t in topic_ids)}.",
         ))
 
-    async def _cmd_resources_unlink(self, resource_id: int, topic_ids: list[int]) -> None:
+    async def _cmd_resources_unlink(self, resource_identifier: str, topic_identifiers: list[str]) -> None:
         """Unlink a resource from one or more topics."""
-        if not await self._check_resource_exists(resource_id):
+        resolved = await self._resolve_identifiers(
+            resource=resource_identifier,
+            topics=topic_identifiers or None,
+        )
+        if resolved is None:
             return
-        if not topic_ids:
-            if self.active_topic is None:
-                self.append_message(ChatMessageData(role=Role.SYSTEM, content="No topic IDs provided and no active topic set."))
-                return
+        resource_id = resolved["resource"]
+
+        if "topics" in resolved:
+            topic_ids = resolved["topics"]
+        elif self.active_topic is not None:
             topic_ids = [self.active_topic.id]
+        else:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content="No topic IDs provided and no active topic set."))
+            return
 
         try:
             async with self._session_factory() as session:
@@ -1115,10 +1261,12 @@ class ChatPane(Widget):
             content=f"Resource [{resource_id}] unlinked from topic(s): {', '.join(str(t) for t in topic_ids)}.",
         ))
 
-    async def _cmd_resources_delete(self, resource_id: int) -> None:
+    async def _cmd_resources_delete(self, resource_identifier: str) -> None:
         """Delete a resource."""
-        if not await self._check_resource_exists(resource_id):
+        resolved = await self._resolve_identifiers(resource=resource_identifier)
+        if resolved is None:
             return
+        resource_id = resolved["resource"]
         try:
             async with self._session_factory() as session:
                 await delete_resource(session, resource_id)

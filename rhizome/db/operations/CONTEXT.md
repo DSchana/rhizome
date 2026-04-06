@@ -16,6 +16,8 @@ Async tool functions for the agent/TUI to interact with the database. Every publ
 
 - **flashcards.py** — `create_flashcard` (with topic_id, question/answer text, entry_ids, optional testing_notes and session_id), `list_flashcards_by_topic` (all flashcards for a topic, eager-loads flashcard_entries and session for ephemeral detection), `count_flashcards_by_topic` (count for a topic), `list_flashcards_by_entries` (flashcards linked to given entry IDs, excludes ephemeral), `get_flashcards_by_ids` (with eager-loaded flashcard_entries), `get_flashcard_entry_ids` (resolve flashcard → entry_ids).
 
+- **resolve.py** — `resolve_topic` and `resolve_resource` accept a numeric ID, a plain name (partial case-insensitive match), or a `/`-separated ancestor path for disambiguation (e.g. `"Linux/Filesystem/Types"`). Returns a single model instance on unambiguous match, or a list of `AmbiguousTopic`/`AmbiguousResource` candidates when zero or multiple matches are found. `get_topic_path` builds the full `>` -separated display path for a topic.
+
 ## Conventions
 
 - Missing entities raise `ValueError` (for updates/deletes).
@@ -24,4 +26,4 @@ Async tool functions for the agent/TUI to interact with the database. Every publ
 
 ## `__init__.py` exports
 
-All public functions and `CycleError`. Import from `rhizome.db.operations` directly.
+All public functions, `CycleError`, `AmbiguousTopic`, and `AmbiguousResource`. Import from `rhizome.db.operations` directly.
