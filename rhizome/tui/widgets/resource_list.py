@@ -18,10 +18,13 @@ _HINT = "rgb(80,80,80)"
 _ACCENT = "rgb(255,80,80)"
 _FOCUS_GREEN = "rgb(100,200,100)"
 _ALT_GREY = "rgb(180,180,180)"
+_ID_COLOR = "rgb(80,80,80)"
 
 
 class ResourceList(Widget, can_focus=True):
     """Read-only resource list with detail panel for browsing Resource objects."""
+
+    show_ids: reactive[bool] = reactive(False)
 
     BINDINGS = [
         Binding("up", "cursor_up", show=False),
@@ -121,6 +124,10 @@ class ResourceList(Widget, can_focus=True):
     # Reactive watchers
     # ------------------------------------------------------------------
 
+    def watch_show_ids(self) -> None:
+        if self._resources:
+            self._render_list()
+
     def watch_cursor(self) -> None:
         if self._resources:
             self._render_list()
@@ -194,6 +201,8 @@ class ResourceList(Widget, can_focus=True):
             text.append(marker, style=marker_style)
             text.append(num, style=style)
             text.append(resource.name, style=style)
+            if self.show_ids:
+                text.append(f"  [{resource.id}]", style=_ID_COLOR)
 
             right = right_parts[i].rjust(max_right)
             padding = max_name - len(resource.name) + 2

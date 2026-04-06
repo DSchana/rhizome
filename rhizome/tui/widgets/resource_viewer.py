@@ -137,6 +137,7 @@ class ResourceViewer(Vertical):
         Binding("ctrl+left", "focus_prev_pane", show=False),
         Binding("ctrl+right", "focus_next_pane", show=False),
         Binding("ctrl+j", "select_active_topic", show=False, priority=True),
+        Binding("i", "toggle_ids", show=False),
         Binding("escape", "dismiss_viewer", show=False),
     ]
 
@@ -189,6 +190,7 @@ class ResourceViewer(Vertical):
             parts.append("ctrl+\u2190/\u2192: switch pane")
         if self.view_mode != ResourceViewMode.LOAD_RESOURCES:
             parts.append("ctrl+enter: set topic")
+            parts.append("i: toggle ids")
         parts.append("esc: close")
         self.query_one("#rv-help", Static).update("  ".join(parts))
 
@@ -415,14 +417,17 @@ class ResourceViewer(Vertical):
     # ------------------------------------------------------------------
 
     def _get_right_pane_widget(self):
-        """Return the focusable widget in the currently visible right pane."""
+        """Return the focusable widget in the currently visible right pane, or None if empty."""
         mode = self.view_mode
         if mode == ResourceViewMode.TOPIC_RESOURCES:
-            return self.query_one("#rv-resource-list", ResourceList)
+            rl = self.query_one("#rv-resource-list", ResourceList)
+            return rl if rl._resources else None
         elif mode == ResourceViewMode.LINK_RESOURCES:
-            return self.query_one("#rv-resource-linker", ResourceLinker)
+            lk = self.query_one("#rv-resource-linker", ResourceLinker)
+            return lk if lk._resources else None
         elif mode == ResourceViewMode.LOAD_RESOURCES:
-            return self.query_one("#rv-resource-loader", ResourceLoader)
+            ld = self.query_one("#rv-resource-loader", ResourceLoader)
+            return ld if ld._resources else None
         return None
 
     def action_focus_next_pane(self) -> None:
@@ -519,6 +524,15 @@ class ResourceViewer(Vertical):
             path.reverse()
             tree.active_topic_id = topic.id
             self.post_message(ActiveTopicChanged(topic, path))
+
+    # ------------------------------------------------------------------
+    # Toggle topic IDs
+    # ------------------------------------------------------------------
+
+    def action_toggle_ids(self) -> None:
+        show = not self.query_one(TopicTree).show_ids
+        self.query_one(TopicTree).show_ids = show
+        self.query_one("#rv-resource-list", ResourceList).show_ids = show
 
     # ------------------------------------------------------------------
     # Dismiss / focus

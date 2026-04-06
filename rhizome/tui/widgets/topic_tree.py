@@ -14,16 +14,19 @@ from rhizome.db.operations import list_children, list_root_topics
 
 _ACTIVE_TOPIC_COLOR = Style(color="rgb(0,191,255)")
 _ACTIVE_TOPIC_SELECTED = Style(color="rgb(100,210,255)", bold=True)
+_ID_STYLE = Style(color="rgb(80,80,80)")
 
 
 class TopicTree(Tree[Topic]):
     """The actual Tree widget — used inside TopicTree container."""
 
     active_topic_id: reactive[int | None] = reactive(None)
+    show_ids: reactive[bool] = reactive(False)
 
-    def __init__(self, session_factory=None) -> None:
+    def __init__(self, session_factory=None, *, show_ids: bool = False) -> None:
         super().__init__("Topics")
         self.show_root = False
+        self.show_ids = show_ids
         self._session_factory = session_factory
 
     def _refresh_height(self) -> None:
@@ -128,20 +131,30 @@ class TopicTree(Tree[Topic]):
             super()._on_key(event) # pyright: ignore[reportUnusedCoroutine]
 
     # ------------------------------------------------------------------
+    # Cache invalidation
+    # ------------------------------------------------------------------
+
+    def _invalidate_label_cache(self) -> None:
+        """Invalidate the Tree's rendered line cache and schedule a repaint.
+
+        Textual's Tree widget caches rendered lines in ``_line_cache``,
+        keyed partly on ``self._updates`` (an internal counter). A plain
+        ``refresh()`` schedules a repaint but won't bust the cache, so
+        ``render_label`` never re-runs. Bumping ``_updates`` ensures
+        stale cache entries are discarded.
+        """
+        self._updates += 1
+        self.refresh()
+
+    # ------------------------------------------------------------------
     # Active topic indicator
     # ------------------------------------------------------------------
 
     def watch_active_topic_id(self) -> None:
-        # Textual's Tree widget caches rendered lines in self._line_cache,
-        # keyed partly on self._updates (an internal counter). Calling
-        # self.refresh() schedules a repaint, but if _updates hasn't
-        # changed, Tree.render_line will return the cached (stale) strip
-        # instead of calling render_label again. Bumping _updates
-        # invalidates those cache entries so our render_label override
-        # (which reads active_topic_id to color the active topic and its
-        # ancestors) actually runs on the next paint.
-        self._updates += 1
-        self.refresh()
+        self._invalidate_label_cache()
+
+    def watch_show_ids(self) -> None:
+        self._invalidate_label_cache()
 
     def _is_ancestor_of_active(self, node: TreeNode[Topic]) -> bool:
         """Check if node is a strict ancestor of the active topic node."""
@@ -186,4 +199,9 @@ class TopicTree(Tree[Topic]):
         else:
             node_label.stylize(style)
 
-        return Text.assemble((icon, icon_style), node_label)
+        text = Text.assemble((icon, icon_style), node_label)
+
+        if self.show_ids and node.data is not None:
+            text.append(f"  [{node.data.id}]", style=_ID_STYLE)
+
+        return text
