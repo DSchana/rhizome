@@ -28,8 +28,10 @@ from textual.worker import Worker
 from rhizome.agent import AgentSession
 from rhizome.agent.session import get_agent_kwargs
 from rhizome.db import Topic
+from rhizome.db.operations import delete_resource, get_resource, link_resource_to_topic, unlink_resource_from_topic
 from rhizome.logs import get_logger
 from rhizome.resources import ResourceManager
+from rhizome.resources.ingest import extract_text_from_file, fetch_webpage_text, ingest_resource
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
 from rhizome.tui.options import Options, OptionScope, build_jsonc_snapshot, parse_jsonc
@@ -717,9 +719,41 @@ class ChatPane(Widget):
         async def explore():
             await self._cmd_explore()
 
-        @registry.command(name="resources", help="Toggle the resources panel (ctrl+r)")
-        async def resources():
-            await self._cmd_resources()
+        @registry.group(name="resources", help="Resource management (ctrl+r to toggle panel)",
+                        invoke_without_command=True)
+        @click.pass_context
+        async def resources_group(ctx):
+            if ctx.invoked_subcommand is None:
+                await self._cmd_resources()
+
+        @resources_group.command(name="add", help="Add a resource from a file or webpage")
+        @click.argument("source")
+        @click.argument("name", required=False, default=None)
+        @click.option("--topics", default=None, help="Comma-separated topic IDs to link")
+        @click.option("--no-active-topic", is_flag=True, help="Don't auto-link to active topic")
+        async def resources_add(source, name, topics, no_active_topic):
+            await self._cmd_resources_add(source, name=name, topics=topics, no_active_topic=no_active_topic)
+
+        @resources_group.command(name="new", help="Browse files and create a new resource")
+        async def resources_new():
+            await self._cmd_resources_new()
+
+        @resources_group.command(name="link", help="Link a resource to topics (defaults to active topic)")
+        @click.argument("resource_id", type=int)
+        @click.argument("topic_ids", nargs=-1, type=int)
+        async def resources_link(resource_id, topic_ids):
+            await self._cmd_resources_link(resource_id, list(topic_ids))
+
+        @resources_group.command(name="unlink", help="Unlink a resource from topics (defaults to active topic)")
+        @click.argument("resource_id", type=int)
+        @click.argument("topic_ids", nargs=-1, type=int)
+        async def resources_unlink(resource_id, topic_ids):
+            await self._cmd_resources_unlink(resource_id, list(topic_ids))
+
+        @resources_group.command(name="delete", help="Delete a resource")
+        @click.argument("resource_id", type=int)
+        async def resources_delete(resource_id):
+            await self._cmd_resources_delete(resource_id)
 
         @registry.command(name="idle", help="Return to idle mode")
         async def idle():
@@ -911,6 +945,192 @@ class ChatPane(Widget):
         else:
             viewer.add_class("--visible")
             viewer.focus()
+
+    async def _cmd_resources_new(self) -> None:
+        """Open a multi-step modal to create a new resource."""
+        from rhizome.tui.screens.new_resource import NewResourceScreen
+        self.app.push_screen(NewResourceScreen(), callback=self._on_new_resource_confirmed)
+
+    def _on_new_resource_confirmed(self, result) -> None:
+        if result is None:
+            return
+        self.run_worker(self._ingest_new_resource(result))
+
+    async def _ingest_new_resource(self, result) -> None:
+        """Ingest a resource from the NewResourceScreen result."""
+        from rhizome.tui.screens.new_resource import NewResourceResult
+        result: NewResourceResult
+
+        try:
+            raw_text = extract_text_from_file(str(result.path))
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error reading file: {e}"))
+            return
+
+        if not raw_text.strip():
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content="No text content extracted from file."))
+            return
+
+        # Build topic list (auto-link to active topic)
+        topic_ids: list[int] = []
+        if self.active_topic is not None:
+            topic_ids.append(self.active_topic.id)
+
+        try:
+            resource_id, estimated_tokens = await ingest_resource(
+                self._session_factory,
+                name=result.name,
+                raw_text=raw_text,
+                topic_ids=topic_ids or None,
+                loading_preference=result.loading_preference,
+            )
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error creating resource: {e}"))
+            return
+
+        from rhizome.tui.widgets.resource_loader import _fmt_tokens
+        parts = [f"Resource [{resource_id}] '{result.name}' created (~{_fmt_tokens(estimated_tokens)} tokens, pref={result.loading_preference.value})"]
+        if topic_ids:
+            parts.append(f"Linked to topic(s): {', '.join(str(t) for t in topic_ids)}")
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content=".  ".join(parts) + "."))
+
+    async def _cmd_resources_add(
+        self,
+        source: str,
+        *,
+        name: str | None = None,
+        topics: str | None = None,
+        no_active_topic: bool = False,
+    ) -> None:
+        """Add a resource from a file path or webpage URL."""
+        is_url = source.startswith("http://") or source.startswith("https://")
+
+        # Extract text
+        try:
+            if is_url:
+                self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Fetching {source}..."))
+                raw_text = await fetch_webpage_text(source)
+            else:
+                raw_text = extract_text_from_file(source)
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error reading source: {e}"))
+            return
+
+        if not raw_text.strip():
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content="No text content extracted from source."))
+            return
+
+        # Derive name from source if not provided
+        if not name:
+            if is_url:
+                from urllib.parse import urlparse
+                name = urlparse(source).path.rstrip("/").rsplit("/", 1)[-1] or urlparse(source).netloc
+            else:
+                name = Path(source).stem
+
+        # Build topic ID list
+        topic_ids: list[int] = []
+        if topics:
+            try:
+                topic_ids = [int(t.strip()) for t in topics.split(",") if t.strip()]
+            except ValueError:
+                self.append_message(ChatMessageData(role=Role.SYSTEM, content="Invalid topic IDs — expected comma-separated integers."))
+                return
+
+        if not no_active_topic and self.active_topic is not None:
+            if self.active_topic.id not in topic_ids:
+                topic_ids.append(self.active_topic.id)
+
+        # Ingest
+        try:
+            resource_id, estimated_tokens = await ingest_resource(
+                self._session_factory,
+                name=name,
+                raw_text=raw_text,
+                topic_ids=topic_ids or None,
+            )
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error creating resource: {e}"))
+            return
+
+        from rhizome.tui.widgets.resource_loader import _fmt_tokens
+        parts = [f"Resource [{resource_id}] '{name}' created (~{_fmt_tokens(estimated_tokens)} tokens)"]
+        if topic_ids:
+            parts.append(f"Linked to topic(s): {', '.join(str(t) for t in topic_ids)}")
+        self.append_message(ChatMessageData(role=Role.SYSTEM, content=".  ".join(parts) + "."))
+
+    async def _check_resource_exists(self, resource_id: int) -> bool:
+        async with self._session_factory() as session:
+            resource = await get_resource(session, resource_id)
+        if resource is None:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Resource {resource_id} not found."))
+            return False
+        return True
+
+    async def _cmd_resources_link(self, resource_id: int, topic_ids: list[int]) -> None:
+        """Link a resource to one or more topics."""
+        if not await self._check_resource_exists(resource_id):
+            return
+        if not topic_ids:
+            if self.active_topic is None:
+                self.append_message(ChatMessageData(role=Role.SYSTEM, content="No topic IDs provided and no active topic set."))
+                return
+            topic_ids = [self.active_topic.id]
+
+        try:
+            async with self._session_factory() as session:
+                for tid in topic_ids:
+                    await link_resource_to_topic(session, resource_id=resource_id, topic_id=tid)
+                await session.commit()
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error linking resource: {e}"))
+            return
+
+        self.append_message(ChatMessageData(
+            role=Role.SYSTEM,
+            content=f"Resource [{resource_id}] linked to topic(s): {', '.join(str(t) for t in topic_ids)}.",
+        ))
+
+    async def _cmd_resources_unlink(self, resource_id: int, topic_ids: list[int]) -> None:
+        """Unlink a resource from one or more topics."""
+        if not await self._check_resource_exists(resource_id):
+            return
+        if not topic_ids:
+            if self.active_topic is None:
+                self.append_message(ChatMessageData(role=Role.SYSTEM, content="No topic IDs provided and no active topic set."))
+                return
+            topic_ids = [self.active_topic.id]
+
+        try:
+            async with self._session_factory() as session:
+                for tid in topic_ids:
+                    await unlink_resource_from_topic(session, resource_id=resource_id, topic_id=tid)
+                await session.commit()
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error unlinking resource: {e}"))
+            return
+
+        self.append_message(ChatMessageData(
+            role=Role.SYSTEM,
+            content=f"Resource [{resource_id}] unlinked from topic(s): {', '.join(str(t) for t in topic_ids)}.",
+        ))
+
+    async def _cmd_resources_delete(self, resource_id: int) -> None:
+        """Delete a resource."""
+        if not await self._check_resource_exists(resource_id):
+            return
+        try:
+            async with self._session_factory() as session:
+                await delete_resource(session, resource_id)
+                await session.commit()
+        except Exception as e:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error deleting resource: {e}"))
+            return
+
+        self.append_message(ChatMessageData(
+            role=Role.SYSTEM,
+            content=f"Resource [{resource_id}] deleted.",
+        ))
 
     def action_refocus_resources(self) -> None:
         """Ctrl+R — focus the resources panel if visible."""
