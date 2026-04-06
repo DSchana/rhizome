@@ -72,6 +72,7 @@ async def ingest_resource(
     raw_text: str,
     topic_ids: list[int] | None = None,
     loading_preference: LoadingPreference = LoadingPreference.auto,
+    summary: str | None = None,
 ) -> tuple[int, int]:
     """Create a resource from raw text and optionally link to topics.
 
@@ -86,6 +87,7 @@ async def ingest_resource(
             name=name,
             raw_text=raw_text,
             content_hash=content_hash,
+            summary=summary,
             estimated_tokens=estimated_tokens,
             loading_preference=loading_preference,
         )

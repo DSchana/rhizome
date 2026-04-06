@@ -43,7 +43,7 @@ class _Focus(enum.IntEnum):
 class NewResourceResult:
     """Result returned by NewResourceScreen on confirmation."""
     path: Path
-    name: str
+    name: str | None  # None means auto-generate via LLM
     loading_preference: LoadingPreference
 
 
@@ -92,7 +92,12 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
         margin-bottom: 1;
     }
     NewResourceScreen #nr-name-input {
-        margin-bottom: 1;
+        margin-bottom: 0;
+    }
+    NewResourceScreen #nr-name-hint {
+        color: rgb(80,80,80);
+        margin: 0 0 1 2;
+        height: 1;
     }
     NewResourceScreen #nr-pref-list {
         height: auto;
@@ -114,6 +119,7 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
                 yield Static("ctrl+c to cancel", id="nr-cancel-hint")
             yield FileBrowser(id="nr-browser")
             yield Input(placeholder="Resource name", id="nr-name-input")
+            yield Static("leave blank for auto", id="nr-name-hint")
             yield Static(id="nr-pref-list")
 
     def on_mount(self) -> None:
@@ -166,8 +172,6 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        if not event.value.strip():
-            return
         self.focus_section = _Focus.PREFERENCE
 
     # ------------------------------------------------------------------
@@ -218,9 +222,9 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
             event.prevent_default()
 
     def _confirm(self) -> None:
-        name = self.query_one("#nr-name-input", Input).value.strip()
-        if self._selected_path is None or not name:
+        if self._selected_path is None:
             return
+        name = self.query_one("#nr-name-input", Input).value.strip() or None
         self.dismiss(NewResourceResult(
             path=self._selected_path,
             name=name,

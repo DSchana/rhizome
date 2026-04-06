@@ -20,13 +20,16 @@ import rich_click as click
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static, TabbedContent
 from textual.worker import Worker
 
+from langchain.chat_models import init_chat_model
+
 from rhizome.agent import AgentSession
+from rhizome.agent.config import get_api_key
 from rhizome.agent.session import get_agent_kwargs
 from rhizome.db import Topic
 from rhizome.db.operations import (
@@ -38,6 +41,7 @@ from rhizome.db.operations import (
 )
 from rhizome.logs import get_logger
 from rhizome.resources import ResourceManager
+from rhizome.resources.auto_metadata import generate_resource_metadata
 from rhizome.resources.ingest import extract_text_from_file, fetch_webpage_text, ingest_resource
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
@@ -61,6 +65,8 @@ from .flashcard_review import AgainBehaviour, FlashcardReview
 from .choices import Choices
 from .multiple_choices import MultipleChoices
 from .navigable import WidgetDeactivated
+from .resource_loader import _fmt_tokens
+from .thinking import Spinner
 
 
 class HintHigherVerbosity(Message):
@@ -988,6 +994,34 @@ class ChatPane(Widget):
             self.append_message(ChatMessageData(role=Role.SYSTEM, content="No text content extracted from file."))
             return
 
+        # Mount a container that holds the spinner now and the result message later,
+        # so it stays in position even if the user sends messages while we work.
+        area = self.query_one("#message-area", VerticalScroll)
+        container = Vertical(classes="--ingest-container")
+        container.styles.height = "auto"
+        await area.mount(container)
+        spinner = Spinner("generating metadata...")
+        await container.mount(spinner)
+        area.scroll_end(animate=False)
+
+        # Auto-generate metadata (title + summary) via LLM.
+        name = result.name
+        summary: str | None = None
+        metadata_tokens: int | None = None
+        try:
+            llm = init_chat_model("claude-haiku-4-5-20251001", api_key=get_api_key(), temperature=0.0)
+            meta_result = await generate_resource_metadata(llm, raw_text)
+            summary = meta_result.metadata.summary
+            metadata_tokens = meta_result.total_tokens
+            if name is None:
+                name = meta_result.metadata.title
+        except Exception as e:
+            self._log.warning("Auto-metadata generation failed: %s", e)
+            if name is None:
+                name = result.path.stem
+        finally:
+            await spinner.remove()
+
         # Build topic list (auto-link to active topic)
         topic_ids: list[int] = []
         if self.active_topic is not None:
@@ -996,20 +1030,23 @@ class ChatPane(Widget):
         try:
             resource_id, estimated_tokens = await ingest_resource(
                 self._session_factory,
-                name=result.name,
+                name=name,
                 raw_text=raw_text,
                 topic_ids=topic_ids or None,
                 loading_preference=result.loading_preference,
+                summary=summary,
             )
         except Exception as e:
             self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error creating resource: {e}"))
             return
 
-        from rhizome.tui.widgets.resource_loader import _fmt_tokens
-        parts = [f"Resource [{resource_id}] '{result.name}' created (~{_fmt_tokens(estimated_tokens)} tokens, pref={result.loading_preference.value})"]
+        parts = [f"Resource [{resource_id}] '{name}' created (~{_fmt_tokens(estimated_tokens)} tokens, pref={result.loading_preference.value})"]
         if topic_ids:
             parts.append(f"Linked to topic(s): {', '.join(str(t) for t in topic_ids)}")
-        self.append_message(ChatMessageData(role=Role.SYSTEM, content=".  ".join(parts) + "."))
+        if metadata_tokens is not None:
+            parts.append(f"(~{_fmt_tokens(metadata_tokens)} tokens used in generating summary)")
+        msg = RichChatMessage(role=Role.SYSTEM, content=".  ".join(parts) + ".")
+        await container.mount(msg)
 
     async def _cmd_resources_add(
         self,
@@ -1070,7 +1107,7 @@ class ChatPane(Widget):
             self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error creating resource: {e}"))
             return
 
-        from rhizome.tui.widgets.resource_loader import _fmt_tokens
+
         parts = [f"Resource [{resource_id}] '{name}' created (~{_fmt_tokens(estimated_tokens)} tokens)"]
         if topic_ids:
             parts.append(f"Linked to topic(s): {', '.join(str(t) for t in topic_ids)}")

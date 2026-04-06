@@ -22,7 +22,7 @@ from .resource_list import ResourceList
 from .resource_loader import ResourceLoader
 from .resource_viewer import ResourceViewer
 from .status_bar import StatusBar
-from .thinking import ThinkingIndicator
+from .thinking import Spinner, ThinkingIndicator
 from .tool_call_list import ToolCallList
 from .topic_tree import TopicTree
 from .welcome import WelcomeHeader
@@ -52,6 +52,7 @@ __all__ = [
     "ResourceLoader",
     "ResourceViewer",
     "RichChatMessage",
+    "Spinner",
     "SqlConfirmation",
     "StatusBar",
     "ThinkingIndicator",
