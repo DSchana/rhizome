@@ -160,6 +160,7 @@ class ResourceViewer(Vertical):
         self._active_topic: Topic | None = None
         self._active_topic_path: list[str] = []
         self._linker_toggle_in_progress: bool = False
+        self._loader_toggle_in_progress: bool = False
 
     def compose(self):
         yield Static("", id="rv-help")
@@ -309,7 +310,13 @@ class ResourceViewer(Vertical):
             async with self._session_factory() as session:
                 resources = await list_resources_for_topic(session, topic.id, load_chunks=True)
                 self._loader_resource_cache[topic.id] = resources
-        loader.set_resources(self._loader_resource_cache[topic.id])
+        if self._loader_toggle_in_progress:
+            self._loader_toggle_in_progress = False
+            saved_cursor = loader.cursor
+            loader.set_resources(self._loader_resource_cache[topic.id])
+            loader.cursor = min(saved_cursor, max(len(self._loader_resource_cache[topic.id]) - 1, 0))
+        else:
+            loader.set_resources(self._loader_resource_cache[topic.id])
 
     # ------------------------------------------------------------------
     # Topic highlight — load data when cursor moves in the tree
@@ -410,6 +417,7 @@ class ResourceViewer(Vertical):
         On success, flips to DEFAULT and sets vector_loaded. On failure,
         reverts to UNLOADED.
         """
+        self._loader_toggle_in_progress = True
         loader = self.query_one("#rv-resource-loader", ResourceLoader)
         loader.set_pending(resource.id)
         self.run_worker(self._ensure_embeddings(resource), exclusive=False)
