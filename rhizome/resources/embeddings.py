@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import struct
-import time
 
 import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -65,28 +65,28 @@ def get_voyage_api_key() -> str:
     return key
 
 
-def embed_batch(texts: list[str], api_key: str, model: str = "voyage-3.5") -> list[list[float]]:
+async def embed_batch(texts: list[str], api_key: str, model: str = "voyage-3.5") -> list[list[float]]:
     """Embed a batch of texts via Voyage REST API with retry."""
-    for attempt in range(5):
-        resp = httpx.post(
-            "https://api.voyageai.com/v1/embeddings",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"input": texts, "model": model},
-            timeout=60,
-        )
-        if resp.status_code == 429:
-            wait = min(2 ** attempt, 16)
-            time.sleep(wait)
-            continue
+    async with httpx.AsyncClient(timeout=60) as client:
+        for attempt in range(5):
+            resp = await client.post(
+                "https://api.voyageai.com/v1/embeddings",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={"input": texts, "model": model},
+            )
+            if resp.status_code == 429:
+                wait = min(2 ** attempt, 16)
+                await asyncio.sleep(wait)
+                continue
+            resp.raise_for_status()
+            data = resp.json()["data"]
+            data.sort(key=lambda x: x["index"])
+            return [d["embedding"] for d in data]
         resp.raise_for_status()
-        data = resp.json()["data"]
-        data.sort(key=lambda x: x["index"])
-        return [d["embedding"] for d in data]
-    resp.raise_for_status()
-    return []  # unreachable, but satisfies type checker
+        return []  # unreachable, but satisfies type checker
 
 
 def floats_to_bytes(floats: list[float]) -> bytes:
@@ -94,13 +94,13 @@ def floats_to_bytes(floats: list[float]) -> bytes:
     return struct.pack(f"{len(floats)}f", *floats)
 
 
-def embed_chunks(raw_text: str, chunks: list[dict], api_key: str) -> list[dict]:
+async def embed_chunks(raw_text: str, chunks: list[dict], api_key: str) -> list[dict]:
     """Add embedding bytes to each chunk dict. Batches in groups of 128."""
     texts = [raw_text[c["start_offset"]:c["end_offset"]] for c in chunks]
     all_embeddings: list[list[float]] = []
     for i in range(0, len(texts), 128):
         batch = texts[i:i + 128]
-        all_embeddings.extend(embed_batch(batch, api_key))
+        all_embeddings.extend(await embed_batch(batch, api_key))
     for chunk, emb in zip(chunks, all_embeddings):
         chunk["embedding"] = floats_to_bytes(emb)
     return chunks
@@ -151,7 +151,7 @@ async def compute_embeddings(session_factory, resource_id: int) -> None:
             }
             for c in existing_chunks
         ]
-        chunk_dicts = embed_chunks(raw_text, chunk_dicts, api_key)
+        chunk_dicts = await embed_chunks(raw_text, chunk_dicts, api_key)
 
         # Update existing chunk rows with embeddings.
         async with session_factory() as session:
@@ -164,7 +164,7 @@ async def compute_embeddings(session_factory, resource_id: int) -> None:
     else:
         # No chunks at all — create from scratch.
         chunk_dicts = chunk_text(raw_text)
-        chunk_dicts = embed_chunks(raw_text, chunk_dicts, api_key)
+        chunk_dicts = await embed_chunks(raw_text, chunk_dicts, api_key)
 
         async with session_factory() as session:
             await add_chunks(session, resource_id, chunk_dicts)

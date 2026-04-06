@@ -36,6 +36,18 @@ _CHECKED_GREEN = "rgb(100,200,100)"
 _CHECKED_AMBER = "rgb(220,170,50)"
 _UNCHECKED_COLOR = "rgb(80,80,80)"
 _PENDING_COLOR = "rgb(100,100,100)"
+_META_COLOR = "rgb(80,80,80)"
+
+
+def _fmt_tokens(n: int | None) -> str:
+    """Format a token count as a short human-readable string."""
+    if n is None:
+        return "?"
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}m"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
 
 
 class ResourceLoader(Widget, can_focus=True):
@@ -98,6 +110,7 @@ class ResourceLoader(Widget, can_focus=True):
             self.old_state = old_state
             self.new_state = new_state
 
+    show_ids: reactive[bool] = reactive(False)
     cursor: reactive[int] = reactive(0)
 
     def __init__(self, **kwargs) -> None:
@@ -178,6 +191,10 @@ class ResourceLoader(Widget, can_focus=True):
     # Reactive watchers
     # ------------------------------------------------------------------
 
+    def watch_show_ids(self) -> None:
+        if self._resources:
+            self._render_list()
+
     def watch_cursor(self) -> None:
         if self._resources:
             self._render_list()
@@ -255,6 +272,20 @@ class ResourceLoader(Widget, can_focus=True):
             text.append(marker, style=name_style)
             text.append(checkbox, style=checkbox_color)
             text.append(resource.name, style=name_style)
+
+            # Metadata: id (togglable) │ tokens │ chunks │ preference
+            meta_parts: list[str] = []
+            if self.show_ids:
+                meta_parts.append(f"[{resource.id}]")
+            meta_parts.append(f"~{_fmt_tokens(resource.estimated_tokens)} tok")
+            try:
+                chunk_count = len(resource.chunks) if resource.chunks is not None else 0
+            except Exception:
+                chunk_count = 0
+            meta_parts.append(f"{chunk_count} chunks")
+            pref = resource.loading_preference.value if resource.loading_preference else "—"
+            meta_parts.append(pref)
+            text.append("  " + " │ ".join(meta_parts), style=_META_COLOR)
 
             # Show loading preference hint for context-stuffed items
             if state == LoadState.CONTEXT_STUFFED:

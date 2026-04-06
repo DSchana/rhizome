@@ -106,7 +106,7 @@ def build_resource_tools(session_factory) -> dict:
         if should_embed and blocking:
             try:
                 api_key = get_voyage_api_key()
-                chunks = embed_chunks(raw_text, chunks, api_key)
+                chunks = await embed_chunks(raw_text, chunks, api_key)
             except Exception as e:
                 # Store chunks without embeddings, report the error
                 async with session_factory() as session:

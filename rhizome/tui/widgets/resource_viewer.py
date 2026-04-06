@@ -151,6 +151,7 @@ class ResourceViewer(Vertical):
         self._session_factory = session_factory
         self._resource_manager = resource_manager
         self._resource_cache: dict[int, list[Resource]] = {}
+        self._loader_resource_cache: dict[int, list[Resource]] = {}
         self._resource_cursor_cache: dict[int, int] = {}
         self._all_resources: list[Resource] | None = None
         self._linked_ids_cache: dict[int, set[int]] = {}
@@ -190,7 +191,7 @@ class ResourceViewer(Vertical):
             parts.append("ctrl+\u2190/\u2192: switch pane")
         if self.view_mode != ResourceViewMode.LOAD_RESOURCES:
             parts.append("ctrl+enter: set topic")
-            parts.append("i: toggle ids")
+        parts.append("i: toggle ids")
         parts.append("esc: close")
         self.query_one("#rv-help", Static).update("  ".join(parts))
 
@@ -295,11 +296,14 @@ class ResourceViewer(Vertical):
             return
         path_str = " > ".join(self._active_topic_path) if self._active_topic_path else topic.name
         title_static.update(f"Load Resources [dim]— {path_str}[/dim]")
-        if topic.id not in self._resource_cache:
+        # The loader needs chunks eagerly loaded (for chunk count display).
+        # The shared _resource_cache may hold chunk-less resources from the
+        # other view modes, so use a separate cache for the loader.
+        if topic.id not in self._loader_resource_cache:
             async with self._session_factory() as session:
-                resources = await list_resources_for_topic(session, topic.id)
-                self._resource_cache[topic.id] = resources
-        loader.set_resources(self._resource_cache[topic.id])
+                resources = await list_resources_for_topic(session, topic.id, load_chunks=True)
+                self._loader_resource_cache[topic.id] = resources
+        loader.set_resources(self._loader_resource_cache[topic.id])
 
     # ------------------------------------------------------------------
     # Topic highlight — load data when cursor moves in the tree
@@ -343,6 +347,7 @@ class ResourceViewer(Vertical):
 
         # Invalidate the topic-resource cache so view 1 picks up changes
         self._resource_cache.pop(self._current_topic_id, None)
+        self._loader_resource_cache.pop(self._current_topic_id, None)
         # Update linked IDs cache in place
         if event.linked:
             self._linked_ids_cache.setdefault(self._current_topic_id, set()).add(event.resource.id)
@@ -405,6 +410,11 @@ class ResourceViewer(Vertical):
     async def _ensure_embeddings(self, resource: Resource) -> None:
         rid = resource.id
         success = await self._resource_manager.ensure_embedded(rid)
+
+        # Invalidate loader cache so chunk counts refresh from DB.
+        if self._active_topic is not None:
+            self._loader_resource_cache.pop(self._active_topic.id, None)
+            await self._load_loader_for_active_topic()
 
         loader = self.query_one("#rv-resource-loader", ResourceLoader)
         loader.resolve_pending(rid, success)
@@ -470,6 +480,7 @@ class ResourceViewer(Vertical):
         if not tables:
             # Unknown change — full refresh
             self._resource_cache.clear()
+            self._loader_resource_cache.clear()
             self._all_resources = None
             self._linked_ids_cache.clear()
             tree = self.query_one(TopicTree)
@@ -486,9 +497,11 @@ class ResourceViewer(Vertical):
         if tables & {"resource"}:
             self._all_resources = None
             self._resource_cache.clear()
+            self._loader_resource_cache.clear()
 
         if tables & {"topic_resource"}:
             self._resource_cache.clear()
+            self._loader_resource_cache.clear()
             self._linked_ids_cache.clear()
 
         if tables & {"topic", "resource", "topic_resource"}:
@@ -502,7 +515,9 @@ class ResourceViewer(Vertical):
     def action_select_active_topic(self) -> None:
         """Toggle the active topic: select if different, clear if same."""
         if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
-            return  # tree not visible in load mode
+            # Tree not visible — forward to the loader's context-stuff toggle.
+            self.query_one("#rv-resource-loader", ResourceLoader).action_toggle_context()
+            return
         tree = self.query_one(TopicTree)
         node = tree.cursor_node
         if node is None or node.data is None:
@@ -533,6 +548,7 @@ class ResourceViewer(Vertical):
         show = not self.query_one(TopicTree).show_ids
         self.query_one(TopicTree).show_ids = show
         self.query_one("#rv-resource-list", ResourceList).show_ids = show
+        self.query_one("#rv-resource-loader", ResourceLoader).show_ids = show
 
     # ------------------------------------------------------------------
     # Dismiss / focus

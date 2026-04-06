@@ -130,14 +130,19 @@ async def unlink_resource_from_topic(
 async def list_resources_for_topic(
     session: AsyncSession,
     topic_id: int,
+    *,
+    load_chunks: bool = False,
 ) -> list[Resource]:
     """List resources directly attached to a topic."""
-    result = await session.execute(
+    stmt = (
         select(Resource)
         .join(TopicResource, TopicResource.resource_id == Resource.id)
         .where(TopicResource.topic_id == topic_id)
         .order_by(Resource.name)
     )
+    if load_chunks:
+        stmt = stmt.options(selectinload(Resource.chunks))
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
