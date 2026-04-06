@@ -82,9 +82,11 @@ class ResourceManager:
            freeze the current state.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, session_factory=None) -> None:
+        self._session_factory = session_factory
         self._current: dict[int, ResourceState] = {}
         self._frozen: dict[int, ResourceState] | None = None
+        self._embedding_in_progress: set[int] = set()
 
     # ------------------------------------------------------------------
     # State queries
@@ -131,6 +133,43 @@ class ResourceManager:
     def full_unload(self, resource_id: int) -> None:
         """Set both axes to ``False``."""
         self._put_state(resource_id, _EMPTY)
+
+    # ------------------------------------------------------------------
+    # Embedding lifecycle
+    # ------------------------------------------------------------------
+
+    def is_embedding_in_progress(self, resource_id: int) -> bool:
+        """True if an embedding computation is in-flight for this resource."""
+        return resource_id in self._embedding_in_progress
+
+    async def ensure_embedded(self, resource_id: int) -> bool:
+        """Check for embeddings and compute them if missing.
+
+        Returns ``True`` on success (embeddings now exist), ``False`` on
+        failure (API error, missing raw_text, etc.).  On failure the
+        vector-loaded state is reverted to ``False``.
+
+        The caller is responsible for running this as an async task or
+        Textual worker.
+        """
+        from rhizome.resources.embeddings import has_embeddings, compute_embeddings
+
+        self._embedding_in_progress.add(resource_id)
+        try:
+            if await has_embeddings(self._session_factory, resource_id):
+                _log.info("Resource %d already has embeddings", resource_id)
+                return True
+
+            _log.info("Computing embeddings for resource %d ...", resource_id)
+            await compute_embeddings(self._session_factory, resource_id)
+            _log.info("Embeddings complete for resource %d", resource_id)
+            return True
+        except Exception:
+            _log.exception("Embedding failed for resource %d", resource_id)
+            self.set_vector_loaded(resource_id, False)
+            return False
+        finally:
+            self._embedding_in_progress.discard(resource_id)
 
     # ------------------------------------------------------------------
     # Diff computation

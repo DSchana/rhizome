@@ -348,7 +348,7 @@ class ResourceViewer(Vertical):
 
     # Token threshold for the "auto" loading preference: resources below
     # this estimate are context-stuffed, above are vector-embedded.
-    AUTO_CONTEXT_STUFF_TOKEN_LIMIT = 20_000
+    AUTO_CONTEXT_STUFF_TOKEN_LIMIT = 10_000
 
     def on_resource_loader_state_changed(self, event: ResourceLoader.StateChanged) -> None:
         event.stop()
@@ -370,20 +370,40 @@ class ResourceViewer(Vertical):
         """Route a DEFAULT (auto) load through the resource's loading preference."""
         rid = resource.id
         pref = resource.loading_preference
+        tokens = resource.estimated_tokens or 0
 
         if pref == LoadingPreference.context_stuff:
             self._resource_manager.set_context_stuffed(rid, True)
         elif pref == LoadingPreference.vector_store:
-            self._resource_manager.set_context_stuffed(rid, False)
-            self._resource_manager.set_vector_loaded(rid, True)
+            self._load_with_embeddings(resource)
         else:
             # auto: context-stuff if small enough, otherwise vector-embed
             tokens = resource.estimated_tokens or 0
             if tokens <= self.AUTO_CONTEXT_STUFF_TOKEN_LIMIT:
                 self._resource_manager.set_context_stuffed(rid, True)
             else:
-                self._resource_manager.set_context_stuffed(rid, False)
-                self._resource_manager.set_vector_loaded(rid, True)
+                self._load_with_embeddings(resource)
+
+    def _load_with_embeddings(self, resource: Resource) -> None:
+        """Ensure embeddings exist, then mark the resource as vector-loaded.
+
+        Sets the ResourceLoader to PENDING while embeddings are computed.
+        On success, flips to DEFAULT and sets vector_loaded. On failure,
+        reverts to UNLOADED.
+        """
+        loader = self.query_one("#rv-resource-loader", ResourceLoader)
+        loader.set_pending(resource.id)
+        self.run_worker(self._ensure_embeddings(resource), exclusive=False)
+
+    async def _ensure_embeddings(self, resource: Resource) -> None:
+        rid = resource.id
+        success = await self._resource_manager.ensure_embedded(rid)
+
+        loader = self.query_one("#rv-resource-loader", ResourceLoader)
+        loader.resolve_pending(rid, success)
+
+        if success:
+            self._resource_manager.set_vector_loaded(rid, True)
 
     # ------------------------------------------------------------------
     # Pane focus navigation (ctrl+left / ctrl+right)

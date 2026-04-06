@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import os
-import struct
-import time
 from typing import Literal
 
-import httpx
 from langchain.tools import tool
 import pymupdf
 from langchain_core.messages import HumanMessage
 from langchain_core.messages.utils import count_tokens_approximately
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from rhizome.agent.tools.visibility import ToolVisibility, tool_visibility
 from rhizome.db.models import LoadingPreference
@@ -22,6 +17,11 @@ from rhizome.db.operations import (
     create_resource,
     get_resource,
     list_resources,
+)
+from rhizome.resources.embeddings import (
+    chunk_text,
+    embed_chunks,
+    get_voyage_api_key,
 )
 
 
@@ -48,96 +48,6 @@ def _extract_text(source: str, source_type: str) -> str:
 def _estimate_tokens(text: str) -> int:
     """Approximate token count using langchain's estimator."""
     return count_tokens_approximately([HumanMessage(content=text)])
-
-
-# ---------------------------------------------------------------------------
-# Chunking (via LangChain text splitters)
-# ---------------------------------------------------------------------------
-
-_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=800,
-    chunk_overlap=100,
-    add_start_index=True,
-)
-
-
-def _chunk_text(text: str) -> list[dict]:
-    """Split text using RecursiveCharacterTextSplitter with start_index metadata.
-
-    Returns list of dicts with chunk_index, start_offset, end_offset.
-    """
-    docs = _splitter.create_documents([text])
-    return [
-        {
-            "chunk_index": idx,
-            "start_offset": doc.metadata["start_index"],
-            "end_offset": doc.metadata["start_index"] + len(doc.page_content),
-        }
-        for idx, doc in enumerate(docs)
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Embeddings (VoyageAI via REST)
-#
-# We call the Voyage API directly instead of using the `voyageai` Python SDK
-# because the SDK (v0.3.7) crashes on import with our Pydantic 2.x setup.
-# The issue is in voyageai/object/multimodal_embeddings.py: a Pydantic v1
-# compat-layer model uses Field(..., min_items=1), which raises ValueError
-# in the v1 shim. The langchain-voyageai wrapper depends on this SDK so it's
-# also unusable. Replace with the SDK once upstream ships a fix.
-# (Encountered 2026-03-27)
-# ---------------------------------------------------------------------------
-
-def _get_voyage_api_key() -> str:
-    key = os.environ.get("VOYAGE_API_KEY", "")
-    if not key:
-        raise RuntimeError(
-            "VOYAGE_API_KEY environment variable is required for embeddings. "
-            "Set it and try again."
-        )
-    return key
-
-
-def _embed_batch(texts: list[str], api_key: str, model: str = "voyage-3.5") -> list[list[float]]:
-    """Embed a batch of texts via Voyage REST API with retry."""
-    for attempt in range(5):
-        resp = httpx.post(
-            "https://api.voyageai.com/v1/embeddings",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"input": texts, "model": model},
-            timeout=60,
-        )
-        if resp.status_code == 429:
-            wait = min(2 ** attempt, 16)
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        data = resp.json()["data"]
-        data.sort(key=lambda x: x["index"])
-        return [d["embedding"] for d in data]
-    resp.raise_for_status()
-    return []  # unreachable, but satisfies type checker
-
-
-def _floats_to_bytes(floats: list[float]) -> bytes:
-    """Pack a list of floats into raw bytes (float32)."""
-    return struct.pack(f"{len(floats)}f", *floats)
-
-
-def _embed_chunks(raw_text: str, chunks: list[dict], api_key: str) -> list[dict]:
-    """Add embedding bytes to each chunk dict. Batches in groups of 128."""
-    texts = [raw_text[c["start_offset"]:c["end_offset"]] for c in chunks]
-    all_embeddings: list[list[float]] = []
-    for i in range(0, len(texts), 128):
-        batch = texts[i:i + 128]
-        all_embeddings.extend(_embed_batch(batch, api_key))
-    for chunk, emb in zip(chunks, all_embeddings):
-        chunk["embedding"] = _floats_to_bytes(emb)
-    return chunks
 
 
 # ---------------------------------------------------------------------------
@@ -188,15 +98,15 @@ def build_resource_tools(session_factory) -> dict:
             resource_id = resource.id
 
         # 4. Chunk and embed
-        chunks = _chunk_text(raw_text)
+        chunks = chunk_text(raw_text)
         chunk_count = len(chunks)
 
         should_embed = pref in (LoadingPreference.auto, LoadingPreference.vector_store)
 
         if should_embed and blocking:
             try:
-                api_key = _get_voyage_api_key()
-                chunks = _embed_chunks(raw_text, chunks, api_key)
+                api_key = get_voyage_api_key()
+                chunks = embed_chunks(raw_text, chunks, api_key)
             except Exception as e:
                 # Store chunks without embeddings, report the error
                 async with session_factory() as session:

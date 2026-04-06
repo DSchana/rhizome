@@ -161,7 +161,7 @@ class ChatPane(Widget):
         # Commit mode state — see CommitState dataclass.
         self._commit = CommitState()
         # Resource manager — shared between agent session and resource viewer.
-        self._resource_manager = ResourceManager()
+        self._resource_manager = ResourceManager(session_factory=session_factory)
 
         self._log = get_logger("tui.chat_pane")
 

@@ -1,4 +1,4 @@
-"""ResourceLoader — tri-state checkbox list for loading resources into the agent session."""
+"""ResourceLoader — checkbox list for loading resources into the agent session."""
 
 from __future__ import annotations
 
@@ -16,12 +16,16 @@ from textual.widgets import Static
 from rhizome.db import Resource
 
 
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
 class LoadState(enum.Enum):
-    """Tri-state for how a resource is loaded into the agent session."""
+    """Load state for a resource in the loader widget."""
 
     UNLOADED = "unloaded"
     DEFAULT = "default"          # loaded per resource's loading_preference
     CONTEXT_STUFFED = "context"  # override: context-stuffed directly
+    PENDING = "pending"          # embedding in progress — locked, shows spinner
 
 
 _DIM = "rgb(100,100,100)"
@@ -31,15 +35,17 @@ _ALT_BG_2 = "rgb(35,35,35)"
 _CHECKED_GREEN = "rgb(100,200,100)"
 _CHECKED_AMBER = "rgb(220,170,50)"
 _UNCHECKED_COLOR = "rgb(80,80,80)"
+_PENDING_COLOR = "rgb(100,100,100)"
 
 
 class ResourceLoader(Widget, can_focus=True):
-    """Tri-state checkbox list for loading/unloading resources.
+    """Checkbox list for loading/unloading resources.
 
     States per resource:
         [ ]  unloaded
         [✓]  green — loaded via default preference (embed/auto)
         [✓]  amber — context-stuffed override
+        ⠋ computing embeddings...  — pending (locked)
 
     Keybindings:
         space/enter     toggle between unloaded ↔ default
@@ -98,6 +104,8 @@ class ResourceLoader(Widget, can_focus=True):
         super().__init__(**kwargs)
         self._resources: list[Resource] = []
         self._states: dict[int, LoadState] = {}
+        self._spinner_frame: int = 0
+        self._spinner_timer = None
 
     def compose(self) -> ComposeResult:
         yield Static("", id="rld-empty")
@@ -107,6 +115,20 @@ class ResourceLoader(Widget, can_focus=True):
 
     def on_mount(self) -> None:
         self._apply_empty_state()
+        self._spinner_timer = self.set_interval(0.1, self._tick_spinner, pause=True)
+
+    def _tick_spinner(self) -> None:
+        self._spinner_frame = (self._spinner_frame + 1) % len(_SPINNER_FRAMES)
+        self._render_list()
+
+    def _update_spinner_timer(self) -> None:
+        """Start or pause the spinner timer based on whether any resources are pending."""
+        has_pending = any(s == LoadState.PENDING for s in self._states.values())
+        if self._spinner_timer is not None:
+            if has_pending:
+                self._spinner_timer.resume()
+            else:
+                self._spinner_timer.pause()
 
     # ------------------------------------------------------------------
     # Public API
@@ -133,6 +155,24 @@ class ResourceLoader(Widget, can_focus=True):
     def get_state(self, resource_id: int) -> LoadState:
         """Return the current load state for a resource."""
         return self._states.get(resource_id, LoadState.UNLOADED)
+
+    def set_pending(self, resource_id: int) -> None:
+        """Set a resource to PENDING state (embedding in progress)."""
+        resource = next((r for r in self._resources if r.id == resource_id), None)
+        if resource is not None:
+            self._states[resource_id] = LoadState.PENDING
+            self._render_list()
+            self._update_hint()
+            self._update_spinner_timer()
+
+    def resolve_pending(self, resource_id: int, success: bool) -> None:
+        """Resolve a pending resource: DEFAULT on success, UNLOADED on failure."""
+        if self._states.get(resource_id) != LoadState.PENDING:
+            return
+        resource = next((r for r in self._resources if r.id == resource_id), None)
+        if resource is not None:
+            new_state = LoadState.DEFAULT if success else LoadState.UNLOADED
+            self._set_state(resource, new_state, quiet=True)
 
     # ------------------------------------------------------------------
     # Reactive watchers
@@ -179,6 +219,16 @@ class ResourceLoader(Widget, can_focus=True):
 
             is_selected = self.cursor == i
             state = self._states.get(resource.id, LoadState.UNLOADED)
+
+            if state == LoadState.PENDING:
+                # Pending row: spinner + "computing embeddings..." in dim grey
+                marker = "► " if is_selected else "  "
+                spinner = _SPINNER_FRAMES[self._spinner_frame]
+                text.append(marker, style=_PENDING_COLOR)
+                text.append(f"{spinner} ", style=_PENDING_COLOR)
+                text.append(resource.name, style=_PENDING_COLOR)
+                text.append("  computing embeddings...", style=_PENDING_COLOR)
+                continue
 
             # Checkbox appearance
             if state == LoadState.UNLOADED:
@@ -244,7 +294,7 @@ class ResourceLoader(Widget, can_focus=True):
     # State transitions
     # ------------------------------------------------------------------
 
-    def _set_state(self, resource: Resource, new_state: LoadState) -> None:
+    def _set_state(self, resource: Resource, new_state: LoadState, *, quiet: bool = False) -> None:
         old_state = self._states.get(resource.id, LoadState.UNLOADED)
         if new_state == LoadState.UNLOADED:
             self._states.pop(resource.id, None)
@@ -252,7 +302,9 @@ class ResourceLoader(Widget, can_focus=True):
             self._states[resource.id] = new_state
         self._render_list()
         self._update_hint()
-        self.post_message(self.StateChanged(resource, old_state, new_state))
+        self._update_spinner_timer()
+        if not quiet:
+            self.post_message(self.StateChanged(resource, old_state, new_state))
 
     # ------------------------------------------------------------------
     # Actions
@@ -272,6 +324,8 @@ class ResourceLoader(Widget, can_focus=True):
             return
         resource = self._resources[min(self.cursor, len(self._resources) - 1)]
         state = self._states.get(resource.id, LoadState.UNLOADED)
+        if state == LoadState.PENDING:
+            return  # locked — embedding in progress
         if state == LoadState.UNLOADED:
             self._set_state(resource, LoadState.DEFAULT)
         elif state == LoadState.DEFAULT:
@@ -285,6 +339,8 @@ class ResourceLoader(Widget, can_focus=True):
             return
         resource = self._resources[min(self.cursor, len(self._resources) - 1)]
         state = self._states.get(resource.id, LoadState.UNLOADED)
+        if state == LoadState.PENDING:
+            return  # locked — embedding in progress
         if state == LoadState.UNLOADED:
             self._set_state(resource, LoadState.CONTEXT_STUFFED)
         elif state == LoadState.DEFAULT:
