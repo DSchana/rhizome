@@ -118,3 +118,10 @@ class Choices(InterruptWidgetBase):
         display.append(f"  you selected: {selected}", style="rgb(100,100,100)")
         self.query_one("#interrupt-options", Static).update(display)
         self.query_one("#interrupt-hint", Static).update("")
+
+    def cancel(self) -> None:
+        super().cancel()
+        display = Text()
+        display.append("  cancelled", style="rgb(100,100,100)")
+        self.query_one("#interrupt-options", Static).update(display)
+        self.query_one("#interrupt-hint", Static).update("")

@@ -394,6 +394,16 @@ class MultipleChoices(InterruptWidgetBase):
             text.append(label, style="rgb(100,200,100)")
         self.query_one("#mc-tabs", Static).update(text)
 
+    def cancel(self) -> None:
+        super().cancel()
+        self.query_one("#mc-tabs", Static).display = False
+        self.query_one("#mc-hint", Static).display = False
+        self.query_one("#mc-prompt", Static).display = False
+        self.query_one("#mc-options", Static).display = False
+        summary = self.query_one("#mc-collapsed-summary", Static)
+        summary.update(Text("  cancelled", style=_DIM))
+        summary.display = True
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "mc-collapse":
             event.stop()
