@@ -972,7 +972,10 @@ class ChatPane(Widget):
     async def _cmd_resources_new(self) -> None:
         """Open a multi-step modal to create a new resource."""
         from rhizome.tui.screens.new_resource import NewResourceScreen
-        self.app.push_screen(NewResourceScreen(), callback=self._on_new_resource_confirmed)
+        self.app.push_screen(
+            NewResourceScreen(session_factory=self._session_factory),
+            callback=self._on_new_resource_confirmed,
+        )
 
     def _on_new_resource_confirmed(self, result) -> None:
         if result is None:
@@ -1022,9 +1025,9 @@ class ChatPane(Widget):
         finally:
             await spinner.remove()
 
-        # Build topic list (auto-link to active topic)
-        topic_ids: list[int] = []
-        if self.active_topic is not None:
+        # Use topics from the modal, falling back to active topic.
+        topic_ids: list[int] = list(result.topic_ids)
+        if not topic_ids and self.active_topic is not None:
             topic_ids.append(self.active_topic.id)
 
         try:

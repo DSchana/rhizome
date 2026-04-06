@@ -23,8 +23,8 @@ class TopicTree(Tree[Topic]):
     active_topic_id: reactive[int | None] = reactive(None)
     show_ids: reactive[bool] = reactive(False)
 
-    def __init__(self, session_factory=None, *, show_ids: bool = False) -> None:
-        super().__init__("Topics")
+    def __init__(self, session_factory=None, *, show_ids: bool = False, **kwargs) -> None:
+        super().__init__("Topics", **kwargs)
         self.show_root = False
         self.show_ids = show_ids
         self._session_factory = session_factory
