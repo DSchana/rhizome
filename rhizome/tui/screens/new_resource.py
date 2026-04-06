@@ -156,10 +156,6 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
     def on_file_browser_file_selected(self, event: FileBrowser.FileSelected) -> None:
         event.stop()
         self._selected_path = event.path
-        name_input = self.query_one("#nr-name-input", Input)
-        if not name_input.value.strip():
-            name_input.value = event.path.stem
-            name_input.cursor_position = len(name_input.value)
         self.focus_section = _Focus.NAME
 
     def on_file_browser_dismissed(self, event: FileBrowser.Dismissed) -> None:

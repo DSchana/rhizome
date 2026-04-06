@@ -35,6 +35,7 @@ class FileBrowser(Widget, can_focus=True):
         Binding("left", "go_parent", show=False),
         Binding("right", "enter_dir", show=False),
         Binding("enter", "select", show=False),
+        Binding("home", "go_home", show=False),
         Binding("escape", "dismiss", show=False),
     ]
 
@@ -75,7 +76,8 @@ class FileBrowser(Widget, can_focus=True):
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._cwd = (start_path or Path.cwd()).resolve()
+        self._home = (start_path or Path.cwd()).resolve()
+        self._cwd = self._home
         self._entries: list[Path] = []
 
     def compose(self) -> ComposeResult:
@@ -113,7 +115,7 @@ class FileBrowser(Widget, can_focus=True):
 
     def _update_hint(self) -> None:
         self.query_one("#fb-hint", Static).update(
-            "←: parent  →: enter dir  enter: select file  esc: cancel"
+            "←: parent  →: enter dir  enter: select file  home: reset  esc: cancel"
         )
 
     # ------------------------------------------------------------------
@@ -205,6 +207,10 @@ class FileBrowser(Widget, can_focus=True):
                 if entry.name == old_name:
                     self.cursor = i
                     break
+
+    def action_go_home(self) -> None:
+        if self._cwd != self._home:
+            self._load_dir(self._home)
 
     def action_enter_dir(self) -> None:
         if not self._entries:
