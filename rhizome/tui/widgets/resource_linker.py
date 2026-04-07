@@ -150,6 +150,13 @@ class ResourceLinker(Widget, can_focus=True):
             self.query_one("#rlk-empty", Static).update("(No resources in database)")
 
     def _render_list(self) -> None:
+        # Compute max name width from available space.
+        # Layout: marker(2) + checkbox(4) + name + id?
+        total_width = self.size.width - 2  # padding
+        id_overhead = max((len(str(r.id)) + 4 for r in self._resources), default=0) if self.show_ids else 0
+        max_name_width = total_width - 2 - 4 - id_overhead
+        max_name_width = max(max_name_width, 10)  # floor
+
         text = Text()
         for i, resource in enumerate(self._resources):
             if i > 0:
@@ -171,9 +178,14 @@ class ResourceLinker(Widget, can_focus=True):
                 name_style = "" if i % 2 == 0 else _DIM
                 marker = "  "
 
+            # Clip name to fit.
+            name = resource.name
+            if len(name) > max_name_width:
+                name = name[: max_name_width - 1] + "…"
+
             text.append(marker, style=name_style)
             text.append(checkbox, style=checkbox_color)
-            text.append(resource.name, style=name_style)
+            text.append(name, style=name_style)
             if self.show_ids:
                 text.append(f"  [{resource.id}]", style=_ID_COLOR)
 

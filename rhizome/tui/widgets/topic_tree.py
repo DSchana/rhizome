@@ -155,6 +155,10 @@ class TopicTree(Tree[Topic]):
 
     def watch_show_ids(self) -> None:
         self._invalidate_label_cache()
+        # Textual's Tree measures content width from node._label, not from
+        # render_label output.  The IDs appended in render_label extend
+        # beyond the measured width, so add right padding to compensate.
+        self.styles.padding = (0, 2, 0, 2) if self.show_ids else (0, 0, 0, 2)
 
     def _is_ancestor_of_active(self, node: TreeNode[Topic]) -> bool:
         """Check if node is a strict ancestor of the active topic node."""

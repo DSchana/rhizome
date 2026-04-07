@@ -167,14 +167,19 @@ class ResourceList(Widget, can_focus=True):
 
     def _render_list(self) -> None:
         num_width = len(str(len(self._resources))) + 2
-        name_widths = [len(r.name) for r in self._resources]
-        max_name = max(name_widths, default=0)
 
         right_parts = [
             r.loading_preference.value if r.loading_preference else "—"
             for r in self._resources
         ]
         max_right = max((len(r) for r in right_parts), default=0)
+
+        # Compute max name width from available space.
+        # Layout: marker(2) + num(num_width+1) + name + id? + gap(2) + right(max_right)
+        total_width = self.size.width - 2  # padding
+        id_overhead = max((len(str(r.id)) + 4 for r in self._resources), default=0) if self.show_ids else 0
+        max_name_width = total_width - 2 - (num_width + 1) - id_overhead - 2 - max_right
+        max_name_width = max(max_name_width, 10)  # floor
 
         text = Text()
         for i, resource in enumerate(self._resources):
@@ -198,14 +203,19 @@ class ResourceList(Widget, can_focus=True):
                 marker_style = ""
                 right_style = _DIM
 
+            # Clip name to fit.
+            name = resource.name
+            if len(name) > max_name_width:
+                name = name[: max_name_width - 1] + "…"
+
             text.append(marker, style=marker_style)
             text.append(num, style=style)
-            text.append(resource.name, style=style)
+            text.append(name, style=style)
             if self.show_ids:
                 text.append(f"  [{resource.id}]", style=_ID_COLOR)
 
             right = right_parts[i].rjust(max_right)
-            padding = max_name - len(resource.name) + 2
+            padding = max(max_name_width - len(name) + 2, 2)
             gap = " " * padding
             text.append(gap)
             text.append(right, style=right_style)

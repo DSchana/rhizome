@@ -69,22 +69,24 @@ class ResourceViewer(Vertical):
         height: auto;
     }
     ResourceViewer #rv-tree-pane {
-        width: 30%;
+        width: 25%;
         height: auto;
+        max-height: 30;
         padding-left: 3;
+        overflow: auto auto;
     }
     ResourceViewer #rv-resource-pane {
-        width: 70%;
+        width: 75%;
         height: auto;
     }
     ResourceViewer #rv-linker-pane {
         display: none;
-        width: 70%;
+        width: 75%;
         height: auto;
     }
     ResourceViewer #rv-loader-pane {
         display: none;
-        width: 70%;
+        width: 75%;
         height: auto;
     }
     ResourceViewer .pane-title {
