@@ -48,7 +48,7 @@ class TogglableTopicTree(TopicTree):
 
     BINDINGS = [
         Binding("space", "toggle_check", show=False),
-        Binding("ctrl+j", "confirm", "Confirm", show=False, priority=True),
+        Binding("enter", "confirm", "Confirm", show=False, priority=True),
     ]
 
     class Confirmed(Message):

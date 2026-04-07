@@ -146,7 +146,7 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
         with Vertical():
             with Horizontal(id="nr-header"):
                 yield Static("New Resource", id="nr-title")
-                yield Static("ctrl+c to cancel", id="nr-cancel-hint")
+                yield Static("esc: back (prev step)  ctrl+c: cancel", id="nr-cancel-hint")
             with Horizontal(id="nr-browser-row"):
                 yield FileBrowser(id="nr-browser")
                 with Vertical(id="nr-topic-pane"):
@@ -155,7 +155,7 @@ class NewResourceScreen(ModalScreen[NewResourceResult | None]):
                         session_factory=self._session_factory,
                         id="nr-topic-tree",
                     )
-                    yield Static("space: toggle  ctrl+enter: confirm", id="nr-topic-hint")
+                    yield Static("space: toggle  enter: confirm", id="nr-topic-hint")
             yield Input(placeholder="Resource name", id="nr-name-input")
             yield Static("leave blank for auto", id="nr-name-hint")
             yield Static(id="nr-pref-list")
