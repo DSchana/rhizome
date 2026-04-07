@@ -34,6 +34,8 @@ from rhizome.agent.session import get_agent_kwargs
 from rhizome.db import Topic
 from rhizome.db.operations import (
     delete_resource,
+    get_resource,
+    insert_sections,
     link_resource_to_topic,
     resolve_resource,
     resolve_topic,
@@ -778,6 +780,11 @@ class ChatPane(Widget):
         async def resources_delete(resource_id):
             await self._cmd_resources_delete(resource_id)
 
+        @resources_group.command(name="extract-subsections", help="Extract subsections from a resource (PDF)")
+        @click.argument("resource_id")
+        async def resources_extract(resource_id):
+            await self._cmd_resources_extract_subsections(resource_id)
+
         @registry.command(name="idle", help="Return to idle mode")
         async def idle():
             await self._cmd_idle()
@@ -1030,6 +1037,13 @@ class ChatPane(Widget):
         if not topic_ids and self.active_topic is not None:
             topic_ids.append(self.active_topic.id)
 
+        # Read source bytes for formats that support subsection extraction.
+        source_type = result.path.suffix.lstrip(".").lower() or None
+        try:
+            source_bytes = result.path.read_bytes()
+        except Exception:
+            source_bytes = None
+
         try:
             resource_id, estimated_tokens = await ingest_resource(
                 self._session_factory,
@@ -1038,6 +1052,8 @@ class ChatPane(Widget):
                 topic_ids=topic_ids or None,
                 loading_preference=result.loading_preference,
                 summary=summary,
+                source_type=source_type,
+                source_bytes=source_bytes,
             )
         except Exception as e:
             self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Error creating resource: {e}"))
@@ -1319,6 +1335,103 @@ class ChatPane(Widget):
             role=Role.SYSTEM,
             content=f"Resource [{resource_id}] deleted.",
         ))
+
+    async def _cmd_resources_extract_subsections(self, resource_identifier: str) -> None:
+        """Extract subsections from a resource document."""
+        from rhizome.resources.extraction import (
+            extract_document_subsections,
+            estimate_extraction_tokens,
+            Section,
+        )
+
+        # Resolve the resource.
+        resolved = await self._resolve_identifiers(resource=resource_identifier)
+        if resolved is None:
+            return
+        resource_id = resolved["resource"]
+
+        # Load the resource and validate it has source bytes.
+        async with self._session_factory() as session:
+            resource = await get_resource(session, resource_id)
+        if resource is None:
+            self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Resource {resource_id} not found."))
+            return
+        if not resource.source_bytes or not resource.source_type:
+            self.append_message(ChatMessageData(
+                role=Role.SYSTEM,
+                content=f"Resource [{resource_id}] has no source file stored. "
+                        "Subsection extraction requires the original document bytes.",
+            ))
+            return
+
+        # Estimate token cost and prompt for confirmation.
+        doc_tokens = resource.estimated_tokens or 0
+        estimated_cost = estimate_extraction_tokens(doc_tokens)
+        prompt = (
+            f"Extract subsections from '{resource.name}'?\n"
+            f"Document: ~{_fmt_tokens(doc_tokens)} tokens.  "
+            f"Estimated cost: ~{_fmt_tokens(estimated_cost)} tokens."
+        )
+
+        area = self.query_one("#message-area", VerticalScroll)
+        confirm_widget = Choices(prompt=prompt, options=["Proceed", "Cancel"])
+        await area.mount(confirm_widget)
+        area.scroll_end(animate=False)
+        chat_input = self.query_one("#chat-input", ChatInput)
+        chat_input.disabled = True
+        chat_input.placeholder = "Select an option above..."
+        self._active_widgets.append(confirm_widget)
+        confirm_widget.focus()
+        try:
+            selected = await confirm_widget.wait_for_selection()
+        except asyncio.CancelledError:
+            return
+        finally:
+            self._restore_chat_input()
+
+        if selected != "Proceed":
+            return
+
+        # Run extraction with a spinner.
+        container = Vertical(classes="--extract-container")
+        container.styles.height = "auto"
+        await area.mount(container)
+        spinner = Spinner("extracting subsections...")
+        await container.mount(spinner)
+        area.scroll_end(animate=False)
+
+        try:
+            llm = init_chat_model("claude-sonnet-4-6", api_key=get_api_key(), temperature=0.0)
+            sections, _extraction, stats = await extract_document_subsections(
+                resource.source_bytes,
+                resource.source_type,
+                llm,
+            )
+        except Exception as e:
+            await spinner.remove()
+            msg = RichChatMessage(role=Role.SYSTEM, content=f"Extraction failed: {e}")
+            await container.mount(msg)
+            return
+        finally:
+            if spinner.parent is not None:
+                await spinner.remove()
+
+        # Write sections to the database.
+        try:
+            async with self._session_factory() as session:
+                await insert_sections(session, resource_id, sections)
+                await session.commit()
+        except Exception as e:
+            msg = RichChatMessage(role=Role.SYSTEM, content=f"Error saving sections: {e}")
+            await container.mount(msg)
+            return
+
+        # Final summary message.
+        parts = [f"Extracted {stats.sections_accepted} subsections from '{resource.name}'"]
+        if stats.total_tokens is not None:
+            parts.append(f"(~{_fmt_tokens(stats.total_tokens)} tokens used)")
+        msg = RichChatMessage(role=Role.SYSTEM, content=".  ".join(parts) + ".")
+        await container.mount(msg)
 
     def action_refocus_resources(self) -> None:
         """Ctrl+R — focus the resources panel if visible."""

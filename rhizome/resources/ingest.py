@@ -73,6 +73,8 @@ async def ingest_resource(
     topic_ids: list[int] | None = None,
     loading_preference: LoadingPreference = LoadingPreference.auto,
     summary: str | None = None,
+    source_type: str | None = None,
+    source_bytes: bytes | None = None,
 ) -> tuple[int, int]:
     """Create a resource from raw text and optionally link to topics.
 
@@ -90,6 +92,8 @@ async def ingest_resource(
             summary=summary,
             estimated_tokens=estimated_tokens,
             loading_preference=loading_preference,
+            source_type=source_type,
+            source_bytes=source_bytes,
         )
         await session.flush()
         resource_id = resource.id

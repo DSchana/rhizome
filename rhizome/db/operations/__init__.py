@@ -59,6 +59,7 @@ from .resources import (
     delete_resource,
     get_chunks,
     get_resource,
+    insert_sections,
     link_resource_to_topic,
     list_resources,
     list_resources_for_topic,
@@ -131,6 +132,7 @@ __all__ = [
     "resolve_resource",
     "resolve_topic",
     # resources
+    "insert_sections",
     "add_chunks",
     "clear_chunks",
     "create_resource",

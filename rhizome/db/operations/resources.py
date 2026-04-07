@@ -10,6 +10,7 @@ from rhizome.db.models import (
     LoadingPreference,
     Resource,
     ResourceChunk,
+    ResourceSection,
     TopicResource,
 )
 
@@ -23,6 +24,8 @@ async def create_resource(
     summary: str | None = None,
     estimated_tokens: int | None = None,
     loading_preference: LoadingPreference = LoadingPreference.auto,
+    source_type: str | None = None,
+    source_bytes: bytes | None = None,
 ) -> Resource:
     """Create a new resource."""
     resource = Resource(
@@ -32,6 +35,8 @@ async def create_resource(
         summary=summary,
         estimated_tokens=estimated_tokens,
         loading_preference=loading_preference,
+        source_type=source_type,
+        source_bytes=source_bytes,
     )
     session.add(resource)
     await session.flush()
@@ -199,3 +204,46 @@ async def get_chunks(
         .order_by(ResourceChunk.chunk_index)
     )
     return list(result.scalars().all())
+
+
+# -----------------------------------------------------------------------
+# Sections
+# -----------------------------------------------------------------------
+
+async def insert_sections(
+    session: AsyncSession,
+    resource_id: int,
+    sections: list,
+    *,
+    parent_id: int | None = None,
+    _position: list[int] | None = None,
+) -> None:
+    """Recursively insert a tree of sections for a resource.
+
+    *sections* should be a list of objects with ``title``, ``depth``,
+    ``page`` (optional), ``start_offset`` (optional), and ``children``
+    attributes — matching ``rhizome.resources.extraction.Section``.
+
+    Flushes after each row to obtain IDs for parent-child linking.
+    Does not commit.
+    """
+    if _position is None:
+        _position = [0]
+    for section in sections:
+        row = ResourceSection(
+            resource_id=resource_id,
+            parent_id=parent_id,
+            title=section.title,
+            depth=section.depth,
+            position=_position[0],
+            page_start=getattr(section, "page", None),
+            start_offset=getattr(section, "start_offset", None),
+        )
+        _position[0] += 1
+        session.add(row)
+        await session.flush()
+        if section.children:
+            await insert_sections(
+                session, resource_id, section.children,
+                parent_id=row.id, _position=_position,
+            )

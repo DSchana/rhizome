@@ -9,8 +9,9 @@ from rhizome.resources.extraction.protocol import (
 from rhizome.resources.extraction.pipeline import (
     PipelineStats,
     detect_sections,
+    estimate_extraction_tokens,
     get_extractor,
-    process_document,
+    extract_document_subsections,
     register_extractor,
 )
 from rhizome.resources.extraction.pdf import PdfExtractor
@@ -23,7 +24,8 @@ __all__ = [
     "PipelineStats",
     "Section",
     "detect_sections",
+    "estimate_extraction_tokens",
     "get_extractor",
-    "process_document",
+    "extract_document_subsections",
     "register_extractor",
 ]

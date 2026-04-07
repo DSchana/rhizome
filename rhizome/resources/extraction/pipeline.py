@@ -54,6 +54,21 @@ class CleanupResponse(BaseModel):
     changes: list[str] = Field(default_factory=list)
 
 
+# ── Token cost estimation ──────────────────────────────────────────
+
+
+def estimate_extraction_tokens(document_tokens: int) -> int:
+    """Rough estimate of total tokens consumed by the extraction pipeline.
+
+    Based on a linear interpolation of observed token usage across a small
+    and large document.  This is intentionally approximate — the actual
+    cost depends on candidate density, batch count, and LLM verbosity.
+
+    Formula: 0.015 * document_tokens + 10_000
+    """
+    return int(0.015 * document_tokens + 10_000)
+
+
 # ── Pipeline statistics ─────────────────────────────────────────────
 
 
@@ -464,7 +479,7 @@ _register_builtins()
 # ── Top-level API ───────────────────────────────────────────────────
 
 
-async def process_document(
+async def extract_document_subsections(
     source: bytes,
     source_type: str,
     llm: BaseChatModel,
