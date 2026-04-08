@@ -147,6 +147,7 @@ async def list_resources_for_topic(
     )
     if load_chunks:
         stmt = stmt.options(selectinload(Resource.chunks))
+    stmt = stmt.options(selectinload(Resource.sections))
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

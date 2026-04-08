@@ -179,6 +179,7 @@ class ResourceViewer(Vertical):
             with Vertical(id="rv-loader-pane"):
                 yield Static("Load Resources", id="rv-loader-title", classes="pane-title")
                 yield ResourceLoader(id="rv-resource-loader")
+                yield Static("", id="rv-loader-hint")
         yield Static(" ", id="rv-bottom-spacer")
 
     def on_mount(self) -> None:
@@ -314,11 +315,9 @@ class ResourceViewer(Vertical):
                 self._loader_resource_cache[topic.id] = resources
         if self._loader_toggle_in_progress:
             self._loader_toggle_in_progress = False
-            saved_cursor = loader.cursor
-            loader.set_resources(self._loader_resource_cache[topic.id])
-            loader.cursor = min(saved_cursor, max(len(self._loader_resource_cache[topic.id]) - 1, 0))
-        else:
-            loader.set_resources(self._loader_resource_cache[topic.id])
+            # State change only — skip full tree rebuild to preserve cursor.
+            return
+        loader.set_resources(self._loader_resource_cache[topic.id])
 
     # ------------------------------------------------------------------
     # Topic highlight — load data when cursor moves in the tree
@@ -524,7 +523,10 @@ class ResourceViewer(Vertical):
             self._loader_resource_cache.clear()
             self._linked_ids_cache.clear()
 
-        if tables & {"topic", "resource", "topic_resource"}:
+        if tables & {"resource_chunk", "resource_section"}:
+            self._loader_resource_cache.clear()
+
+        if tables & {"topic", "resource", "topic_resource", "resource_chunk", "resource_section"}:
             if not refreshed_tree:
                 await self._load_data_for_current_topic()
 
