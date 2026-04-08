@@ -59,7 +59,6 @@ class RhizomeApp(App):
         # Set up in-app log handler for the rhizome logger
         self.tui_log_handler = TUILogHandler()
         self.tui_log_handler.setLevel(logging.DEBUG)
-        self.tui_log_handler.set_app(self)
         initialize_global_logger(self.tui_log_handler)
 
         # REMARK: _logger is a reserved name in textual.App, which we can't override ourselves, so we use _log instead.

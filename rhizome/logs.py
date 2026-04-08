@@ -15,3 +15,4 @@ def initialize_global_logger(handler: logging.Handler) -> None:
     root = logging.getLogger(NAMESPACE)
     root.setLevel(logging.DEBUG)
     root.addHandler(handler)
+    root.propagate = False

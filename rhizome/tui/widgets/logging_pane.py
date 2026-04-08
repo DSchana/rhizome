@@ -91,7 +91,11 @@ class _SelectableRichLog(RichLog):
 
 
 class LoggingPane(Widget):
-    """Displays log messages captured by the app's ``TUILogHandler``."""
+    """Displays log messages captured by the app's ``TUILogHandler``.
+
+    Pull-based: polls the handler's deque on a 100ms interval and writes
+    only the lines that haven't been synced yet.
+    """
 
     BINDINGS = [
         Binding("ctrl+g", "open_logs_in_editor", "Open logs in editor", show=False, priority=True),
@@ -106,8 +110,13 @@ class LoggingPane(Widget):
         height: 1fr;
         background: rgb(12, 12, 12) !important;
         background-tint: initial !important;
+        scrollbar-gutter: stable;
     }
     """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._synced_count: int = 0
 
     def compose(self) -> ComposeResult:
         yield _SelectableRichLog(max_lines=2000, markup=True, wrap=True, auto_scroll=True, id="log-output")
@@ -117,19 +126,28 @@ class LoggingPane(Widget):
         handler = getattr(self.app, "tui_log_handler", None)
         if handler is None:
             return
-        rich_log = self.query_one("#log-output", RichLog)
-        for line in handler.lines:
-            rich_log.write(line)
-        handler.register_pane(self)
+        self._sync(handler)
+        self._poll_timer = self.set_interval(0.1, self._poll)
 
-    def on_unmount(self) -> None:
+    def _poll(self) -> None:
         handler = getattr(self.app, "tui_log_handler", None)
-        if handler is not None:
-            handler.unregister_pane(self)
+        if handler is not None and handler.total_count > self._synced_count:
+            self._sync(handler)
 
-    def write_line(self, line: str) -> None:
-        """Called by TUILogHandler to write a new log line."""
-        self.query_one("#log-output", RichLog).write(line)
+    def _sync(self, handler) -> None:
+        """Write any unsynced lines from the handler's deque to the RichLog."""
+        behind = handler.total_count - self._synced_count
+        rich_log = self.query_one("#log-output", RichLog)
+        if behind > len(handler.lines):
+            # Deque wrapped — some lines were dropped; full replay
+            rich_log.clear()
+            for line in handler.lines:
+                rich_log.write(line)
+        else:
+            start = len(handler.lines) - behind
+            for i in range(start, len(handler.lines)):
+                rich_log.write(handler.lines[i])
+        self._synced_count = handler.total_count
 
     def action_open_logs_in_editor(self) -> None:
         """Dump current log buffer to a temp file and open it in $EDITOR."""
