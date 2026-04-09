@@ -7,6 +7,8 @@ import traceback
 from collections import deque
 from datetime import datetime
 
+from rich.markup import escape
+
 LEVEL_MARKUP = {
     logging.DEBUG: ("dim", "dim"),
     logging.INFO: ("blue", "bold blue"),
@@ -43,9 +45,9 @@ class TUILogHandler(logging.Handler):
         color, level_style = LEVEL_MARKUP.get(record.levelno, ("white", "bold white"))
         level = record.levelname
         name = record.name
-        msg = record.getMessage()
+        msg = escape(record.getMessage())
         if record.exc_info and record.exc_info[1] is not None:
-            msg = f"{msg}\n{''.join(traceback.format_exception(*record.exc_info))}"
+            msg = f"{msg}\n{escape(''.join(traceback.format_exception(*record.exc_info)))}"
         if record.stack_info:
-            msg = f"{msg}\n{record.stack_info}"
+            msg = f"{msg}\n{escape(record.stack_info)}"
         return f"[dim]{ts}[/dim] [{level_style}]{level:<8}[/{level_style}] [dim]{name}[/dim] {msg}"

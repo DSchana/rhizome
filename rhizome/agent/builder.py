@@ -42,6 +42,7 @@ def build_agent(
     provider: str,
     model_name: str,
     *,
+    name: str | None = None,
     response_format=None,
     middleware: list | None = None,
     context_schema=None,
@@ -56,7 +57,8 @@ def build_agent(
 
     Returns a ``(model, agent, all_middleware)`` tuple.
     """
-    _logger.info("Building agent (provider=%s, model=%s)", provider, model_name)
+    tag = f" ({name})" if name else ""
+    _logger.info("Building agent%s (provider=%s, model=%s)", tag, provider, model_name)
 
     model = _init_model(provider, model_name, temperature=kwargs.get("temperature", 0.3))
 
@@ -115,6 +117,7 @@ def build_root_agent(
         all_tools,
         provider,
         model_name,
+        name="root",
         middleware=middleware,
         context_schema=AgentContext,
         state_schema=RhizomeAgentState,

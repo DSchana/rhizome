@@ -167,6 +167,7 @@ def build_answerer_subagent(**agent_kwargs) -> StructuredSubagent:
         tools=[],
         provider=provider,
         model_name=model_name,
+        name="flashcard-answerer",
         response_format=ProviderStrategy(AnswererResponse),
         **{**agent_kwargs, "temperature": 0.0},
     )
@@ -187,6 +188,7 @@ def build_comparator_subagent(**agent_kwargs) -> StructuredSubagent:
         tools=[],
         provider=provider,
         model_name=model_name,
+        name="flashcard-comparator",
         response_format=ProviderStrategy(ComparatorResponse),
         **{**agent_kwargs, "temperature": 0.0},
     )
@@ -207,6 +209,7 @@ def build_scorer_subagent(**agent_kwargs) -> StructuredSubagent:
         tools=[],
         provider=provider,
         model_name=model_name,
+        name="flashcard-scorer",
         response_format=ProviderStrategy(ScorerResponse),
         **{**agent_kwargs, "temperature": 0.0},
     )

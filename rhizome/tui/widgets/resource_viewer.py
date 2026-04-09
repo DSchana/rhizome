@@ -12,6 +12,9 @@ from textual.widgets import Static, Tree
 
 from rhizome.db import Resource, Topic
 from rhizome.db.models import LoadingPreference
+from rhizome.logs import get_logger
+
+_log = get_logger("tui.resource_viewer")
 from rhizome.db.operations import (
     link_resource_to_topic,
     list_resources,

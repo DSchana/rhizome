@@ -211,4 +211,12 @@ class ResourceManager:
         diff = self._compute_diff()
         # Freeze: deep-copy current (ResourceState is frozen, so dict copy suffices).
         self._frozen = dict(self._current)
+        if diff:
+            _log.info(
+                "Consumed %d change(s): %s",
+                len(diff),
+                ", ".join(f"r{c.resource_id}:{c.action.value}" for c in diff),
+            )
+        else:
+            _log.debug("Consumed with no pending changes")
         return diff

@@ -250,6 +250,7 @@ def build_commit_subagent(session_factory, chat_pane, **agent_kwargs) -> Subagen
         db_tools + proposal_tools,
         provider=provider,
         model_name=model_name,
+        name="commit",
         state_schema=CommitSubagentState,
         **{**agent_kwargs, "temperature": 0.1},
     )
