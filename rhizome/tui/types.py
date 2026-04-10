@@ -14,6 +14,14 @@ class Mode(Enum):
     REVIEW = "review"
 
 
+class DockPosition(Enum):
+    """Position within the ChatPane dock area system."""
+
+    LEFT = "left"
+    RIGHT = "right"
+    BOTTOM = "bottom"
+
+
 class Role(Enum):
     """Chat message role."""
 

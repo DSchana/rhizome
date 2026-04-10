@@ -544,8 +544,6 @@ class ResourceViewer(Vertical):
     # ------------------------------------------------------------------
 
     async def notify_database_committed(self, event: DatabaseCommitted) -> None:
-        if not self.has_class("--visible"):
-            return
         tables = event.changed_tables
 
         if not tables:
