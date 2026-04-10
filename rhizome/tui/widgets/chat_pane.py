@@ -60,6 +60,7 @@ from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
 from .messages import ActiveTopicChanged
+from .resource_view_model import ResourceViewerViewModel
 from .resource_viewer import ResourceViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
@@ -190,6 +191,8 @@ class ChatPane(Widget):
         self._commit = CommitState()
         # Resource manager — shared between agent session and resource viewer.
         self._resource_manager = ResourceManager(session_factory=session_factory)
+        # Resource viewer view model — outlives the widget across dock changes.
+        self._resource_viewer_vm = ResourceViewerViewModel()
 
         self._log = get_logger("tui.chat_pane")
 
@@ -211,7 +214,7 @@ class ChatPane(Widget):
         yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
         yield ChatInput(placeholder="Add instructions for the commit (Enter to skip)...", id="commit-instructions")
         yield CommandPalette(id="command-palette")
-        yield ResourceViewer(session_factory=self._session_factory, resource_manager=self._resource_manager, id="resource-viewer")
+        yield ResourceViewer(session_factory=self._session_factory, resource_manager=self._resource_manager, view_model=self._resource_viewer_vm, id="resource-viewer")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:

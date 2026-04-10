@@ -28,17 +28,10 @@ from textual.widgets._tree import TreeNode, TOGGLE_STYLE
 from rhizome.db import Resource
 from rhizome.db.models import ResourceSection
 
+from .resource_view_model import LoadState, ResourceLoaderViewModel
+
 
 _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-
-class LoadState(enum.Enum):
-    """Load state for a resource or section."""
-
-    UNLOADED = "unloaded"
-    DEFAULT = "default"          # loaded per resource's loading_preference
-    CONTEXT_STUFFED = "context"  # override: context-stuffed directly
-    PENDING = "pending"          # embedding in progress — locked, shows spinner
 
 
 # -- Colors ------------------------------------------------------------
@@ -385,12 +378,36 @@ class ResourceLoader(Widget, can_focus=True):
 
     # -- Init / compose ------------------------------------------------
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, view_model: ResourceLoaderViewModel | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._resources: list[Resource] = []
-        self._states: dict[tuple[str, int], LoadState] = {}
-        self._spinner_frame: int = 0
+        self._vm = view_model or ResourceLoaderViewModel()
         self._spinner_timer = None
+
+    # -- Properties that read/write through to the view model -------------
+
+    @property
+    def _resources(self) -> list[Resource]:
+        return self._vm.resources
+
+    @_resources.setter
+    def _resources(self, value: list[Resource]) -> None:
+        self._vm.resources = value
+
+    @property
+    def _states(self) -> dict[tuple[str, int], LoadState]:
+        return self._vm.states
+
+    @_states.setter
+    def _states(self, value: dict[tuple[str, int], LoadState]) -> None:
+        self._vm.states = value
+
+    @property
+    def _spinner_frame(self) -> int:
+        return self._vm.spinner_frame
+
+    @_spinner_frame.setter
+    def _spinner_frame(self, value: int) -> None:
+        self._vm.spinner_frame = value
 
     def compose(self) -> ComposeResult:
         yield Static("", id="rld-empty")
@@ -398,8 +415,12 @@ class ResourceLoader(Widget, can_focus=True):
         yield Static("", id="rld-hint")
 
     def on_mount(self) -> None:
+        self.show_ids = self._vm.show_ids
         self._spinner_timer = self.set_interval(0.1, self._tick_spinner, pause=True)
         self._apply_empty_state()
+        self._update_spinner_timer()
+        if self._resources:
+            self._update_hint()
 
     def _tick_spinner(self) -> None:
         self._spinner_frame = (self._spinner_frame + 1) % len(_SPINNER_FRAMES)
@@ -498,6 +519,7 @@ class ResourceLoader(Widget, can_focus=True):
     # -- Reactive watchers ---------------------------------------------
 
     def watch_show_ids(self) -> None:
+        self._vm.show_ids = self.show_ids
         tree = self._tree
         tree._invalidate_label_cache()
         # Padding to accommodate ID text beyond measured label width.

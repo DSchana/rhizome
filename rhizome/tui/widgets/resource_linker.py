@@ -12,6 +12,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from rhizome.db import Resource
+from .resource_view_model import ResourceLinkerViewModel
 
 _DIM = "rgb(100,100,100)"
 _FOCUS_GREEN = "rgb(100,200,100)"
@@ -72,10 +73,27 @@ class ResourceLinker(Widget, can_focus=True):
     cursor: reactive[int] = reactive(0)
     show_ids: reactive[bool] = reactive(False)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, view_model: ResourceLinkerViewModel | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._resources: list[Resource] = []
-        self._linked_ids: set[int] = set()
+        self._vm = view_model or ResourceLinkerViewModel()
+
+    # -- Properties that read/write through to the view model -------------
+
+    @property
+    def _resources(self) -> list[Resource]:
+        return self._vm.resources
+
+    @_resources.setter
+    def _resources(self, value: list[Resource]) -> None:
+        self._vm.resources = value
+
+    @property
+    def _linked_ids(self) -> set[int]:
+        return self._vm.linked_ids
+
+    @_linked_ids.setter
+    def _linked_ids(self, value: set[int]) -> None:
+        self._vm.linked_ids = value
 
     def compose(self) -> ComposeResult:
         yield Static("", id="rlk-empty")
@@ -84,7 +102,13 @@ class ResourceLinker(Widget, can_focus=True):
         yield Static("", id="rlk-hint")
 
     def on_mount(self) -> None:
+        self.show_ids = self._vm.show_ids
+        self.cursor = self._vm.cursor
         self._apply_empty_state()
+        if self._resources:
+            self._render_list()
+            self._update_hint()
+            self._scroll_cursor_visible()
 
     # ------------------------------------------------------------------
     # Public API
@@ -113,12 +137,14 @@ class ResourceLinker(Widget, can_focus=True):
     # ------------------------------------------------------------------
 
     def watch_cursor(self) -> None:
+        self._vm.cursor = self.cursor
         if self._resources:
             self._render_list()
             self._update_hint()
             self._scroll_cursor_visible()
 
     def watch_show_ids(self) -> None:
+        self._vm.show_ids = self.show_ids
         if self._resources:
             self._render_list()
 

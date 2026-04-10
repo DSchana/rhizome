@@ -28,7 +28,8 @@ from rhizome.tui.types import DatabaseCommitted
 from .messages import ActiveTopicChanged
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
-from .resource_loader import LoadState, ResourceLoader
+from .resource_loader import ResourceLoader
+from .resource_view_model import LoadState, ResourceViewerViewModel
 from .topic_tree import TopicTree
 
 
@@ -152,20 +153,61 @@ class ResourceViewer(Vertical):
     view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
     show_ids: reactive[bool] = reactive(False)
 
-    def __init__(self, session_factory=None, resource_manager: ResourceManager | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        session_factory=None,
+        resource_manager: ResourceManager | None = None,
+        view_model: ResourceViewerViewModel | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self._session_factory = session_factory
         self._resource_manager = resource_manager
-        self._resource_cache: dict[int, list[Resource]] = {}
-        self._loader_resource_cache: dict[int, list[Resource]] = {}
-        self._resource_cursor_cache: dict[int, int] = {}
-        self._all_resources: list[Resource] | None = None
-        self._linked_ids_cache: dict[int, set[int]] = {}
-        self._current_topic_id: int | None = None
-        self._active_topic: Topic | None = None
-        self._active_topic_path: list[str] = []
+        self._vm = view_model or ResourceViewerViewModel()
+
+        # Dict/list caches are shared references — mutations flow through.
+        self._resource_cache = self._vm.resource_cache
+        self._loader_resource_cache = self._vm.loader_resource_cache
+        self._resource_cursor_cache = self._vm.resource_cursor_cache
+        self._linked_ids_cache = self._vm.linked_ids_cache
+
+        # Transient flags — not persisted in VM.
         self._linker_toggle_in_progress: bool = False
         self._loader_toggle_in_progress: bool = False
+
+    # -- Properties that read/write through to the view model -------------
+
+    @property
+    def _current_topic_id(self) -> int | None:
+        return self._vm.current_topic_id
+
+    @_current_topic_id.setter
+    def _current_topic_id(self, value: int | None) -> None:
+        self._vm.current_topic_id = value
+
+    @property
+    def _active_topic(self) -> Topic | None:
+        return self._vm.active_topic
+
+    @_active_topic.setter
+    def _active_topic(self, value: Topic | None) -> None:
+        self._vm.active_topic = value
+
+    @property
+    def _active_topic_path(self) -> list[str]:
+        return self._vm.active_topic_path
+
+    @_active_topic_path.setter
+    def _active_topic_path(self, value: list[str]) -> None:
+        self._vm.active_topic_path = value
+
+    @property
+    def _all_resources(self) -> list[Resource] | None:
+        return self._vm.all_resources
+
+    @_all_resources.setter
+    def _all_resources(self, value: list[Resource] | None) -> None:
+        self._vm.all_resources = value
 
     def compose(self):
         yield Static("", id="rv-help")
@@ -175,18 +217,24 @@ class ResourceViewer(Vertical):
                 yield TopicTree(self._session_factory)
             with Vertical(id="rv-resource-pane"):
                 yield Static("Resources", classes="pane-title")
-                yield ResourceList(id="rv-resource-list")
+                yield ResourceList(view_model=self._vm.resource_list, id="rv-resource-list")
             with Vertical(id="rv-linker-pane"):
                 yield Static("Link Resources", classes="pane-title")
-                yield ResourceLinker(id="rv-resource-linker")
+                yield ResourceLinker(view_model=self._vm.resource_linker, id="rv-resource-linker")
             with Vertical(id="rv-loader-pane"):
                 yield Static("Load Resources", id="rv-loader-title", classes="pane-title")
-                yield ResourceLoader(id="rv-resource-loader")
+                yield ResourceLoader(view_model=self._vm.resource_loader, id="rv-resource-loader")
                 yield Static("", id="rv-loader-hint")
         yield Static(" ", id="rv-bottom-spacer")
 
     def on_mount(self) -> None:
         self.border_title = "Resources [dim]ctrl+r to focus[/dim]"
+        # Restore reactives from view model.
+        self.view_mode = self._vm.view_mode
+        self.show_ids = self._vm.show_ids
+        # Restore active topic on the tree.
+        if self._vm.active_topic is not None:
+            self.query_one(TopicTree).active_topic_id = self._vm.active_topic.id
         self._update_help_text()
 
     # ------------------------------------------------------------------
@@ -215,6 +263,7 @@ class ResourceViewer(Vertical):
     }
 
     def watch_view_mode(self, old_value: ResourceViewMode, new_value: ResourceViewMode) -> None:
+        self._vm.view_mode = new_value
         # Save cursor from old mode
         if self._current_topic_id is not None and old_value == ResourceViewMode.TOPIC_RESOURCES:
             resource_list = self.query_one("#rv-resource-list", ResourceList)
@@ -573,6 +622,7 @@ class ResourceViewer(Vertical):
         self.show_ids = not self.show_ids
 
     def watch_show_ids(self, value: bool) -> None:
+        self._vm.show_ids = value
         self.query_one(TopicTree).show_ids = value
         self.query_one("#rv-resource-list", ResourceList).show_ids = value
         self.query_one("#rv-resource-linker", ResourceLinker).show_ids = value

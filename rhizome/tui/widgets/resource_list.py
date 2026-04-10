@@ -12,6 +12,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from rhizome.db import Resource
+from .resource_view_model import ResourceListViewModel
 
 _DIM = "rgb(100,100,100)"
 _HINT = "rgb(80,80,80)"
@@ -86,9 +87,19 @@ class ResourceList(Widget, can_focus=True):
 
     cursor: reactive[int] = reactive(0)
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, view_model: ResourceListViewModel | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._resources: list[Resource] = []
+        self._vm = view_model or ResourceListViewModel()
+
+    # -- Properties that read/write through to the view model -------------
+
+    @property
+    def _resources(self) -> list[Resource]:
+        return self._vm.resources
+
+    @_resources.setter
+    def _resources(self, value: list[Resource]) -> None:
+        self._vm.resources = value
 
     def compose(self) -> ComposeResult:
         yield Static("", id="rl-empty")
@@ -101,7 +112,13 @@ class ResourceList(Widget, can_focus=True):
                 yield Static(id="rl-summary")
 
     def on_mount(self) -> None:
+        self.show_ids = self._vm.show_ids
+        self.cursor = self._vm.cursor
         self._apply_empty_state()
+        if self._resources:
+            self._render_list()
+            self._render_detail()
+            self._scroll_cursor_visible()
 
     # ------------------------------------------------------------------
     # Public API
@@ -125,10 +142,12 @@ class ResourceList(Widget, can_focus=True):
     # ------------------------------------------------------------------
 
     def watch_show_ids(self) -> None:
+        self._vm.show_ids = self.show_ids
         if self._resources:
             self._render_list()
 
     def watch_cursor(self) -> None:
+        self._vm.cursor = self.cursor
         if self._resources:
             self._render_list()
             self._render_detail()
