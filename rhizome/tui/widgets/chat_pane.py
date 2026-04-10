@@ -114,10 +114,12 @@ class ChatPane(Widget):
     #dock-left {
         width: 25%;
         height: 1fr;
+        border-right: solid rgb(60, 60, 60);
     }
     #dock-right {
         width: 25%;
         height: 1fr;
+        border-left: solid rgb(60, 60, 60);
     }
     #dock-center-col {
         width: 1fr;
@@ -126,6 +128,7 @@ class ChatPane(Widget):
     #dock-bottom {
         height: auto;
         max-height: 50%;
+        border-top: solid rgb(60, 60, 60);
     }
     .--dock-empty {
         display: none;
@@ -313,6 +316,8 @@ class ChatPane(Widget):
 
     async def dock_widget(self, widget: Widget, position: DockPosition) -> None:
         """Mount a widget into a dock area and make it visible."""
+        if hasattr(widget, "dock_position"):
+            widget.dock_position = position
         container = self._get_dock_area(position)
         await container.mount(widget)
         container.remove_class("--dock-empty")

@@ -18,6 +18,7 @@ import enum
 
 from rhizome.db import Resource, Topic
 from rhizome.db.models import ResourceSection
+from rhizome.tui.types import Arrangement
 
 
 class LoadState(enum.Enum):
@@ -40,6 +41,7 @@ class ResourceListViewModel:
         self.resources: list[Resource] = []
         self.cursor: int = 0
         self.show_ids: bool = False
+        self.arrangement: Arrangement = Arrangement.HORIZONTAL
 
 
 class ResourceLinkerViewModel:
@@ -50,6 +52,7 @@ class ResourceLinkerViewModel:
         self.linked_ids: set[int] = set()
         self.cursor: int = 0
         self.show_ids: bool = False
+        self.arrangement: Arrangement = Arrangement.HORIZONTAL
 
 
 class ResourceLoaderViewModel:
@@ -64,6 +67,7 @@ class ResourceLoaderViewModel:
         self.states: dict[tuple[str, int], LoadState] = {}
         self.show_ids: bool = False
         self.spinner_frame: int = 0
+        self.arrangement: Arrangement = Arrangement.HORIZONTAL
 
 
 # ======================================================================

@@ -22,6 +22,13 @@ class DockPosition(Enum):
     BOTTOM = "bottom"
 
 
+class Arrangement(Enum):
+    """Layout arrangement for dockable widgets and their subwidgets."""
+
+    HORIZONTAL = "horizontal"
+    VERTICAL = "vertical"
+
+
 class Role(Enum):
     """Chat message role."""
 

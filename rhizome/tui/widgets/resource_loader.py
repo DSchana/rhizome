@@ -28,6 +28,7 @@ from textual.widgets._tree import TreeNode, TOGGLE_STYLE
 from rhizome.db import Resource
 from rhizome.db.models import ResourceSection
 
+from rhizome.tui.types import Arrangement
 from .resource_view_model import LoadState, ResourceLoaderViewModel
 
 
@@ -85,6 +86,33 @@ def _owning_resource(node: TreeNode[NodeData]) -> Resource:
     raise RuntimeError("Section node has no Resource ancestor")
 
 
+class _LoaderHint(Static):
+    """Self-rendering hint bar that reacts to load counts and arrangement."""
+
+    loaded: reactive[int] = reactive(0)
+    total: reactive[int] = reactive(0)
+    sections: reactive[int] = reactive(0)
+    vertical: reactive[bool] = reactive(False)
+
+    _BINDINGS = [
+        ("space", "toggle"),
+        ("ctrl+enter", "context stuff"),
+        ("\u2190/\u2192", "expand/collapse"),
+    ]
+
+    def render(self) -> str:
+        summary = f"{self.loaded}/{self.total} loaded, {self.sections} sections"
+        if self.vertical:
+            key_width = max(len(k) for k, _ in self._BINDINGS)
+            lines = [summary]
+            for key, action in self._BINDINGS:
+                lines.append(f"  {key:<{key_width}}  {action}")
+            return "\n".join(lines)
+        else:
+            parts = [f"{k}: {a}" for k, a in self._BINDINGS]
+            return f"{summary}  |  {'  '.join(parts)}"
+
+
 # ======================================================================
 # Inner tree widget
 # ======================================================================
@@ -95,10 +123,10 @@ class _LoaderTree(Tree[NodeData]):
     DEFAULT_CSS = """
     _LoaderTree {
         height: auto;
+        max-height: 20;
         margin: 1 1 1 1;
         background: transparent;
-        overflow-x: hidden;
-        max-height: 20;
+        overflow-y: auto;
     }
     _LoaderTree:focus {
         background-tint: transparent;
@@ -123,7 +151,8 @@ class _LoaderTree(Tree[NodeData]):
         self._loader = loader
 
     def _refresh_height(self) -> None:
-        line_count = len(self._tree_lines)
+        # In vertical arrangement, height is 1fr (CSS) — skip manual sizing.
+        line_count = len(self._tree_lines) + 2  # +2 for padding/margin
         self.styles.height = max(line_count, 1)
 
     def _invalidate_label_cache(self) -> None:
@@ -255,41 +284,42 @@ class _LoaderTree(Tree[NodeData]):
             name_style = style
 
         # -- Build suffix (metadata + ctx tag) so we know its width -----
+        vertical = loader._vm.arrangement == Arrangement.VERTICAL
         suffix = ""
-        if isinstance(data, Resource):
-            meta_parts: list[str] = []
-            if loader.show_ids:
-                meta_parts.append(f"[{data.id}]")
-            meta_parts.append(f"~{_fmt_tokens(data.estimated_tokens)} tok")
-            try:
-                chunk_count = len(data.chunks) if data.chunks is not None else 0
-            except Exception:
-                chunk_count = 0
-            meta_parts.append(f"{chunk_count} chunks")
-            pref = data.loading_preference.value if data.loading_preference else "—"
-            meta_parts.append(pref)
-            suffix = "  " + " │ ".join(meta_parts)
-        elif loader.show_ids:
-            suffix = f"  [{data.id}]"
+        if not vertical:
+            if isinstance(data, Resource):
+                meta_parts: list[str] = []
+                if loader.show_ids:
+                    meta_parts.append(f"[{data.id}]")
+                meta_parts.append(f"~{_fmt_tokens(data.estimated_tokens)} tok")
+                try:
+                    chunk_count = len(data.chunks) if data.chunks is not None else 0
+                except Exception:
+                    chunk_count = 0
+                meta_parts.append(f"{chunk_count} chunks")
+                pref = data.loading_preference.value if data.loading_preference else "—"
+                meta_parts.append(pref)
+                suffix = "  " + " │ ".join(meta_parts)
+            elif loader.show_ids:
+                suffix = f"  [{data.id}]"
 
         if state == LoadState.CONTEXT_STUFFED:
             suffix += "  ctx"
 
         # -- Truncate name to fit within available width ---------------
-        # Tree guides: guide_depth (4) per tree-depth level.
-        tree_depth = 0
-        p = node.parent
-        while p is not None:
-            tree_depth += 1
-            p = p.parent
-        guide_width = self.guide_depth * tree_depth
-        prefix_width = len(icon) + len(checkbox)
-        available = self.size.width - guide_width - prefix_width - len(suffix) - 1
-        available = max(available, 10)
-
         name = str(node._label)
-        if len(name) > available:
-            name = name[: available - 1] + "…"
+        if not vertical:
+            tree_depth = 0
+            p = node.parent
+            while p is not None:
+                tree_depth += 1
+                p = p.parent
+            guide_width = self.guide_depth * tree_depth
+            prefix_width = len(icon) + len(checkbox)
+            available = self.size.width - guide_width - prefix_width - len(suffix) - 1
+            available = max(available, 10)
+            if len(name) > available:
+                name = name[: available - 1] + "…"
 
         label = Text(name)
         label.stylize(name_style)
@@ -301,26 +331,29 @@ class _LoaderTree(Tree[NodeData]):
         )
 
         # -- Append suffix with styling --------------------------------
-        if isinstance(data, Resource):
-            # Re-append with META style (suffix includes the "  " prefix)
-            meta_end = suffix
-            if state == LoadState.CONTEXT_STUFFED:
-                meta_end = suffix[: -len("  ctx")]
-                text.append(meta_end, style=_META)
-                text.append("  ctx", style=_CTX_TAG)
-            else:
-                text.append(suffix, style=_META)
-        else:
-            if loader.show_ids and suffix:
-                id_part = suffix
+        if not vertical:
+            if isinstance(data, Resource):
+                meta_end = suffix
                 if state == LoadState.CONTEXT_STUFFED:
-                    id_part = suffix[: -len("  ctx")]
-                    text.append(id_part, style=_ID_STYLE)
+                    meta_end = suffix[: -len("  ctx")]
+                    text.append(meta_end, style=_META)
                     text.append("  ctx", style=_CTX_TAG)
                 else:
-                    text.append(suffix, style=_ID_STYLE)
-            elif state == LoadState.CONTEXT_STUFFED:
-                text.append("  ctx", style=_CTX_TAG)
+                    text.append(suffix, style=_META)
+            else:
+                if loader.show_ids and suffix:
+                    id_part = suffix
+                    if state == LoadState.CONTEXT_STUFFED:
+                        id_part = suffix[: -len("  ctx")]
+                        text.append(id_part, style=_ID_STYLE)
+                        text.append("  ctx", style=_CTX_TAG)
+                    else:
+                        text.append(suffix, style=_ID_STYLE)
+                elif state == LoadState.CONTEXT_STUFFED:
+                    text.append("  ctx", style=_CTX_TAG)
+        elif suffix:
+            # Vertical: only the ctx tag if present
+            text.append(suffix, style=_CTX_TAG)
 
         return text
 
@@ -350,6 +383,12 @@ class ResourceLoader(Widget, can_focus=True):
     ResourceLoader #rld-hint {
         color: rgb(80,80,80);
         margin: 0 0 0 2;
+    }
+    ResourceLoader #rld-detail {
+        display: none;
+        height: auto;
+        color: rgb(100,100,100);
+        margin: 0 1 0 2;
     }
     ResourceLoader #rld-empty {
         color: $text-muted;
@@ -411,16 +450,48 @@ class ResourceLoader(Widget, can_focus=True):
 
     def compose(self) -> ComposeResult:
         yield Static("", id="rld-empty")
+        yield Static("", id="rld-detail")
         yield _LoaderTree(self, id="rld-tree")
-        yield Static("", id="rld-hint")
+        yield _LoaderHint(id="rld-hint")
 
     def on_mount(self) -> None:
         self.show_ids = self._vm.show_ids
+        self.query_one("#rld-hint", _LoaderHint).vertical = (
+            self._vm.arrangement == Arrangement.VERTICAL
+        )
         self._spinner_timer = self.set_interval(0.1, self._tick_spinner, pause=True)
         self._apply_empty_state()
         self._update_spinner_timer()
         if self._resources:
             self._update_hint()
+        if self._vm.arrangement == Arrangement.VERTICAL:
+            self.call_after_refresh(self._constrain_tree)
+
+    def on_resize(self) -> None:
+        if self._vm.arrangement == Arrangement.VERTICAL:
+            self._constrain_tree()
+
+    def _constrain_tree(self) -> None:
+        # Textual's CSS layout resolves `max-height: N%` against the *full*
+        # parent height, ignoring sibling widgets.  This means there is no
+        # pure-CSS way to express "fill remaining space after siblings, then
+        # scroll."  A `height: auto` tree shrinks to content (good) but has
+        # no upper bound (no scrollbar ever).  A `height: 1fr` tree fills
+        # all remaining space (scrollbar works) but expands even when content
+        # is small, pushing the hint to the very bottom of the dock area.
+        #
+        # The workaround is to keep the tree at `height: auto` and set its
+        # `max_height` programmatically to the space that actually remains
+        # after the other children (detail, hint, empty label) are measured.
+        # The extra margin of 6 accounts for the tree's own margin (1 on
+        # each side) plus spacing from surrounding widgets.
+        tree = self._tree
+        siblings_height = sum(
+            child.size.height for child in self.children if child is not tree
+        )
+        available = self.size.height - siblings_height - 6
+        if available > 0:
+            tree.styles.max_height = available
 
     def _tick_spinner(self) -> None:
         self._spinner_frame = (self._spinner_frame + 1) % len(_SPINNER_FRAMES)
@@ -524,6 +595,10 @@ class ResourceLoader(Widget, can_focus=True):
         tree._invalidate_label_cache()
         # Padding to accommodate ID text beyond measured label width.
         tree.styles.padding = (0, 2, 0, 0) if self.show_ids else (0, 0, 0, 0)
+        # Refresh the detail panel (IDs shown there in vertical arrangement).
+        cursor_node = tree.cursor_node
+        if cursor_node is not None:
+            self._update_detail(cursor_node.data)
 
     # -- Rendering -----------------------------------------------------
 
@@ -531,9 +606,36 @@ class ResourceLoader(Widget, can_focus=True):
         empty = not self._resources
         self.query_one("#rld-empty", Static).display = empty
         self._tree.display = not empty
-        self.query_one("#rld-hint", Static).display = not empty
+        self.query_one("#rld-hint", _LoaderHint).display = not empty
         if empty:
             self.query_one("#rld-empty", Static).update("(No resources linked to this topic)")
+            self.query_one("#rld-detail", Static).update("")
+
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted[NodeData]) -> None:
+        self._update_detail(event.node.data)
+
+    def _update_detail(self, data: NodeData | None) -> None:
+        """Update the detail panel with metadata for the highlighted node."""
+        detail = self.query_one("#rld-detail", Static)
+        if data is None:
+            detail.update("")
+            return
+
+        if isinstance(data, Resource):
+            parts: list[str] = []
+            parts.append(f"~{_fmt_tokens(data.estimated_tokens)} tokens")
+            try:
+                chunk_count = len(data.chunks) if data.chunks is not None else 0
+            except Exception:
+                chunk_count = 0
+            parts.append(f"{chunk_count} chunks")
+            pref = data.loading_preference.value if data.loading_preference else "—"
+            parts.append(pref)
+            if self.show_ids:
+                parts.append(f"id: {data.id}")
+            detail.update(" │ ".join(parts))
+        else:
+            detail.update("")
 
     def _update_hint(self) -> None:
         loaded_count = 0
@@ -547,11 +649,10 @@ class ResourceLoader(Widget, can_focus=True):
                 sec_state = self._states.get(("section", section.id), LoadState.UNLOADED)
                 if sec_state in (LoadState.DEFAULT, LoadState.CONTEXT_STUFFED):
                     total_sections += 1
-        total = len(self._resources)
-        self.query_one("#rld-hint", Static).update(
-            f"{loaded_count}/{total} loaded, {total_sections} sections  |  "
-            f"space: toggle  ctrl+enter: context stuff  ←/→: expand/collapse"
-        )
+        hint = self.query_one("#rld-hint", _LoaderHint)
+        hint.loaded = loaded_count
+        hint.total = len(self._resources)
+        hint.sections = total_sections
 
     # -- State transitions ---------------------------------------------
 

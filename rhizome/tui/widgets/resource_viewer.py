@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Static, Tree
@@ -23,7 +23,7 @@ from rhizome.db.operations import (
 )
 from rhizome.resources import ResourceManager
 
-from rhizome.tui.types import DatabaseCommitted
+from rhizome.tui.types import Arrangement, DatabaseCommitted, DockPosition
 
 from .messages import ActiveTopicChanged
 from .resource_linker import ResourceLinker
@@ -53,6 +53,34 @@ _MODE_PANES: dict[ResourceViewMode, list[str]] = {
 }
 
 
+class _HelpText(Static):
+    """Self-rendering help text that reacts to view mode and arrangement."""
+
+    view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
+    vertical: reactive[bool] = reactive(False)
+
+    def render(self) -> str:
+        mode_label = _MODE_LABELS[self.view_mode]
+        bindings: list[tuple[str, str]] = [("tab", "cycle view")]
+        if len(_MODE_PANES[self.view_mode]) > 1:
+            bindings.append(("ctrl+\u2190/\u2192", "switch pane"))
+        if self.view_mode != ResourceViewMode.LOAD_RESOURCES:
+            bindings.append(("ctrl+enter", "set topic"))
+        bindings.append(("i", "toggle ids"))
+        bindings.append(("esc", "close"))
+
+        if self.vertical:
+            key_width = max(len(k) for k, _ in bindings)
+            lines = [f"\\[{mode_label}]"]
+            for key, action in bindings:
+                lines.append(f"  {key:<{key_width}}  {action}")
+            return "\n".join(lines)
+        else:
+            parts = [f"\\[{mode_label}]"]
+            parts.extend(f"{k}: {a}" for k, a in bindings)
+            return "  ".join(parts)
+
+
 class ResourceViewer(Vertical):
     """Docked bottom panel for browsing and linking resources to topics."""
 
@@ -66,12 +94,65 @@ class ResourceViewer(Vertical):
         border-title-color: rgb(180, 180, 180);
     }
     ResourceViewer #rv-help {
-        color: $text-muted;
+        color: rgb(80, 80, 80);
         margin: 1 0 0 1;
     }
     ResourceViewer #rv-split {
         height: auto;
+        layout: horizontal;
     }
+
+    /* -- Arrangement: vertical (for left/right dock) -- */
+    ResourceViewer.--arrange-vertical {
+        height: 1fr;
+        max-height: 100%;
+    }
+    ResourceViewer.--arrange-vertical #rv-split {
+        layout: vertical;
+        height: 1fr;
+    }
+    ResourceViewer.--arrange-vertical #rv-tree-pane {
+        width: 1fr;
+        height: auto;
+        padding-left: 0;
+    }
+    ResourceViewer.--arrange-vertical #rv-resource-pane {
+        width: 1fr;
+        height: 1fr;
+    }
+    ResourceViewer.--arrange-vertical #rv-linker-pane {
+        width: 1fr;
+        height: 1fr;
+    }
+    ResourceViewer.--arrange-vertical #rv-loader-pane {
+        width: 1fr;
+        height: 1fr;
+    }
+    ResourceViewer.--arrange-vertical.--mode-load #rv-loader-pane {
+        width: 1fr;
+    }
+
+    /* -- Vertical: ResourceList (topic resources mode) -- */
+    ResourceViewer.--arrange-vertical ResourceList {
+        height: 1fr;
+    }
+
+    /* -- Vertical: ResourceLinker (link resources mode) -- */
+    ResourceViewer.--arrange-vertical ResourceLinker {
+        height: auto;
+    }
+
+    /* -- Vertical: ResourceLoader (load resources mode) -- */
+    ResourceViewer.--arrange-vertical ResourceLoader {
+        height: 1fr;
+    }
+    ResourceViewer.--arrange-vertical _LoaderTree {
+        height: auto;
+    }
+    ResourceViewer.--arrange-vertical ResourceLoader #rld-detail {
+        display: block;
+    }
+
     ResourceViewer #rv-tree-pane {
         width: 25%;
         height: auto;
@@ -152,6 +233,14 @@ class ResourceViewer(Vertical):
 
     view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
     show_ids: reactive[bool] = reactive(False)
+    dock_position: reactive[DockPosition] = reactive(DockPosition.BOTTOM)
+
+    # Dock position → arrangement direction for #rv-split.
+    _DOCK_ARRANGEMENT = {
+        DockPosition.BOTTOM: "horizontal",
+        DockPosition.LEFT: "vertical",
+        DockPosition.RIGHT: "vertical",
+    }
 
     def __init__(
         self,
@@ -210,8 +299,8 @@ class ResourceViewer(Vertical):
         self._vm.all_resources = value
 
     def compose(self):
-        yield Static("", id="rv-help")
-        with Horizontal(id="rv-split"):
+        yield _HelpText(id="rv-help")
+        with Container(id="rv-split"):
             with Vertical(id="rv-tree-pane"):
                 yield Static("Topics", classes="pane-title")
                 yield TopicTree(self._session_factory)
@@ -224,7 +313,6 @@ class ResourceViewer(Vertical):
             with Vertical(id="rv-loader-pane"):
                 yield Static("Load Resources", id="rv-loader-title", classes="pane-title")
                 yield ResourceLoader(view_model=self._vm.resource_loader, id="rv-resource-loader")
-                yield Static("", id="rv-loader-hint")
         yield Static(" ", id="rv-bottom-spacer")
 
     def on_mount(self) -> None:
@@ -235,22 +323,9 @@ class ResourceViewer(Vertical):
         # Restore active topic on the tree.
         if self._vm.active_topic is not None:
             self.query_one(TopicTree).active_topic_id = self._vm.active_topic.id
-        self._update_help_text()
-
-    # ------------------------------------------------------------------
-    # Help text
-    # ------------------------------------------------------------------
-
-    def _update_help_text(self) -> None:
-        mode_label = _MODE_LABELS[self.view_mode]
-        parts = [f"\\[{mode_label}]", "tab: cycle view"]
-        if len(_MODE_PANES[self.view_mode]) > 1:
-            parts.append("ctrl+\u2190/\u2192: switch pane")
-        if self.view_mode != ResourceViewMode.LOAD_RESOURCES:
-            parts.append("ctrl+enter: set topic")
-        parts.append("i: toggle ids")
-        parts.append("esc: close")
-        self.query_one("#rv-help", Static).update("  ".join(parts))
+        help_text = self.query_one("#rv-help", _HelpText)
+        help_text.view_mode = self.view_mode
+        help_text.vertical = self._DOCK_ARRANGEMENT.get(self.dock_position) == "vertical"
 
     # ------------------------------------------------------------------
     # View mode cycling
@@ -261,6 +336,20 @@ class ResourceViewer(Vertical):
         ResourceViewMode.LINK_RESOURCES: "--mode-link",
         ResourceViewMode.LOAD_RESOURCES: "--mode-load",
     }
+
+    def watch_dock_position(self, old_value: DockPosition, new_value: DockPosition) -> None:
+        old_cls = f"--arrange-{self._DOCK_ARRANGEMENT[old_value]}"
+        new_cls = f"--arrange-{self._DOCK_ARRANGEMENT[new_value]}"
+        if old_cls != new_cls:
+            self.remove_class(old_cls)
+            self.add_class(new_cls)
+        # Propagate arrangement to sub-view-models.
+        arrangement = Arrangement(self._DOCK_ARRANGEMENT[new_value])
+        self._vm.resource_list.arrangement = arrangement
+        self._vm.resource_linker.arrangement = arrangement
+        self._vm.resource_loader.arrangement = arrangement
+        if self.is_mounted:
+            self.query_one("#rv-help", _HelpText).vertical = (arrangement == Arrangement.VERTICAL)
 
     def watch_view_mode(self, old_value: ResourceViewMode, new_value: ResourceViewMode) -> None:
         self._vm.view_mode = new_value
@@ -277,7 +366,8 @@ class ResourceViewer(Vertical):
         if new_cls:
             self.add_class(new_cls)
 
-        self._update_help_text()
+        if self.is_mounted:
+            self.query_one("#rv-help", _HelpText).view_mode = new_value
         if new_value == ResourceViewMode.LOAD_RESOURCES:
             self.query_one("#rv-resource-loader", ResourceLoader).focus()
             self.call_after_refresh(self._load_loader_for_active_topic)

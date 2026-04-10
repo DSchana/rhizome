@@ -12,6 +12,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from rhizome.db import Resource
+from rhizome.tui.types import Arrangement
 from .resource_view_model import ResourceListViewModel
 
 _DIM = "rgb(100,100,100)"
@@ -73,6 +74,20 @@ class ResourceList(Widget, can_focus=True):
         text-style: italic;
         margin: 1 0 0 1;
     }
+
+    /* -- Vertical arrangement -- */
+    ResourceList.--arrange-vertical #rl-list-scroll {
+        max-height: 70%;
+        overflow-y: auto;
+    }
+    ResourceList.--arrange-vertical #rl-detail-panel {
+        max-height: 25;
+        layout: vertical;
+    }
+    ResourceList.--arrange-vertical #rl-summary-scroll {
+        height: 1fr;
+        max-height: 100%;
+    }
     """
 
     class Dismissed(Message):
@@ -114,6 +129,7 @@ class ResourceList(Widget, can_focus=True):
     def on_mount(self) -> None:
         self.show_ids = self._vm.show_ids
         self.cursor = self._vm.cursor
+        self.set_class(self._vm.arrangement == Arrangement.VERTICAL, "--arrange-vertical")
         self._apply_empty_state()
         if self._resources:
             self._render_list()
@@ -185,6 +201,7 @@ class ResourceList(Widget, can_focus=True):
             self.query_one("#rl-empty", Static).update("(No resources)")
 
     def _render_list(self) -> None:
+        vertical = self._vm.arrangement == Arrangement.VERTICAL
         num_width = len(str(len(self._resources))) + 2
 
         right_parts = [
@@ -222,9 +239,8 @@ class ResourceList(Widget, can_focus=True):
                 marker_style = ""
                 right_style = _DIM
 
-            # Clip name to fit.
             name = resource.name
-            if len(name) > max_name_width:
+            if not vertical and len(name) > max_name_width:
                 name = name[: max_name_width - 1] + "…"
 
             text.append(marker, style=marker_style)
@@ -233,11 +249,16 @@ class ResourceList(Widget, can_focus=True):
             if self.show_ids:
                 text.append(f"  [{resource.id}]", style=_ID_COLOR)
 
-            right = right_parts[i].rjust(max_right)
-            padding = max(max_name_width - len(name) + 2, 2)
-            gap = " " * padding
-            text.append(gap)
-            text.append(right, style=right_style)
+            if vertical:
+                indent = " " * (2 + num_width + 1)
+                text.append(f"\n{indent}", style=right_style)
+                text.append(right_parts[i], style=right_style)
+            else:
+                right = right_parts[i].rjust(max_right)
+                padding = max(max_name_width - len(name) + 2, 2)
+                gap = " " * padding
+                text.append(gap)
+                text.append(right, style=right_style)
 
         self.query_one("#rl-list", Static).update(text)
 

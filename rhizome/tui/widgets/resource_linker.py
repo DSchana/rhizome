@@ -12,9 +12,11 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from rhizome.db import Resource
+from rhizome.tui.types import Arrangement
 from .resource_view_model import ResourceLinkerViewModel
 
 _DIM = "rgb(100,100,100)"
+_ALT_GREY = "rgb(180,180,180)"
 _FOCUS_GREEN = "rgb(100,200,100)"
 _ALT_BG_1 = "rgb(25,25,25)"
 _ALT_BG_2 = "rgb(35,35,35)"
@@ -201,12 +203,12 @@ class ResourceLinker(Widget, can_focus=True):
                 name_style = "bold"
                 marker = "► "
             else:
-                name_style = "" if i % 2 == 0 else _DIM
+                name_style = "" if i % 2 == 0 else _ALT_GREY
                 marker = "  "
 
-            # Clip name to fit.
             name = resource.name
-            if len(name) > max_name_width:
+            vertical = self._vm.arrangement == Arrangement.VERTICAL
+            if not vertical and len(name) > max_name_width:
                 name = name[: max_name_width - 1] + "…"
 
             text.append(marker, style=name_style)
