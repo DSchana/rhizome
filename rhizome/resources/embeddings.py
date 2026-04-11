@@ -9,7 +9,7 @@ import struct
 import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from rhizome.db.operations import add_chunks, get_resource
+from rhizome.db.operations import add_chunks, get_resource, link_chunks_to_sections
 from rhizome.logs import get_logger
 
 _log = get_logger("resources.embeddings")
@@ -168,6 +168,7 @@ async def compute_embeddings(session_factory, resource_id: int) -> None:
 
         async with session_factory() as session:
             await add_chunks(session, resource_id, chunk_dicts)
+            await link_chunks_to_sections(session, resource_id)
             await session.commit()
 
         _log.info("Created and embedded %d chunks for resource %d", len(chunk_dicts), resource_id)

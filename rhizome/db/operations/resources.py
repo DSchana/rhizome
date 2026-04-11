@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rhizome.logs import get_logger
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -10,6 +12,7 @@ from rhizome.db.models import (
     LoadingPreference,
     Resource,
     ResourceChunk,
+    ResourceChunkSection,
     ResourceSection,
     TopicResource,
 )
@@ -147,7 +150,9 @@ async def list_resources_for_topic(
     )
     if load_chunks:
         stmt = stmt.options(selectinload(Resource.chunks))
-    stmt = stmt.options(selectinload(Resource.sections))
+    stmt = stmt.options(
+        selectinload(Resource.sections).selectinload(ResourceSection.chunks)
+    )
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
@@ -248,3 +253,98 @@ async def insert_sections(
                 session, resource_id, section.children,
                 parent_id=row.id, _position=_position,
             )
+
+
+# -----------------------------------------------------------------------
+# Chunk–Section linking
+# -----------------------------------------------------------------------
+
+async def link_chunks_to_sections(
+    session: AsyncSession,
+    resource_id: int,
+) -> int:
+    """Link a resource's chunks to its sections based on offset overlap.
+
+    A section's effective range is [start_offset, next_sibling_start_offset).
+    The last section (by position) extends to infinity.  A chunk is linked to
+    every section whose range it overlaps.
+
+    Returns the number of join rows inserted.
+    """
+    _log = get_logger("db.operations.resources")
+
+    chunk_result = await session.execute(
+        select(ResourceChunk)
+        .where(ResourceChunk.resource_id == resource_id)
+        .order_by(ResourceChunk.chunk_index)
+    )
+    chunks = list(chunk_result.scalars().all())
+
+    section_result = await session.execute(
+        select(ResourceSection)
+        .where(ResourceSection.resource_id == resource_id)
+        .order_by(ResourceSection.position)
+    )
+    sections = list(section_result.scalars().all())
+
+    if not chunks or not sections:
+        return 0
+
+    # Filter to sections that have a start_offset.
+    offset_sections = [s for s in sections if s.start_offset is not None]
+    if not offset_sections:
+        _log.debug("No sections with start_offset for resource %d", resource_id)
+        return 0
+
+    # Compute effective end for each section: the start_offset of the next
+    # section at the same depth or shallower (i.e. the next sibling or
+    # parent-sibling), or infinity if none exists.
+    sec_starts = [s.start_offset for s in offset_sections]
+    sec_ends: list[float] = []
+    for i, sec in enumerate(offset_sections):
+        end: float = float("inf")
+        for j in range(i + 1, len(offset_sections)):
+            if offset_sections[j].depth <= sec.depth:
+                end = offset_sections[j].start_offset
+                break
+        sec_ends.append(end)
+
+    _log.debug(
+        "link_chunks_to_sections: resource=%d, %d chunks, %d sections with offsets",
+        resource_id, len(chunks), len(offset_sections),
+    )
+    for i, sec in enumerate(offset_sections):
+        _log.debug(
+            "  section pos=%d depth=%d id=%d title=%r range=[%d, %s)",
+            sec.position, sec.depth, sec.id, sec.title,
+            sec_starts[i], sec_ends[i] if sec_ends[i] != float("inf") else "inf",
+        )
+
+    count = 0
+    per_section_chunks: dict[int, list[tuple[int, int, int]]] = {}
+    for chunk in chunks:
+        for j in range(len(offset_sections)):
+            if chunk.start_offset < sec_ends[j] and chunk.end_offset > sec_starts[j]:
+                session.add(ResourceChunkSection(
+                    chunk_id=chunk.id, section_id=offset_sections[j].id,
+                ))
+                per_section_chunks.setdefault(offset_sections[j].id, []).append(
+                    (chunk.chunk_index, chunk.start_offset, chunk.end_offset)
+                )
+                count += 1
+
+    for i, sec in enumerate(offset_sections):
+        linked = per_section_chunks.get(sec.id, [])
+        chunk_detail = ", ".join(
+            f"#{idx}[{s}:{e}]" for idx, s, e in linked
+        ) or "(none)"
+        end_str = sec_ends[i] if sec_ends[i] != float("inf") else "inf"
+        _log.debug(
+            "  -> section id=%d title=%r range=[%d, %s): %d chunks: %s",
+            sec.id, sec.title, sec.start_offset, end_str,
+            len(linked), chunk_detail,
+        )
+
+    if count:
+        await session.flush()
+    return count

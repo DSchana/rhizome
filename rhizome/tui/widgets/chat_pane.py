@@ -36,6 +36,7 @@ from rhizome.db.operations import (
     delete_resource,
     get_resource,
     insert_sections,
+    link_chunks_to_sections,
     link_resource_to_topic,
     resolve_resource,
     resolve_topic,
@@ -1522,6 +1523,7 @@ class ChatPane(Widget):
         try:
             async with self._session_factory() as session:
                 await insert_sections(session, resource_id, sections)
+                await link_chunks_to_sections(session, resource_id)
                 await session.commit()
         except Exception as e:
             msg = RichChatMessage(role=Role.SYSTEM, content=f"Error saving sections: {e}")

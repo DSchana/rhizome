@@ -300,8 +300,18 @@ class _LoaderTree(Tree[NodeData]):
                 pref = data.loading_preference.value if data.loading_preference else "—"
                 meta_parts.append(pref)
                 suffix = "  " + " │ ".join(meta_parts)
-            elif loader.show_ids:
-                suffix = f"  [{data.id}]"
+            elif isinstance(data, ResourceSection):
+                meta_parts: list[str] = []
+                if loader.show_ids:
+                    meta_parts.append(f"[{data.id}]")
+                try:
+                    chunk_count = len(data.chunks) if data.chunks is not None else 0
+                except Exception:
+                    chunk_count = 0
+                if chunk_count:
+                    meta_parts.append(f"{chunk_count} chunks")
+                if meta_parts:
+                    suffix = "  " + " │ ".join(meta_parts)
 
         if state == LoadState.CONTEXT_STUFFED:
             suffix += "  ctx"
@@ -341,14 +351,14 @@ class _LoaderTree(Tree[NodeData]):
                 else:
                     text.append(suffix, style=_META)
             else:
-                if loader.show_ids and suffix:
-                    id_part = suffix
+                if suffix:
+                    meta_end = suffix
                     if state == LoadState.CONTEXT_STUFFED:
-                        id_part = suffix[: -len("  ctx")]
-                        text.append(id_part, style=_ID_STYLE)
+                        meta_end = suffix[: -len("  ctx")]
+                        text.append(meta_end, style=_META)
                         text.append("  ctx", style=_CTX_TAG)
                     else:
-                        text.append(suffix, style=_ID_STYLE)
+                        text.append(suffix, style=_META)
                 elif state == LoadState.CONTEXT_STUFFED:
                     text.append("  ctx", style=_CTX_TAG)
         elif suffix:
@@ -609,7 +619,9 @@ class ResourceLoader(Widget, can_focus=True):
         self.query_one("#rld-hint", _LoaderHint).display = not empty
         if empty:
             self.query_one("#rld-empty", Static).update("(No resources linked to this topic)")
-            self.query_one("#rld-detail", Static).update("")
+            detail = self.query_one("#rld-detail", Static)
+            detail.update("")
+            detail.display = False
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted[NodeData]) -> None:
         self._update_detail(event.node.data)
@@ -619,6 +631,7 @@ class ResourceLoader(Widget, can_focus=True):
         detail = self.query_one("#rld-detail", Static)
         if data is None:
             detail.update("")
+            detail.display = False
             return
 
         if isinstance(data, Resource):
@@ -634,8 +647,21 @@ class ResourceLoader(Widget, can_focus=True):
             if self.show_ids:
                 parts.append(f"id: {data.id}")
             detail.update(" │ ".join(parts))
+            detail.display = True
+        elif isinstance(data, ResourceSection):
+            parts: list[str] = []
+            try:
+                chunk_count = len(data.chunks) if data.chunks is not None else 0
+            except Exception:
+                chunk_count = 0
+            parts.append(f"{chunk_count} chunks")
+            if self.show_ids:
+                parts.append(f"id: {data.id}")
+            detail.update(" │ ".join(parts))
+            detail.display = True
         else:
             detail.update("")
+            detail.display = False
 
     def _update_hint(self) -> None:
         loaded_count = 0

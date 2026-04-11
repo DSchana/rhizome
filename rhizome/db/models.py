@@ -351,9 +351,6 @@ class ResourceChunk(Base):
     resource_id: Mapped[int] = mapped_column(
         ForeignKey("resource.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    section_id: Mapped[int | None] = mapped_column(
-        ForeignKey("resource_section.id", ondelete="SET NULL"), nullable=True, index=True
-    )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -361,7 +358,9 @@ class ResourceChunk(Base):
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
     resource: Mapped["Resource"] = relationship(back_populates="chunks")
-    section: Mapped["ResourceSection | None"] = relationship(back_populates="chunks")
+    sections: Mapped[list["ResourceSection"]] = relationship(
+        secondary="resource_chunk_section", back_populates="chunks"
+    )
 
     def __repr__(self) -> str:
         return f"<ResourceChunk id={self.id} resource={self.resource_id} index={self.chunk_index}>"
@@ -384,14 +383,26 @@ class ResourceSection(Base):
     page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    end_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     resource: Mapped["Resource"] = relationship(back_populates="sections")
     parent: Mapped["ResourceSection | None"] = relationship(
         back_populates="children", remote_side="ResourceSection.id"
     )
     children: Mapped[list["ResourceSection"]] = relationship(back_populates="parent")
-    chunks: Mapped[list["ResourceChunk"]] = relationship(back_populates="section")
+    chunks: Mapped[list["ResourceChunk"]] = relationship(
+        secondary="resource_chunk_section", back_populates="sections"
+    )
 
     def __repr__(self) -> str:
         return f"<ResourceSection id={self.id} resource={self.resource_id} title={self.title!r}>"
+
+
+class ResourceChunkSection(Base):
+    __tablename__ = "resource_chunk_section"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("resource_chunk.id", ondelete="CASCADE"), primary_key=True
+    )
+    section_id: Mapped[int] = mapped_column(
+        ForeignKey("resource_section.id", ondelete="CASCADE"), primary_key=True
+    )
