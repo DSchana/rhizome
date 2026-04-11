@@ -7,18 +7,22 @@ with early exit.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from rhizome.logs import get_logger
 from rhizome.resources.extraction.protocol import (
     DocumentExtractor,
     ExtractionResult,
     HeadingCandidate,
     Section,
 )
+
+_log = get_logger("resources.extraction.pipeline")
 
 
 # ── Structured output schemas ───────────────────────────────────────
@@ -57,16 +61,22 @@ class CleanupResponse(BaseModel):
 # ── Token cost estimation ──────────────────────────────────────────
 
 
+def _next_power_of_2(n: int) -> int:
+    """Return the smallest power of 2 >= *n* (minimum 1)."""
+    p = 1
+    while p < n:
+        p <<= 1
+    return p
+
+
 def estimate_extraction_tokens(document_tokens: int) -> int:
     """Rough estimate of total tokens consumed by the extraction pipeline.
 
     Based on a linear interpolation of observed token usage across a small
     and large document.  This is intentionally approximate — the actual
     cost depends on candidate density, batch count, and LLM verbosity.
-
-    Formula: 0.015 * document_tokens + 10_000
     """
-    return int(0.015 * document_tokens + 10_000)
+    return max(document_tokens, int(7 * document_tokens - 90_000))
 
 
 # ── Pipeline statistics ─────────────────────────────────────────────
@@ -274,8 +284,16 @@ async def _process_batch(
     ]
 
     result = await structured_llm.ainvoke(messages)
-    response: BatchResponse = result["parsed"]
+    response: BatchResponse | None = result["parsed"]
     input_tokens, output_tokens = _extract_usage(result["raw"])
+
+    if response is None:
+        _log.error(
+            "Batch failed to parse structured output — skipping batch. "
+            "Full result: %s",
+            repr(result),
+        )
+        return _BatchResult([], input_tokens, output_tokens)
 
     decisions = response.decisions
     if len(decisions) != len(batch):
@@ -283,8 +301,10 @@ async def _process_batch(
         decisions = decisions[: len(batch)]
 
     new_sections: list[Section] = []
+    rejections: list[tuple[HeadingCandidate, str]] = []
     for i, decision in enumerate(decisions):
         if not decision.accept:
+            rejections.append((batch[i], decision.reason))
             continue
         cand = batch[i]
         new_sections.append(Section(
@@ -294,6 +314,14 @@ async def _process_batch(
             position_index=cand.position_index,
             start_offset=cand.text_offset,
         ))
+
+    for s in new_sections:
+        _log.debug('     + depth=%d  "%s" (p.%s)', s.depth, s.title, s.page)
+    for cand, reason in rejections:
+        _log.debug(
+            '     - "%s" (p.%s, score=%.1f): %s',
+            cand.text.strip(), cand.page, cand.score, reason,
+        )
 
     return _BatchResult(new_sections, input_tokens, output_tokens)
 
@@ -325,16 +353,26 @@ async def _cleanup_tree(
     if not flat:
         return tree
 
-    structured_llm = llm.with_structured_output(CleanupResponse, include_raw=True)
-
     user_prompt = _build_cleanup_prompt(flat, doc_title)
     messages = [
         SystemMessage(content=CLEANUP_SYSTEM_PROMPT),
         HumanMessage(content=user_prompt),
     ]
 
+    # Estimate input tokens and set max_tokens to the next power of 2.
+    prompt_chars = sum(len(m.content) for m in messages)
+    estimated_input = prompt_chars // 4
+    max_tokens = _next_power_of_2(estimated_input)
+    _log.debug(
+        "Cleanup: ~%d input tokens estimated, setting max_tokens=%d",
+        estimated_input, max_tokens,
+    )
+
+    structured_llm = llm.bind(max_tokens=max_tokens).with_structured_output(
+        CleanupResponse, include_raw=True,
+    )
     result = await structured_llm.ainvoke(messages)
-    response: CleanupResponse = result["parsed"]
+    response: CleanupResponse | None = result["parsed"]
     input_tokens, output_tokens = _extract_usage(result["raw"])
 
     _add_tokens(stats, {
@@ -343,8 +381,19 @@ async def _cleanup_tree(
     })
     stats.batches_processed += 1
 
+    if response is None:
+        _log.error(
+            "Cleanup pass failed to parse structured output — returning tree unchanged. "
+            "Full result: %s",
+            repr(result),
+        )
+        return tree
+
     if len(response.sections) != len(flat):
-        # Length mismatch — return tree unchanged
+        _log.warning(
+            "Cleanup returned %d sections, expected %d — skipping",
+            len(response.sections), len(flat),
+        )
         return tree
 
     # Apply updates
@@ -352,6 +401,12 @@ async def _cleanup_tree(
         flat[i].title = update.title
         flat[i].depth = update.depth
         flat[i].children = []
+
+    if response.changes:
+        for change in response.changes:
+            _log.info("  * %s", change)
+    else:
+        _log.info("  (no changes)")
 
     return build_tree(flat)
 
@@ -382,19 +437,36 @@ async def detect_sections(
 
     candidates = sorted(extraction.candidates, key=lambda c: c.score, reverse=True)
     if not candidates:
+        _log.info("No heading candidates found")
         return [], stats
 
+    total_batches = (len(candidates) + batch_size - 1) // batch_size
+    _log.info(
+        "Found %d heading candidates, processing in up to %d batches of %d",
+        len(candidates), total_batches, batch_size,
+    )
+
     # Process batches in score-descending order with early exit
+    pipeline_start = time.monotonic()
     all_accepted: list[Section] = []
     accepted_tree: list[Section] = []
     consecutive_empty = 0
 
     for batch_start in range(0, len(candidates), batch_size):
         batch = candidates[batch_start : batch_start + batch_size]
+        batch_num = batch_start // batch_size + 1
+        score_range = f"{batch[-1].score:.1f}-{batch[0].score:.1f}"
 
+        _log.info(
+            "Batch %d/%d: %d candidates (scores %s)",
+            batch_num, total_batches, len(batch), score_range,
+        )
+
+        t0 = time.monotonic()
         result = await _process_batch(
             llm, batch, accepted_tree, extraction.doc_title,
         )
+        elapsed = time.monotonic() - t0
 
         # Accumulate tokens
         if result.input_tokens is not None or result.output_tokens is not None:
@@ -403,6 +475,16 @@ async def detect_sections(
                 "output_tokens": result.output_tokens,
             })
         stats.batches_processed += 1
+
+        accepted = len(result.new_sections)
+        rejected = len(batch) - accepted
+        tok_str = ""
+        if result.input_tokens is not None:
+            tok_str = f", {result.input_tokens} in / {result.output_tokens} out"
+        _log.info(
+            "  -> %d accepted, %d rejected  [%.1fs%s]",
+            accepted, rejected, elapsed, tok_str,
+        )
 
         all_accepted.extend(result.new_sections)
         stats.sections_accepted = len(all_accepted)
@@ -423,11 +505,29 @@ async def detect_sections(
         if not result.new_sections:
             consecutive_empty += 1
             if consecutive_empty >= 2:
-                total_batches = (len(candidates) + batch_size - 1) // batch_size
-                stats.batches_skipped = total_batches - (batch_start // batch_size + 1)
+                stats.batches_skipped = total_batches - batch_num
+                _log.info(
+                    "Early exit: 2 consecutive empty batches. Skipping %d remaining batch(es).",
+                    stats.batches_skipped,
+                )
                 break
         else:
             consecutive_empty = 0
+
+    pipeline_elapsed = time.monotonic() - pipeline_start
+
+    # Pipeline summary
+    tok_summary = ""
+    if stats.total_tokens is not None:
+        tok_summary = f", {stats.total_tokens:,} tokens"
+    batches_summary = f"{stats.batches_processed} processed"
+    if stats.batches_skipped:
+        batches_summary += f", {stats.batches_skipped} skipped"
+    _log.info(
+        "Pipeline summary: %d candidates, %s, %d sections accepted%s [%.1fs]",
+        stats.candidates_total, batches_summary, stats.sections_accepted,
+        tok_summary, pipeline_elapsed,
+    )
 
     # Build final tree from all accepted sections
     # Clear children from the flat list before rebuilding
@@ -437,7 +537,14 @@ async def detect_sections(
 
     # Cleanup pass
     if tree:
+        _log.info("Running cleanup pass on final tree...")
+        t0 = time.monotonic()
         tree = await _cleanup_tree(llm, tree, extraction.doc_title, stats)
+        elapsed = time.monotonic() - t0
+        tok_str = ""
+        if stats.total_input_tokens is not None:
+            tok_str = f", {stats.total_input_tokens} in / {stats.total_output_tokens} out"
+        _log.info("  Cleanup done [%.1fs%s]", elapsed, tok_str)
 
     return tree, stats
 
@@ -500,5 +607,21 @@ async def extract_document_subsections(
     """
     extractor = get_extractor(source_type)
     extraction = extractor.extract(source)
+
+    _log.info(
+        "Extracted %d candidates from %s document (%s pages)",
+        len(extraction.candidates),
+        source_type,
+        extraction.page_count or "?",
+    )
+    meta = extraction.metadata
+    if meta.get("body_font_name"):
+        _log.info(
+            "Body font: %s @ %.1fpt, color: 0x%06X",
+            meta["body_font_name"],
+            meta.get("body_font_size", 0),
+            meta.get("body_color", 0),
+        )
+
     tree, stats = await detect_sections(extraction, llm, batch_size=batch_size)
     return tree, extraction, stats

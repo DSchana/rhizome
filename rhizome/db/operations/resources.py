@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rhizome.logs import get_logger
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -272,6 +272,18 @@ async def link_chunks_to_sections(
     Returns the number of join rows inserted.
     """
     _log = get_logger("db.operations.resources")
+
+    # Clear any existing links for this resource's chunks.
+    existing = await session.execute(
+        select(ResourceChunk.id).where(ResourceChunk.resource_id == resource_id)
+    )
+    chunk_ids = [row[0] for row in existing.all()]
+    if chunk_ids:
+        await session.execute(
+            delete(ResourceChunkSection).where(
+                ResourceChunkSection.chunk_id.in_(chunk_ids)
+            )
+        )
 
     chunk_result = await session.execute(
         select(ResourceChunk)
