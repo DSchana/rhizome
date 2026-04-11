@@ -44,6 +44,7 @@ _CHECKED_GREEN = Style(color="rgb(100,200,100)")
 _CHECKED_AMBER = Style(color="rgb(220,170,50)")
 _UNCHECKED = Style(color="rgb(80,80,80)")
 _PENDING = Style(color="rgb(100,100,100)")
+_PENDING_CURSOR = Style(color="rgb(140,140,140)")
 _META = Style(color="rgb(80,80,80)")
 _CTX_TAG = Style(color="rgb(220,170,50)")
 _ID_STYLE = Style(color="rgb(80,80,80)")
@@ -253,6 +254,24 @@ class _LoaderTree(Tree[NodeData]):
                 (str(node._label), _PENDING),
                 ("  computing embeddings...", _PENDING),
             )
+
+        # -- Section under pending resource: greyed out, locked ---------
+        if isinstance(data, ResourceSection):
+            resource = _owning_resource(node)
+            res_state = loader._states.get(("resource", resource.id), LoadState.UNLOADED)
+            if res_state == LoadState.PENDING:
+                label_style = _PENDING_CURSOR if is_cursor else _PENDING
+                if node._allow_expand:
+                    icon = self.ICON_NODE_EXPANDED if node.is_expanded else self.ICON_NODE
+                    icon_style = base_style + TOGGLE_STYLE
+                else:
+                    icon = ""
+                    icon_style = base_style
+                return Text.assemble(
+                    (icon, icon_style),
+                    ("[-] ", _PENDING),
+                    (str(node._label), label_style),
+                )
 
         # -- Expand/collapse icon --------------------------------------
         if node._allow_expand:
@@ -763,13 +782,21 @@ class ResourceLoader(Widget, can_focus=True):
 
     # -- Actions -------------------------------------------------------
 
+    def _is_resource_pending(self, node: TreeNode[NodeData]) -> bool:
+        """True if the node's owning resource is in PENDING state."""
+        data = node.data
+        if isinstance(data, ResourceSection):
+            resource = _owning_resource(node)
+            return self._states.get(("resource", resource.id), LoadState.UNLOADED) == LoadState.PENDING
+        return False
+
     def action_toggle_default(self) -> None:
         """space: unloaded ↔ default, or context-stuffed → default."""
         node = self._tree.cursor_node
         if node is None or node.data is None:
             return
         state = self._states.get(_state_key(node.data), LoadState.UNLOADED)
-        if state == LoadState.PENDING:
+        if state == LoadState.PENDING or self._is_resource_pending(node):
             return
         if state == LoadState.UNLOADED:
             self._set_state(node, LoadState.DEFAULT)
@@ -784,7 +811,7 @@ class ResourceLoader(Widget, can_focus=True):
         if node is None or node.data is None:
             return
         state = self._states.get(_state_key(node.data), LoadState.UNLOADED)
-        if state == LoadState.PENDING:
+        if state == LoadState.PENDING or self._is_resource_pending(node):
             return
         if state == LoadState.UNLOADED:
             self._set_state(node, LoadState.CONTEXT_STUFFED)

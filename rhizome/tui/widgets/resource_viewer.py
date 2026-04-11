@@ -556,10 +556,17 @@ class ResourceViewer(Vertical):
     def _load_with_embeddings(self, resource: Resource) -> None:
         """Ensure embeddings exist, then mark the resource as vector-loaded.
 
-        Sets the ResourceLoader to PENDING while embeddings are computed.
-        On success, flips to DEFAULT and sets vector_loaded. On failure,
-        reverts to UNLOADED.
+        If embeddings already exist (chunks with non-null embedding bytes),
+        skips straight to DEFAULT without entering PENDING.  Otherwise sets
+        PENDING while embeddings are computed.  On failure, reverts to
+        UNLOADED.
         """
+        # Fast path: if all chunks already have embeddings, skip PENDING.
+        chunks = getattr(resource, "chunks", None) or []
+        if chunks and all(c.embedding is not None for c in chunks):
+            self._resource_manager.set_vector_loaded(resource.id, True)
+            return
+
         self._loader_toggle_in_progress = True
         loader = self.query_one("#rv-resource-loader", ResourceLoader)
         loader.set_pending(resource.id)
