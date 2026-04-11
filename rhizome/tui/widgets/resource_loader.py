@@ -577,6 +577,17 @@ class ResourceLoader(Widget, can_focus=True):
     def set_resources(self, resources: list[Resource]) -> None:
         """Replace the tree contents with a new list of resources."""
         self._resources = list(resources)
+
+        # Prune stale load states for resources/sections that no longer exist.
+        valid_keys: set[tuple[str, int]] = set()
+        for r in resources:
+            valid_keys.add(("resource", r.id))
+            for s in getattr(r, "sections", None) or []:
+                valid_keys.add(("section", s.id))
+        stale = [k for k in self._states if k not in valid_keys]
+        for k in stale:
+            del self._states[k]
+
         tree = self._tree
         tree.root.remove_children()
         for resource in resources:
