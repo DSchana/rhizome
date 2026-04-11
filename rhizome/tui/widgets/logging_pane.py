@@ -132,6 +132,12 @@ class LoggingPane(Widget):
     def _poll(self) -> None:
         handler = getattr(self.app, "tui_log_handler", None)
         if handler is not None and handler.total_count > self._synced_count:
+            # Skip syncing when the pane isn't visible — the width is 0
+            # and RichLog wraps to min_width (78), producing spurious
+            # line breaks.  Lines will catch up on the next visible poll.
+            rich_log = self.query_one("#log-output", RichLog)
+            if rich_log.scrollable_content_region.width <= 0:
+                return
             self._sync(handler)
 
     def _sync(self, handler) -> None:
