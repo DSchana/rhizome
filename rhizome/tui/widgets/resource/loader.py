@@ -12,390 +12,35 @@ governed by the same state machine:
 
 from __future__ import annotations
 
-import enum
-from typing import Any
-
-from rich.style import Style
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static, Tree
-from textual.widgets._tree import TreeNode, TOGGLE_STYLE
+from textual.widgets._tree import TreeNode
 
 from rhizome.db import Resource
 from rhizome.db.models import LoadingPreference, ResourceSection
 from rhizome.resources import LoadMode, ResourceLoadState, ResourceManager
 
 from rhizome.tui.types import Arrangement
-from .resource_view_model import LoadState, ResourceLoaderViewModel
+from rhizome.tui.widgets.resource.view_model import LoadState, ResourceLoaderViewModel
+from rhizome.tui.widgets.resource.loader_tree import (
+    LoaderHint,
+    LoaderTree,
+    NodeData,
+    _fmt_tokens,
+    _owning_resource,
+    _SPINNER_FRAMES,
+    _state_key,
+)
 
-
-_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-
-# -- Colors ------------------------------------------------------------
-
-_DIM = Style(color="rgb(100,100,100)")
-_FOCUS_GREEN = Style(color="rgb(100,200,100)", bold=True)
-_UNFOCUSED_BOLD = Style(bold=True)
-_CHECKED_GREEN = Style(color="rgb(100,200,100)")
-_CHECKED_AMBER = Style(color="rgb(220,170,50)")
-_UNCHECKED = Style(color="rgb(80,80,80)")
-_PENDING = Style(color="rgb(100,100,100)")
-_PENDING_CURSOR = Style(color="rgb(140,140,140)")
-_META = Style(color="rgb(80,80,80)")
-_CTX_TAG = Style(color="rgb(220,170,50)")
-_ID_STYLE = Style(color="rgb(80,80,80)")
-_HINT_COLOR = "rgb(80,80,80)"
-
-# Section depth colors: depth 1 is lighter, depth 2+ is dimmer.
-_SECTION_DEPTH_1 = Style(color="rgb(140,140,140)")
-_SECTION_DEPTH_2_PLUS = Style(color="rgb(100,100,100)")
-
-
-def _fmt_tokens(n: int | None) -> str:
-    """Format a token count as a short human-readable string."""
-    if n is None:
-        return "?"
-    if n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}m"
-    if n >= 1_000:
-        return f"{n / 1_000:.1f}k"
-    return str(n)
-
-
-# -- Node data ---------------------------------------------------------
-
-NodeData = Resource | ResourceSection
-
-
-def _state_key(data: NodeData) -> tuple[str, int]:
-    if isinstance(data, Resource):
-        return ("resource", data.id)
-    return ("section", data.id)
-
-
-def _owning_resource(node: TreeNode[NodeData]) -> Resource:
-    """Walk up to find the Resource that owns this node."""
-    current = node
-    while current is not None:
-        if isinstance(current.data, Resource):
-            return current.data
-        current = current.parent
-    raise RuntimeError("Section node has no Resource ancestor")
-
-
-class _LoaderHint(Static):
-    """Self-rendering hint bar that reacts to load counts and arrangement."""
-
-    loaded: reactive[int] = reactive(0)
-    total: reactive[int] = reactive(0)
-    sections: reactive[int] = reactive(0)
-    vertical: reactive[bool] = reactive(False)
-
-    _BINDINGS = [
-        ("space", "toggle"),
-        ("ctrl+enter", "context stuff"),
-        ("\u2190/\u2192", "expand/collapse"),
-    ]
-
-    def render(self) -> str:
-        summary = f"{self.loaded}/{self.total} loaded, {self.sections} sections"
-        if self.vertical:
-            key_width = max(len(k) for k, _ in self._BINDINGS)
-            lines = [summary]
-            for key, action in self._BINDINGS:
-                lines.append(f"  {key:<{key_width}}  {action}")
-            return "\n".join(lines)
-        else:
-            parts = [f"{k}: {a}" for k, a in self._BINDINGS]
-            return f"{summary}  |  {'  '.join(parts)}"
-
-
-# ======================================================================
-# Inner tree widget
-# ======================================================================
-
-class _LoaderTree(Tree[NodeData]):
-    """The actual Tree — managed by the outer ResourceLoader container."""
-
-    DEFAULT_CSS = """
-    _LoaderTree {
-        height: auto;
-        max-height: 20;
-        margin: 1 1 1 1;
-        background: transparent;
-        overflow-y: auto;
-    }
-    _LoaderTree:focus {
-        background-tint: transparent;
-    }
-    _LoaderTree > .tree--cursor {
-        background: transparent;
-    }
-    _LoaderTree:focus > .tree--cursor {
-        background: transparent;
-    }
-    _LoaderTree > .tree--highlight {
-        background: transparent;
-    }
-    _LoaderTree > .tree--highlight-line {
-        background: transparent;
-    }
-    """
-
-    def __init__(self, loader: ResourceLoader, **kwargs) -> None:
-        super().__init__("Resources", **kwargs)
-        self.show_root = False
-        self._loader = loader
-
-    def _refresh_height(self) -> None:
-        # In vertical arrangement, height is 1fr (CSS) — skip manual sizing.
-        line_count = len(self._tree_lines) + 2  # +2 for padding/margin
-        self.styles.height = max(line_count, 1)
-
-    def _invalidate_label_cache(self) -> None:
-        self._updates += 1
-        self.refresh()
-
-    # -- Expansion -----------------------------------------------------
-
-    def on_tree_node_expanded(self, event: Tree.NodeExpanded[NodeData]) -> None:
-        node = event.node
-        data = node.data
-        if data is None or node.children:
-            self._refresh_height()
-            return
-
-        if isinstance(data, Resource):
-            sections = getattr(data, "sections", None) or []
-            root_sections = sorted(
-                [s for s in sections if s.parent_id is None],
-                key=lambda s: s.position,
-            )
-            for section in root_sections:
-                child_sections = [s for s in sections if s.parent_id == section.id]
-                if child_sections:
-                    node.add(section.title, data=section, allow_expand=True)
-                else:
-                    node.add_leaf(section.title, data=section)
-
-        elif isinstance(data, ResourceSection):
-            resource = _owning_resource(node)
-            all_sections = getattr(resource, "sections", None) or []
-            children = sorted(
-                [s for s in all_sections if s.parent_id == data.id],
-                key=lambda s: s.position,
-            )
-            for child in children:
-                grandchildren = [s for s in all_sections if s.parent_id == child.id]
-                if grandchildren:
-                    node.add(child.title, data=child, allow_expand=True)
-                else:
-                    node.add_leaf(child.title, data=child)
-
-        self._refresh_height()
-
-    def on_tree_node_collapsed(self, event: Tree.NodeCollapsed[NodeData]) -> None:
-        self._refresh_height()
-
-    # -- Key handling --------------------------------------------------
-
-    def _on_key(self, event) -> None:
-        if event.key == "right":
-            node = self.cursor_node
-            if node is not None and node.allow_expand:
-                if not node.is_expanded:
-                    node.expand()
-                elif node.children:
-                    self.move_cursor(node.children[0])
-            event.stop()
-            event.prevent_default()
-        elif event.key == "left":
-            node = self.cursor_node
-            if node is not None:
-                if node.is_expanded:
-                    node.collapse()
-                elif node.parent and node.parent is not self.root:
-                    self.move_cursor(node.parent)
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("enter", "space"):
-            # Suppress default Tree toggle — these are handled by the
-            # outer ResourceLoader's bindings for state transitions.
-            event.stop()
-            event.prevent_default()
-            if event.key == "space":
-                self._loader.action_toggle_default()
-        else:
-            super()._on_key(event)
-
-    # -- Label rendering -----------------------------------------------
-
-    def render_label(
-        self, node: TreeNode[NodeData], base_style: Style, style: Style,
-    ) -> Text:
-        data = node.data
-        if data is None:
-            return Text(str(node._label))
-
-        loader = self._loader
-        key = _state_key(data)
-        state = loader._states.get(key, LoadState.UNLOADED)
-        is_cursor = node is self.cursor_node
-
-        # -- Pending state: spinner, no checkbox -----------------------
-        if state == LoadState.PENDING:
-            spinner = _SPINNER_FRAMES[loader._spinner_frame]
-            return Text.assemble(
-                (f"{spinner} ", _PENDING),
-                (str(node._label), _PENDING),
-                ("  computing embeddings...", _PENDING),
-            )
-
-        # -- Section under pending resource: greyed out, locked ---------
-        if isinstance(data, ResourceSection):
-            resource = _owning_resource(node)
-            res_state = loader._states.get(("resource", resource.id), LoadState.UNLOADED)
-            if res_state == LoadState.PENDING:
-                label_style = _PENDING_CURSOR if is_cursor else _PENDING
-                if node._allow_expand:
-                    icon = self.ICON_NODE_EXPANDED if node.is_expanded else self.ICON_NODE
-                    icon_style = base_style + TOGGLE_STYLE
-                else:
-                    icon = ""
-                    icon_style = base_style
-                return Text.assemble(
-                    (icon, icon_style),
-                    ("[-] ", _PENDING),
-                    (str(node._label), label_style),
-                )
-
-        # -- Expand/collapse icon --------------------------------------
-        if node._allow_expand:
-            icon = self.ICON_NODE_EXPANDED if node.is_expanded else self.ICON_NODE
-            icon_style = base_style + TOGGLE_STYLE
-        else:
-            icon = ""
-            icon_style = base_style
-
-        # -- Checkbox --------------------------------------------------
-        partial = state in (LoadState.DEFAULT, LoadState.CONTEXT_STUFFED) and loader._is_partially_loaded(data)
-        if state == LoadState.UNLOADED:
-            checkbox, cb_style = "[ ] ", _UNCHECKED
-        elif state == LoadState.DEFAULT:
-            checkbox = "[/] " if partial else "[✓] "
-            cb_style = _CHECKED_GREEN
-        else:  # CONTEXT_STUFFED
-            checkbox = "[/] " if partial else "[✓] "
-            cb_style = _CHECKED_AMBER
-
-        # -- Name styling ----------------------------------------------
-        if is_cursor and self.has_focus:
-            name_style = _FOCUS_GREEN
-        elif is_cursor:
-            name_style = _UNFOCUSED_BOLD
-        elif isinstance(data, ResourceSection):
-            name_style = _SECTION_DEPTH_1 if data.depth <= 1 else _SECTION_DEPTH_2_PLUS
-        else:
-            name_style = style
-
-        # -- Build suffix (metadata + ctx tag) so we know its width -----
-        vertical = loader._vm.arrangement == Arrangement.VERTICAL
-        suffix = ""
-        if not vertical:
-            if isinstance(data, Resource):
-                meta_parts: list[str] = []
-                if loader.show_ids:
-                    meta_parts.append(f"[{data.id}]")
-                meta_parts.append(f"~{_fmt_tokens(data.estimated_tokens)} tok")
-                try:
-                    chunk_count = len(data.chunks) if data.chunks is not None else 0
-                except Exception:
-                    chunk_count = 0
-                meta_parts.append(f"{chunk_count} chunks")
-                pref = data.loading_preference.value if data.loading_preference else "—"
-                meta_parts.append(pref)
-                suffix = "  " + " │ ".join(meta_parts)
-            elif isinstance(data, ResourceSection):
-                meta_parts: list[str] = []
-                if loader.show_ids:
-                    meta_parts.append(f"[{data.id}]")
-                try:
-                    chunk_count = len(data.chunks) if data.chunks is not None else 0
-                except Exception:
-                    chunk_count = 0
-                if chunk_count:
-                    meta_parts.append(f"{chunk_count} chunks")
-                if meta_parts:
-                    suffix = "  " + " │ ".join(meta_parts)
-
-        if state == LoadState.CONTEXT_STUFFED:
-            suffix += "  ctx"
-
-        # -- Truncate name to fit within available width ---------------
-        name = str(node._label)
-        if not vertical:
-            tree_depth = 0
-            p = node.parent
-            while p is not None:
-                tree_depth += 1
-                p = p.parent
-            guide_width = self.guide_depth * tree_depth
-            prefix_width = len(icon) + len(checkbox)
-            available = self.size.width - guide_width - prefix_width - len(suffix) - 1
-            available = max(available, 10)
-            if len(name) > available:
-                name = name[: available - 1] + "…"
-
-        label = Text(name)
-        label.stylize(name_style)
-
-        text = Text.assemble(
-            (icon, icon_style),
-            (checkbox, base_style + cb_style),
-            label,
-        )
-
-        # -- Append suffix with styling --------------------------------
-        if not vertical:
-            if isinstance(data, Resource):
-                meta_end = suffix
-                if state == LoadState.CONTEXT_STUFFED:
-                    meta_end = suffix[: -len("  ctx")]
-                    text.append(meta_end, style=_META)
-                    text.append("  ctx", style=_CTX_TAG)
-                else:
-                    text.append(suffix, style=_META)
-            else:
-                if suffix:
-                    meta_end = suffix
-                    if state == LoadState.CONTEXT_STUFFED:
-                        meta_end = suffix[: -len("  ctx")]
-                        text.append(meta_end, style=_META)
-                        text.append("  ctx", style=_CTX_TAG)
-                    else:
-                        text.append(suffix, style=_META)
-                elif state == LoadState.CONTEXT_STUFFED:
-                    text.append("  ctx", style=_CTX_TAG)
-        elif suffix:
-            # Vertical: only the ctx tag if present
-            text.append(suffix, style=_CTX_TAG)
-
-        return text
-
-
-# ======================================================================
-# Outer container widget
-# ======================================================================
 
 class ResourceLoader(Widget, can_focus=True):
     """Container widget with an inner tree and a status hint.
 
-    Delegates focus to the inner ``_LoaderTree`` and exposes the same
+    Delegates focus to the inner ``LoaderTree`` and exposes the same
     public API that ``ResourceViewer`` expects.
     """
 
@@ -482,12 +127,12 @@ class ResourceLoader(Widget, can_focus=True):
     def compose(self) -> ComposeResult:
         yield Static("", id="rld-empty")
         yield Static("", id="rld-detail")
-        yield _LoaderTree(self, id="rld-tree")
-        yield _LoaderHint(id="rld-hint")
+        yield LoaderTree(self, id="rld-tree")
+        yield LoaderHint(id="rld-hint")
 
     def on_mount(self) -> None:
         self.show_ids = self._vm.show_ids
-        self.query_one("#rld-hint", _LoaderHint).vertical = (
+        self.query_one("#rld-hint", LoaderHint).vertical = (
             self._vm.arrangement == Arrangement.VERTICAL
         )
         self._spinner_timer = self.set_interval(0.1, self._tick_spinner, pause=True)
@@ -503,19 +148,6 @@ class ResourceLoader(Widget, can_focus=True):
             self._constrain_tree()
 
     def _constrain_tree(self) -> None:
-        # Textual's CSS layout resolves `max-height: N%` against the *full*
-        # parent height, ignoring sibling widgets.  This means there is no
-        # pure-CSS way to express "fill remaining space after siblings, then
-        # scroll."  A `height: auto` tree shrinks to content (good) but has
-        # no upper bound (no scrollbar ever).  A `height: 1fr` tree fills
-        # all remaining space (scrollbar works) but expands even when content
-        # is small, pushing the hint to the very bottom of the dock area.
-        #
-        # The workaround is to keep the tree at `height: auto` and set its
-        # `max_height` programmatically to the space that actually remains
-        # after the other children (detail, hint, empty label) are measured.
-        # The extra margin of 6 accounts for the tree's own margin (1 on
-        # each side) plus spacing from surrounding widgets.
         tree = self._tree
         siblings_height = sum(
             child.size.height for child in self.children if child is not tree
@@ -537,8 +169,8 @@ class ResourceLoader(Widget, can_focus=True):
                 self._spinner_timer.pause()
 
     @property
-    def _tree(self) -> _LoaderTree:
-        return self.query_one("#rld-tree", _LoaderTree)
+    def _tree(self) -> LoaderTree:
+        return self.query_one("#rld-tree", LoaderTree)
 
     # -- Focus delegation ----------------------------------------------
 
@@ -635,9 +267,7 @@ class ResourceLoader(Widget, can_focus=True):
         self._vm.show_ids = self.show_ids
         tree = self._tree
         tree._invalidate_label_cache()
-        # Padding to accommodate ID text beyond measured label width.
         tree.styles.padding = (0, 2, 0, 0) if self.show_ids else (0, 0, 0, 0)
-        # Refresh the detail panel (IDs shown there in vertical arrangement).
         cursor_node = tree.cursor_node
         if cursor_node is not None:
             self._update_detail(cursor_node.data)
@@ -648,7 +278,7 @@ class ResourceLoader(Widget, can_focus=True):
         empty = not self._resources
         self.query_one("#rld-empty", Static).display = empty
         self._tree.display = not empty
-        self.query_one("#rld-hint", _LoaderHint).display = not empty
+        self.query_one("#rld-hint", LoaderHint).display = not empty
         if empty:
             self.query_one("#rld-empty", Static).update("(No resources linked to this topic)")
             detail = self.query_one("#rld-detail", Static)
@@ -707,7 +337,7 @@ class ResourceLoader(Widget, can_focus=True):
                 sec_state = self._states.get(("section", section.id), LoadState.UNLOADED)
                 if sec_state in (LoadState.DEFAULT, LoadState.CONTEXT_STUFFED):
                     total_sections += 1
-        hint = self.query_one("#rld-hint", _LoaderHint)
+        hint = self.query_one("#rld-hint", LoaderHint)
         hint.loaded = loaded_count
         hint.total = len(self._resources)
         hint.sections = total_sections
@@ -779,7 +409,6 @@ class ResourceLoader(Widget, can_focus=True):
                 return
             all_sections = getattr(resource, "sections", None) or []
 
-            # Walk from this section's parent up to the resource.
             current_parent_id = data.parent_id
             while current_parent_id is not None:
                 siblings = [s for s in all_sections if s.parent_id == current_parent_id]
@@ -792,7 +421,6 @@ class ResourceLoader(Widget, can_focus=True):
                 else:
                     break
 
-            # Check if all top-level sections are unloaded → unload the resource.
             top_sections = [s for s in all_sections if s.parent_id is None]
             if all(self._states.get(("section", s.id), LoadState.UNLOADED) == LoadState.UNLOADED for s in top_sections):
                 res_key = ("resource", resource.id)
@@ -831,7 +459,6 @@ class ResourceLoader(Widget, can_focus=True):
     def _start_embedding(self, resource: Resource) -> None:
         """Set the resource to PENDING and start an embedding worker."""
         self.set_pending(resource.id)
-        from textual.worker import Worker
         self.run_worker(self._compute_embeddings(resource), exclusive=False)
 
     async def _compute_embeddings(self, resource: Resource) -> None:
@@ -848,7 +475,6 @@ class ResourceLoader(Widget, can_focus=True):
         if self._resource_manager is None:
             return
 
-        # Build section_id -> resource lookup
         section_to_resource: dict[int, Resource] = {}
         for r in self._resources:
             for s in getattr(r, "sections", None) or []:
@@ -901,7 +527,7 @@ class ResourceLoader(Widget, can_focus=True):
         return False
 
     def action_toggle_default(self) -> None:
-        """space: unloaded ↔ default, or context-stuffed → default."""
+        """space: unloaded <-> default, or context-stuffed -> default."""
         node = self._tree.cursor_node
         if node is None or node.data is None:
             return
@@ -912,7 +538,7 @@ class ResourceLoader(Widget, can_focus=True):
             self._set_state(node, LoadState.DEFAULT)
         elif state == LoadState.DEFAULT:
             self._set_state(node, LoadState.UNLOADED)
-        else:  # CONTEXT_STUFFED → DEFAULT
+        else:  # CONTEXT_STUFFED -> DEFAULT
             self._set_state(node, LoadState.DEFAULT)
 
     def action_toggle_context(self) -> None:

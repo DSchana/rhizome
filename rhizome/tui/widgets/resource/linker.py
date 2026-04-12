@@ -13,7 +13,7 @@ from textual.widgets import Static
 
 from rhizome.db import Resource
 from rhizome.tui.types import Arrangement
-from .resource_view_model import ResourceLinkerViewModel
+from rhizome.tui.widgets.resource.view_model import ResourceLinkerViewModel
 
 _DIM = "rgb(100,100,100)"
 _ALT_GREY = "rgb(180,180,180)"

@@ -84,7 +84,7 @@ class ResourceViewerViewModel:
 
     def __init__(self) -> None:
         # -- View mode & display ------------------------------------------
-        from .resource_viewer import ResourceViewMode
+        from rhizome.tui.widgets.resource.viewer import ResourceViewMode
         self.view_mode: ResourceViewMode = ResourceViewMode.TOPIC_RESOURCES
         self.show_ids: bool = False
 

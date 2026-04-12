@@ -24,12 +24,12 @@ from rhizome.resources import ResourceManager
 
 from rhizome.tui.types import Arrangement, DatabaseCommitted, DockPosition
 
-from .messages import ActiveTopicChanged
-from .resource_linker import ResourceLinker
-from .resource_list import ResourceList
-from .resource_loader import ResourceLoader
-from .resource_view_model import ResourceViewerViewModel
-from .topic_tree import TopicTree
+from rhizome.tui.widgets.messages import ActiveTopicChanged
+from rhizome.tui.widgets.resource.linker import ResourceLinker
+from rhizome.tui.widgets.resource.list_view import ResourceList
+from rhizome.tui.widgets.resource.loader import ResourceLoader
+from rhizome.tui.widgets.resource.view_model import ResourceViewerViewModel
+from rhizome.tui.widgets.topic_tree import TopicTree
 
 
 class ResourceViewMode(enum.IntEnum):

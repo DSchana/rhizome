@@ -61,15 +61,15 @@ from .welcome import WelcomeHeader
 from .status_bar import StatusBar
 from .explorer_viewer import ExplorerViewer
 from .messages import ActiveTopicChanged
-from .resource_view_model import ResourceViewerViewModel
-from .resource_viewer import ResourceViewer
+from .resource.view_model import ResourceViewerViewModel
+from .resource.viewer import ResourceViewer
 from .commit_proposal import CommitProposal
 from .flashcard_proposal import FlashcardProposal
 from .flashcard_review import AgainBehaviour, FlashcardReview
 from .choices import Choices
 from .multiple_choices import MultipleChoices
 from .navigable import WidgetDeactivated
-from .resource_loader import _fmt_tokens
+from .resource.loader_tree import _fmt_tokens
 from .thinking import Spinner
 
 
