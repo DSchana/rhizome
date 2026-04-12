@@ -11,7 +11,6 @@ from textual.reactive import reactive
 from textual.widgets import Static, Tree
 
 from rhizome.db import Resource, Topic
-from rhizome.db.models import LoadingPreference
 from rhizome.logs import get_logger
 
 _log = get_logger("tui.resource_viewer")
@@ -29,7 +28,7 @@ from .messages import ActiveTopicChanged
 from .resource_linker import ResourceLinker
 from .resource_list import ResourceList
 from .resource_loader import ResourceLoader
-from .resource_view_model import LoadState, ResourceViewerViewModel
+from .resource_view_model import ResourceViewerViewModel
 from .topic_tree import TopicTree
 
 
@@ -262,7 +261,6 @@ class ResourceViewer(Vertical):
 
         # Transient flags — not persisted in VM.
         self._linker_toggle_in_progress: bool = False
-        self._loader_toggle_in_progress: bool = False
 
     # -- Properties that read/write through to the view model -------------
 
@@ -312,7 +310,7 @@ class ResourceViewer(Vertical):
                 yield ResourceLinker(view_model=self._vm.resource_linker, id="rv-resource-linker")
             with Vertical(id="rv-loader-pane"):
                 yield Static("Load Resources", id="rv-loader-title", classes="pane-title")
-                yield ResourceLoader(view_model=self._vm.resource_loader, id="rv-resource-loader")
+                yield ResourceLoader(view_model=self._vm.resource_loader, resource_manager=self._resource_manager, id="rv-resource-loader")
         yield Static(" ", id="rv-bottom-spacer")
 
     def on_mount(self) -> None:
@@ -455,10 +453,6 @@ class ResourceViewer(Vertical):
             async with self._session_factory() as session:
                 resources = await list_resources_for_topic(session, topic.id, load_chunks=True)
                 self._loader_resource_cache[topic.id] = resources
-        if self._loader_toggle_in_progress:
-            self._loader_toggle_in_progress = False
-            # State change only — skip full tree rebuild to preserve cursor.
-            return
         loader.set_resources(self._loader_resource_cache[topic.id])
 
     # ------------------------------------------------------------------
@@ -511,81 +505,6 @@ class ResourceViewer(Vertical):
         else:
             self._linked_ids_cache.get(self._current_topic_id, set()).discard(event.resource.id)
 
-    # ------------------------------------------------------------------
-    # Load state changes (from ResourceLoader)
-    # ------------------------------------------------------------------
-
-    # Token threshold for the "auto" loading preference: resources below
-    # this estimate are context-stuffed, above are vector-embedded.
-    AUTO_CONTEXT_STUFF_TOKEN_LIMIT = 10_000
-
-    def on_resource_loader_state_changed(self, event: ResourceLoader.StateChanged) -> None:
-        event.stop()
-        if self._resource_manager is None:
-            return
-
-        resource = event.resource
-        rid = resource.id
-        new = event.new_state
-
-        if new == LoadState.UNLOADED:
-            self._resource_manager.full_unload(rid)
-        elif new == LoadState.CONTEXT_STUFFED:
-            self._resource_manager.set_context_stuffed(rid, True)
-        elif new == LoadState.DEFAULT:
-            self._apply_loading_preference(resource)
-
-    def _apply_loading_preference(self, resource: Resource) -> None:
-        """Route a DEFAULT (auto) load through the resource's loading preference."""
-        rid = resource.id
-        pref = resource.loading_preference
-        tokens = resource.estimated_tokens or 0
-
-        if pref == LoadingPreference.context_stuff:
-            self._resource_manager.set_context_stuffed(rid, True)
-        elif pref == LoadingPreference.vector_store:
-            self._load_with_embeddings(resource)
-        else:
-            # auto: context-stuff if small enough, otherwise vector-embed
-            tokens = resource.estimated_tokens or 0
-            if tokens <= self.AUTO_CONTEXT_STUFF_TOKEN_LIMIT:
-                self._resource_manager.set_context_stuffed(rid, True)
-            else:
-                self._load_with_embeddings(resource)
-
-    def _load_with_embeddings(self, resource: Resource) -> None:
-        """Ensure embeddings exist, then mark the resource as vector-loaded.
-
-        If embeddings already exist (chunks with non-null embedding bytes),
-        skips straight to DEFAULT without entering PENDING.  Otherwise sets
-        PENDING while embeddings are computed.  On failure, reverts to
-        UNLOADED.
-        """
-        # Fast path: if all chunks already have embeddings, skip PENDING.
-        chunks = getattr(resource, "chunks", None) or []
-        if chunks and all(c.embedding is not None for c in chunks):
-            self._resource_manager.set_vector_loaded(resource.id, True)
-            return
-
-        self._loader_toggle_in_progress = True
-        loader = self.query_one("#rv-resource-loader", ResourceLoader)
-        loader.set_pending(resource.id)
-        self.run_worker(self._ensure_embeddings(resource), exclusive=False)
-
-    async def _ensure_embeddings(self, resource: Resource) -> None:
-        rid = resource.id
-        success = await self._resource_manager.ensure_embedded(rid)
-
-        # Invalidate loader cache so chunk counts refresh from DB.
-        if self._active_topic is not None:
-            self._loader_resource_cache.pop(self._active_topic.id, None)
-            await self._load_loader_for_active_topic()
-
-        loader = self.query_one("#rv-resource-loader", ResourceLoader)
-        loader.resolve_pending(rid, success)
-
-        if success:
-            self._resource_manager.set_vector_loaded(rid, True)
 
     # ------------------------------------------------------------------
     # Pane focus navigation (ctrl+left / ctrl+right)

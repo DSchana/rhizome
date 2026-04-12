@@ -26,7 +26,8 @@ from textual.widgets import Static, Tree
 from textual.widgets._tree import TreeNode, TOGGLE_STYLE
 
 from rhizome.db import Resource
-from rhizome.db.models import ResourceSection
+from rhizome.db.models import LoadingPreference, ResourceSection
+from rhizome.resources import LoadMode, ResourceLoadState, ResourceManager
 
 from rhizome.tui.types import Arrangement
 from .resource_view_model import LoadState, ResourceLoaderViewModel
@@ -426,19 +427,14 @@ class ResourceLoader(Widget, can_focus=True):
     }
     """
 
+    # Token threshold for the "auto" loading preference: resources below
+    # this estimate are context-stuffed, above are vector-embedded.
+    AUTO_CONTEXT_STUFF_TOKEN_LIMIT = 10_000
+
     # -- Messages (bubbled up from this widget) ------------------------
 
     class Dismissed(Message):
         """Posted when the user presses Escape."""
-
-    class StateChanged(Message):
-        """Posted when a load state changes."""
-
-        def __init__(self, resource: Resource, old_state: LoadState, new_state: LoadState) -> None:
-            super().__init__()
-            self.resource = resource
-            self.old_state = old_state
-            self.new_state = new_state
 
     # -- Reactives -----------------------------------------------------
 
@@ -446,9 +442,15 @@ class ResourceLoader(Widget, can_focus=True):
 
     # -- Init / compose ------------------------------------------------
 
-    def __init__(self, view_model: ResourceLoaderViewModel | None = None, **kwargs) -> None:
+    def __init__(
+        self,
+        view_model: ResourceLoaderViewModel | None = None,
+        resource_manager: ResourceManager | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self._vm = view_model or ResourceLoaderViewModel()
+        self._resource_manager = resource_manager
         self._spinner_timer = None
 
     # -- Properties that read/write through to the view model -------------
@@ -717,7 +719,6 @@ class ResourceLoader(Widget, can_focus=True):
         if data is None:
             return
         key = _state_key(data)
-        old_state = self._states.get(key, LoadState.UNLOADED)
         if new_state == LoadState.UNLOADED:
             self._states.pop(key, None)
         else:
@@ -733,8 +734,15 @@ class ResourceLoader(Widget, can_focus=True):
         self._tree._invalidate_label_cache()
         self._update_spinner_timer()
         self._update_hint()
-        resource = data if isinstance(data, Resource) else _owning_resource(node)
-        self.post_message(self.StateChanged(resource, old_state, new_state))
+
+        # If a resource just entered DEFAULT and needs embeddings, go
+        # PENDING and start a worker.  Otherwise sync state immediately.
+        if new_state == LoadState.DEFAULT and isinstance(data, Resource):
+            if self._needs_embeddings(data):
+                self._start_embedding(data)
+                return
+
+        self._sync_manager_state()
 
     def _propagate_to_descendants(self, data: NodeData, new_state: LoadState) -> None:
         """Apply *new_state* to all descendant sections of *data*, skipping PENDING."""
@@ -790,6 +798,97 @@ class ResourceLoader(Widget, can_focus=True):
                 res_key = ("resource", resource.id)
                 if self._states.get(res_key) != LoadState.PENDING:
                     self._states.pop(res_key, None)
+
+    # -- Embedding & manager sync --------------------------------------
+
+    def _resolve_load_mode(self, resource: Resource, load_state: LoadState) -> LoadMode | None:
+        """Map a loader LoadState to a manager LoadMode."""
+        if load_state == LoadState.CONTEXT_STUFFED:
+            return LoadMode.CONTEXT_STUFFED
+        if load_state == LoadState.DEFAULT:
+            pref = resource.loading_preference
+            tokens = resource.estimated_tokens or 0
+            if pref == LoadingPreference.context_stuff:
+                return LoadMode.CONTEXT_STUFFED
+            elif pref == LoadingPreference.vector_store:
+                return LoadMode.LOADED
+            else:
+                return LoadMode.CONTEXT_STUFFED if tokens <= self.AUTO_CONTEXT_STUFF_TOKEN_LIMIT else LoadMode.LOADED
+        return None
+
+    def _needs_embeddings(self, resource: Resource) -> bool:
+        """True if the resource resolves to LOADED and doesn't have embeddings yet."""
+        mode = self._resolve_load_mode(resource, LoadState.DEFAULT)
+        if mode != LoadMode.LOADED:
+            return False
+        chunks = getattr(resource, "chunks", None) or []
+        if chunks and all(c.embedding is not None for c in chunks):
+            return False
+        if self._resource_manager is not None and self._resource_manager.is_embedding_in_progress(resource.id):
+            return False
+        return True
+
+    def _start_embedding(self, resource: Resource) -> None:
+        """Set the resource to PENDING and start an embedding worker."""
+        self.set_pending(resource.id)
+        from textual.worker import Worker
+        self.run_worker(self._compute_embeddings(resource), exclusive=False)
+
+    async def _compute_embeddings(self, resource: Resource) -> None:
+        """Worker coroutine: compute embeddings, then resolve and sync."""
+        if self._resource_manager is None:
+            self.resolve_pending(resource.id, False)
+            return
+        success = await self._resource_manager.ensure_embedded(resource.id)
+        self.resolve_pending(resource.id, success)
+        self._sync_manager_state()
+
+    def _sync_manager_state(self) -> None:
+        """Build ResourceLoadState from loader states and push to the manager."""
+        if self._resource_manager is None:
+            return
+
+        # Build section_id -> resource lookup
+        section_to_resource: dict[int, Resource] = {}
+        for r in self._resources:
+            for s in getattr(r, "sections", None) or []:
+                section_to_resource[s.id] = r
+
+        resource_map: dict[int, ResourceLoadState] = {}
+
+        for (kind, obj_id), load_state in self._states.items():
+            if load_state in (LoadState.UNLOADED, LoadState.PENDING):
+                continue
+
+            if kind == "resource":
+                resource = next((r for r in self._resources if r.id == obj_id), None)
+                if resource is None:
+                    continue
+                mode = self._resolve_load_mode(resource, load_state)
+                if mode is None:
+                    continue
+                rls = resource_map.get(obj_id, ResourceLoadState())
+                resource_map[obj_id] = ResourceLoadState(
+                    root_state=mode,
+                    sections=rls.sections,
+                )
+            elif kind == "section":
+                resource = section_to_resource.get(obj_id)
+                if resource is None:
+                    continue
+                mode = self._resolve_load_mode(resource, load_state)
+                if mode is None:
+                    continue
+                rid = resource.id
+                rls = resource_map.get(rid, ResourceLoadState())
+                new_sections = dict(rls.sections)
+                new_sections[obj_id] = mode
+                resource_map[rid] = ResourceLoadState(
+                    root_state=rls.root_state,
+                    sections=new_sections,
+                )
+
+        self._resource_manager.set_state(resource_map)
 
     # -- Actions -------------------------------------------------------
 
