@@ -326,14 +326,6 @@ class AgentSession:
 
             context = AgentContext(user_settings=user_settings)
 
-            # Inject a reminder, since the agent seems to forget to follow this instruction otherwise:
-            queued.append(HumanMessage(
-                content=(
-                    "[System] Reminder, you will see your previous messages with a '[MSG-{N}]' prefix. THIS IS ADDED AUTOMATICALLY BY THE SYSTEM. "
-                    "Do NOT begin your message with your own '[MSG-{N}]' prefix, as one will be created automatically."
-                )
-            ))
-
             while True:
                 interrupted = False
 

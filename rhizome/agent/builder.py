@@ -21,7 +21,6 @@ from rhizome.agent.middleware import (
     AgentModeMiddleware,
     AnthropicPenultimateCacheMiddleware,
     DisableParallelToolCallsMiddleware,
-    MessageIdMiddleware,
 )
 
 from rhizome.agent.state import RhizomeAgentState
@@ -98,7 +97,7 @@ def build_root_agent(
     _logger.info("Building root agent (provider=%s, model=%s)", provider, model_name)
 
     debug = agent_kwargs.get("debug", False)
-    middleware: list[AgentMiddleware] = [AgentModeMiddleware(debug=debug), MessageIdMiddleware()]
+    middleware: list[AgentMiddleware] = [AgentModeMiddleware(debug=debug)]
 
     if not agent_kwargs.get("parallel_tool_calling", True):
         middleware.append(DisableParallelToolCallsMiddleware())
