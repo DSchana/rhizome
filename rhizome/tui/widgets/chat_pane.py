@@ -129,7 +129,7 @@ class ChatPane(Widget, DockContainerMixin):
     }
     #dock-bottom {
         height: auto;
-        max-height: 25%;
+        max-height: 50%;
         border-top: solid rgb(60, 60, 60);
     }
     .--dock-empty {
