@@ -134,10 +134,10 @@ async def compute_embeddings(session_factory, resource_id: int) -> None:
         resource = await get_resource(session, resource_id)
         if resource is None:
             raise ValueError(f"Resource {resource_id} not found.")
-        if not resource.raw_text:
+        if not resource.content or not resource.content.raw_text:
             raise ValueError(f"Resource {resource_id} has no raw_text to embed.")
 
-        raw_text = resource.raw_text
+        raw_text = resource.content.raw_text
         existing_chunks = resource.chunks
 
     if existing_chunks and all(c.embedding is None for c in existing_chunks):

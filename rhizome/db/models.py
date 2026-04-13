@@ -307,10 +307,7 @@ class Resource(Base):
     content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     estimated_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    source_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     loading_preference: Mapped[LoadingPreference] = mapped_column(
         Enum(LoadingPreference), nullable=False, server_default="auto"
     )
@@ -319,6 +316,9 @@ class Resource(Base):
         nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
+    content: Mapped["ResourceContent | None"] = relationship(
+        back_populates="resource", cascade="all, delete-orphan", uselist=False,
+    )
     chunks: Mapped[list["ResourceChunk"]] = relationship(
         back_populates="resource", cascade="all, delete-orphan"
     )
@@ -328,6 +328,23 @@ class Resource(Base):
 
     def __repr__(self) -> str:
         return f"<Resource id={self.id} name={self.name!r}>"
+
+
+class ResourceContent(Base):
+    __tablename__ = "resource_content"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    resource_id: Mapped[int] = mapped_column(
+        ForeignKey("resource.id", ondelete="CASCADE"), nullable=False, unique=True,
+    )
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_bytes: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    source_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    resource: Mapped["Resource"] = relationship(back_populates="content")
+
+    def __repr__(self) -> str:
+        return f"<ResourceContent resource={self.resource_id}>"
 
 
 class TopicResource(Base):

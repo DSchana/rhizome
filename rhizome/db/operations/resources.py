@@ -13,6 +13,7 @@ from rhizome.db.models import (
     Resource,
     ResourceChunk,
     ResourceChunkSection,
+    ResourceContent,
     ResourceSection,
     TopicResource,
 )
@@ -30,19 +31,26 @@ async def create_resource(
     source_type: str | None = None,
     source_bytes: bytes | None = None,
 ) -> Resource:
-    """Create a new resource."""
+    """Create a new resource with its content stored separately."""
     resource = Resource(
         name=name,
-        raw_text=raw_text,
         content_hash=content_hash,
         summary=summary,
         estimated_tokens=estimated_tokens,
         loading_preference=loading_preference,
         source_type=source_type,
-        source_bytes=source_bytes,
     )
     session.add(resource)
     await session.flush()
+
+    content = ResourceContent(
+        resource_id=resource.id,
+        raw_text=raw_text,
+        source_bytes=source_bytes,
+    )
+    session.add(content)
+    await session.flush()
+    resource.content = content
     return resource
 
 
@@ -50,11 +58,14 @@ async def get_resource(
     session: AsyncSession,
     resource_id: int,
 ) -> Resource | None:
-    """Get a resource by ID, eagerly loading chunks."""
+    """Get a resource by ID, eagerly loading chunks and content."""
     result = await session.execute(
         select(Resource)
         .where(Resource.id == resource_id)
-        .options(selectinload(Resource.chunks))
+        .options(
+            selectinload(Resource.chunks),
+            selectinload(Resource.content),
+        )
     )
     return result.scalar_one_or_none()
 

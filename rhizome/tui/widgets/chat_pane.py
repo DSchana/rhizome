@@ -1413,7 +1413,7 @@ class ChatPane(Widget, DockContainerMixin):
         if resource is None:
             self.append_message(ChatMessageData(role=Role.SYSTEM, content=f"Resource {resource_id} not found."))
             return
-        if not resource.source_bytes or not resource.source_type:
+        if not resource.content or not resource.content.source_bytes or not resource.source_type:
             self.append_message(ChatMessageData(
                 role=Role.SYSTEM,
                 content=f"Resource [{resource_id}] has no source file stored. "
@@ -1460,7 +1460,7 @@ class ChatPane(Widget, DockContainerMixin):
         try:
             llm = init_chat_model("claude-sonnet-4-6", api_key=get_api_key(), temperature=0.0)
             sections, _extraction, stats = await extract_document_subsections(
-                resource.source_bytes,
+                resource.content.source_bytes,
                 resource.source_type,
                 llm,
             )
