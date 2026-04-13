@@ -198,7 +198,12 @@ class MainScreen(Screen):
         # doesn't cause TabbedContent to revert the switch.
         new_pane = tabs.get_pane(new_id)
         if isinstance(new_pane, ChatTabPane):
-            new_pane.query_one(ChatPane).query_one("#chat-input").focus()
+            chat_pane = new_pane.query_one(ChatPane)
+            chat_input = chat_pane.query_one("#chat-input")
+            if chat_input.disabled and chat_pane._active_widgets:
+                chat_pane._active_widgets[-1].focus()
+            else:
+                chat_input.focus()
         elif isinstance(new_pane, LogTabPane):
             new_pane.query_one("#log-output").focus()
 
