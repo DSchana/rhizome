@@ -22,20 +22,15 @@ from rhizome.db.operations import (
 )
 from rhizome.resources import ResourceManager
 
-from rhizome.tui.types import Arrangement, DatabaseCommitted, DockPosition
+from rhizome.tui.dock import DockableWidgetMixin
+from rhizome.tui.types import DatabaseCommitted
 
 from rhizome.tui.widgets.messages import ActiveTopicChanged
 from rhizome.tui.widgets.resource.linker import ResourceLinker
 from rhizome.tui.widgets.resource.list_view import ResourceList
 from rhizome.tui.widgets.resource.loader import ResourceLoader
-from rhizome.tui.widgets.resource.view_model import ResourceViewerViewModel
+from rhizome.tui.widgets.resource.view_model import ResourceViewMode, ResourceViewerViewModel
 from rhizome.tui.widgets.topic_tree import TopicTree
-
-
-class ResourceViewMode(enum.IntEnum):
-    TOPIC_RESOURCES = 0
-    LINK_RESOURCES = 1
-    LOAD_RESOURCES = 2
 
 
 _MODE_LABELS = {
@@ -80,7 +75,7 @@ class _HelpText(Static):
             return "  ".join(parts)
 
 
-class ResourceViewer(Vertical):
+class ResourceViewer(Vertical, DockableWidgetMixin):
     """Docked bottom panel for browsing and linking resources to topics."""
 
     DEFAULT_CSS = """
@@ -222,7 +217,7 @@ class ResourceViewer(Vertical):
         Binding("tab", "cycle_mode", show=False),
         Binding("ctrl+left", "focus_prev_pane", show=False),
         Binding("ctrl+right", "focus_next_pane", show=False),
-        Binding("ctrl+j", "select_active_topic", show=False, priority=True),
+        Binding("ctrl+j", "select_active_topic", show=False),
         Binding("i", "toggle_ids", show=False),
         Binding("escape", "dismiss_viewer", show=False),
     ]
@@ -232,14 +227,6 @@ class ResourceViewer(Vertical):
 
     view_mode: reactive[ResourceViewMode] = reactive(ResourceViewMode.TOPIC_RESOURCES)
     show_ids: reactive[bool] = reactive(False)
-    dock_position: reactive[DockPosition] = reactive(DockPosition.BOTTOM)
-
-    # Dock position → arrangement direction for #rv-split.
-    _DOCK_ARRANGEMENT = {
-        DockPosition.BOTTOM: "horizontal",
-        DockPosition.LEFT: "vertical",
-        DockPosition.RIGHT: "vertical",
-    }
 
     def __init__(
         self,
@@ -253,21 +240,17 @@ class ResourceViewer(Vertical):
         self._resource_manager = resource_manager
         self._vm = view_model or ResourceViewerViewModel()
 
-        # Dict/list caches are shared references — mutations flow through.
-        self._resource_cache = self._vm.resource_cache
-        self._loader_resource_cache = self._vm.loader_resource_cache
-        self._resource_cursor_cache = self._vm.resource_cursor_cache
-        self._linked_ids_cache = self._vm.linked_ids_cache
-
         # Transient flags — not persisted in VM.
         self._linker_toggle_in_progress: bool = False
 
-    # -- Properties that read/write through to the view model -------------
+
+    # ------------------------------------------------------------------
+    # Properties that read/write through to the view model
+    # ------------------------------------------------------------------
 
     @property
     def _current_topic_id(self) -> int | None:
         return self._vm.current_topic_id
-
     @_current_topic_id.setter
     def _current_topic_id(self, value: int | None) -> None:
         self._vm.current_topic_id = value
@@ -275,7 +258,6 @@ class ResourceViewer(Vertical):
     @property
     def _active_topic(self) -> Topic | None:
         return self._vm.active_topic
-
     @_active_topic.setter
     def _active_topic(self, value: Topic | None) -> None:
         self._vm.active_topic = value
@@ -283,7 +265,6 @@ class ResourceViewer(Vertical):
     @property
     def _active_topic_path(self) -> list[str]:
         return self._vm.active_topic_path
-
     @_active_topic_path.setter
     def _active_topic_path(self, value: list[str]) -> None:
         self._vm.active_topic_path = value
@@ -291,13 +272,47 @@ class ResourceViewer(Vertical):
     @property
     def _all_resources(self) -> list[Resource] | None:
         return self._vm.all_resources
-
     @_all_resources.setter
     def _all_resources(self, value: list[Resource] | None) -> None:
         self._vm.all_resources = value
 
+    @property
+    def _resource_cache(self) -> dict[int, list[Resource]]:
+        return self._vm.resource_cache
+    @_resource_cache.setter
+    def _resource_cache(self, value: dict[int, list[Resource]]) -> None:
+        self._vm.resource_cache = value
+
+    @property
+    def _resource_cursor_cache(self) -> dict[int, int]:
+        return self._vm.resource_cursor_cache
+    @_resource_cursor_cache.setter
+    def _resource_cursor_cache(self, value: dict[int, int]) -> None:
+        self._vm.resource_cursor_cache = value
+
+    @property
+    def _linked_ids_cache(self) -> dict[int, set[int]]:
+        return self._vm.linked_ids_cache
+    @_linked_ids_cache.setter
+    def _linked_ids_cache(self, value: dict[int, set[int]]) -> None:
+        self._vm.linked_ids_cache = value
+
+    @property
+    def _loader_resource_cache(self) -> dict[int, list[Resource]]:
+        return self._vm.loader_resource_cache
+    @_loader_resource_cache.setter
+    def _loader_resource_cache(self, value: dict[int, list[Resource]]) -> None:
+        self._vm.loader_resource_cache = value
+
+
+    # ------------------------------------------------------------------
+    # Compose and mount
+    # ------------------------------------------------------------------
+
     def compose(self):
         yield _HelpText(id="rv-help")
+
+        # Root container that switches between horizontal/vertical arrangement based on dock position.
         with Container(id="rv-split"):
             with Vertical(id="rv-tree-pane"):
                 yield Static("Topics", classes="pane-title")
@@ -311,19 +326,30 @@ class ResourceViewer(Vertical):
             with Vertical(id="rv-loader-pane"):
                 yield Static("Load Resources", id="rv-loader-title", classes="pane-title")
                 yield ResourceLoader(view_model=self._vm.resource_loader, resource_manager=self._resource_manager, id="rv-resource-loader")
+
         yield Static(" ", id="rv-bottom-spacer")
 
     def on_mount(self) -> None:
         self.border_title = "Resources [dim]ctrl+r to focus[/dim]"
+
         # Restore reactives from view model.
         self.view_mode = self._vm.view_mode
         self.show_ids = self._vm.show_ids
+
         # Restore active topic on the tree.
         if self._vm.active_topic is not None:
             self.query_one(TopicTree).active_topic_id = self._vm.active_topic.id
+            
+        # Infer arrangement from the dock area type.
+        arrangement_str = self.dock_arrangement.value  # "horizontal" or "vertical"
+        opposite = "vertical" if arrangement_str == "horizontal" else "horizontal"
+        self.remove_class(f"--arrange-{opposite}")
+        self.add_class(f"--arrange-{arrangement_str}")
+
         help_text = self.query_one("#rv-help", _HelpText)
         help_text.view_mode = self.view_mode
-        help_text.vertical = self._DOCK_ARRANGEMENT.get(self.dock_position) == "vertical"
+        help_text.vertical = arrangement_str == "vertical"
+
 
     # ------------------------------------------------------------------
     # View mode cycling
@@ -334,20 +360,6 @@ class ResourceViewer(Vertical):
         ResourceViewMode.LINK_RESOURCES: "--mode-link",
         ResourceViewMode.LOAD_RESOURCES: "--mode-load",
     }
-
-    def watch_dock_position(self, old_value: DockPosition, new_value: DockPosition) -> None:
-        old_cls = f"--arrange-{self._DOCK_ARRANGEMENT[old_value]}"
-        new_cls = f"--arrange-{self._DOCK_ARRANGEMENT[new_value]}"
-        if old_cls != new_cls:
-            self.remove_class(old_cls)
-            self.add_class(new_cls)
-        # Propagate arrangement to sub-view-models.
-        arrangement = Arrangement(self._DOCK_ARRANGEMENT[new_value])
-        self._vm.resource_list.arrangement = arrangement
-        self._vm.resource_linker.arrangement = arrangement
-        self._vm.resource_loader.arrangement = arrangement
-        if self.is_mounted:
-            self.query_one("#rv-help", _HelpText).vertical = (arrangement == Arrangement.VERTICAL)
 
     def watch_view_mode(self, old_value: ResourceViewMode, new_value: ResourceViewMode) -> None:
         self._vm.view_mode = new_value
@@ -510,26 +522,17 @@ class ResourceViewer(Vertical):
     # Pane focus navigation (ctrl+left / ctrl+right)
     # ------------------------------------------------------------------
 
-    def _get_right_pane_widget(self):
-        """Return the focusable widget in the currently visible right pane, or None if empty."""
-        mode = self.view_mode
-        if mode == ResourceViewMode.TOPIC_RESOURCES:
-            rl = self.query_one("#rv-resource-list", ResourceList)
-            return rl if rl._resources else None
-        elif mode == ResourceViewMode.LINK_RESOURCES:
-            lk = self.query_one("#rv-resource-linker", ResourceLinker)
-            return lk if lk._resources else None
-        elif mode == ResourceViewMode.LOAD_RESOURCES:
-            ld = self.query_one("#rv-resource-loader", ResourceLoader)
-            return ld if ld._resources else None
-        return None
-
     def action_focus_next_pane(self) -> None:
-        pane_ids = _MODE_PANES[self.view_mode]
-        if len(pane_ids) < 2:
-            return  # single-pane mode (e.g. LOAD_RESOURCES), nothing to cycle
-        focused = self.screen.focused
         tree = self.query_one(TopicTree)
+
+        if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
+            # single-pane mode, nothing else to focus
+            tree.focus()
+            return
+
+        # Swap between the tree (on the left) and whatever is visible on the right (resource list or linker).
+        # `right` is None if it has no resources, guarding against swapping to empty panes.
+        focused = self.screen.focused
         right = self._get_right_pane_widget()
         if focused is tree and right is not None:
             right.focus()
@@ -539,21 +542,18 @@ class ResourceViewer(Vertical):
     def action_focus_prev_pane(self) -> None:
         self.action_focus_next_pane()
 
-    # ------------------------------------------------------------------
-    # Child dismissals — return focus to tree
-    # ------------------------------------------------------------------
+    def _get_right_pane_widget(self):
+        """Return the focusable widget in the currently visible right pane, or None if empty."""
 
-    def on_resource_list_dismissed(self, event: ResourceList.Dismissed) -> None:
-        event.stop()
-        self.query_one(TopicTree).focus()
-
-    def on_resource_linker_dismissed(self, event: ResourceLinker.Dismissed) -> None:
-        event.stop()
-        self.query_one(TopicTree).focus()
-
-    def on_resource_loader_dismissed(self, event: ResourceLoader.Dismissed) -> None:
-        event.stop()
-        self.action_dismiss_viewer()
+        if self.view_mode == ResourceViewMode.TOPIC_RESOURCES:
+            rl = self.query_one("#rv-resource-list", ResourceList)
+            return rl if rl._resources else None
+        
+        elif self.view_mode == ResourceViewMode.LINK_RESOURCES:
+            lk = self.query_one("#rv-resource-linker", ResourceLinker)
+            return lk if lk._resources else None
+        
+        return None
 
     # ------------------------------------------------------------------
     # Data refresh (called on DB changes)
@@ -602,10 +602,11 @@ class ResourceViewer(Vertical):
 
     def action_select_active_topic(self) -> None:
         """Toggle the active topic: select if different, clear if same."""
+
         if self.view_mode == ResourceViewMode.LOAD_RESOURCES:
-            # Tree not visible — forward to the loader's context-stuff toggle.
-            self.query_one("#rv-resource-loader", ResourceLoader).action_toggle_context()
+            # Tree not visible, nothing to do (handler in ResourceLoader automatically called).
             return
+        
         tree = self.query_one(TopicTree)
         node = tree.cursor_node
         if node is None or node.data is None:

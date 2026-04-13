@@ -12,6 +12,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from rhizome.db import Resource
+from rhizome.tui.dock import DockableWidgetMixin
 from rhizome.tui.types import Arrangement
 from rhizome.tui.widgets.resource.view_model import ResourceLinkerViewModel
 
@@ -25,7 +26,7 @@ _UNCHECKED_COLOR = "rgb(80,80,80)"
 _ID_COLOR = "rgb(80,80,80)"
 
 
-class ResourceLinker(Widget, can_focus=True):
+class ResourceLinker(Widget, DockableWidgetMixin, can_focus=True):
     """Checkbox list of all resources for linking/unlinking to a topic."""
 
     BINDINGS = [
@@ -33,7 +34,6 @@ class ResourceLinker(Widget, can_focus=True):
         Binding("down", "cursor_down", show=False),
         Binding("space", "toggle_link", show=False),
         Binding("enter", "toggle_link", show=False),
-        Binding("escape", "dismiss", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -60,9 +60,6 @@ class ResourceLinker(Widget, can_focus=True):
         margin: 0 0 0 1;
     }
     """
-
-    class Dismissed(Message):
-        """Posted when the user presses Escape."""
 
     class LinkToggled(Message):
         """Posted when a resource link is toggled."""
@@ -207,7 +204,7 @@ class ResourceLinker(Widget, can_focus=True):
                 marker = "  "
 
             name = resource.name
-            vertical = self._vm.arrangement == Arrangement.VERTICAL
+            vertical = self.dock_arrangement == Arrangement.VERTICAL
             if not vertical and len(name) > max_name_width:
                 name = name[: max_name_width - 1] + "…"
 
@@ -264,6 +261,3 @@ class ResourceLinker(Widget, can_focus=True):
         self._render_list()
         self._update_hint()
         self.post_message(self.LinkToggled(resource, linked))
-
-    def action_dismiss(self) -> None:
-        self.post_message(self.Dismissed())

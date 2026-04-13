@@ -49,7 +49,8 @@ from rhizome.resources.ingest import extract_text_from_file, fetch_webpage_text,
 from rhizome.tui.commit_state import CommitApproved, CommitState
 from rhizome.tui.commands import CommandRegistry, parse_input
 from rhizome.tui.options import Options, OptionScope, build_jsonc_snapshot, parse_jsonc
-from rhizome.tui.types import ChatMessageData, DatabaseCommitted, DockPosition, Mode, Role
+from rhizome.tui.dock import DockContainerMixin, HorizontalDockArea, VerticalDockArea
+from rhizome.tui.types import ChatMessageData, DatabaseCommitted, Mode, Role
 
 from .chat_input import ChatInput
 from .command_palette import CommandPalette
@@ -85,7 +86,7 @@ class _AmbiguousSpec:
     options: list[str]  # e.g. ["[14] Linux > ... > Types", "[31] Programming > ... > Types"]
 
 
-class ChatPane(Widget):
+class ChatPane(Widget, DockContainerMixin):
     """Reusable chat pane containing the message area, input, and command palette."""
 
     # ------------------------------------------------------------------
@@ -128,7 +129,7 @@ class ChatPane(Widget):
     }
     #dock-bottom {
         height: auto;
-        max-height: 50%;
+        max-height: 25%;
         border-top: solid rgb(60, 60, 60);
     }
     .--dock-empty {
@@ -219,7 +220,7 @@ class ChatPane(Widget):
         # Resource viewer view model — outlives the widget across dock changes.
         self._resource_viewer_vm = ResourceViewerViewModel()
         self._resource_viewer: ResourceViewer | None = None
-        self._resource_viewer_dock_pos: DockPosition = DockPosition.BOTTOM
+        self._resource_viewer_dock_id: str = "dock-bottom"
 
         self._log = get_logger("tui.chat_pane")
 
@@ -237,16 +238,16 @@ class ChatPane(Widget):
         self._verbosity_hint_last_shown: float = 0.0
 
     def compose(self) -> ComposeResult:
-        yield Vertical(id="dock-left", classes="--dock-empty")
+        yield HorizontalDockArea(id="dock-left")
         with Vertical(id="dock-center-col"):
             with Vertical(id="chat-content"):
                 yield VerticalScroll(id="message-area")
                 yield ChatInput(placeholder="Type a message or /command ...", id="chat-input")
                 yield ChatInput(placeholder="Add instructions for the commit (Enter to skip)...", id="commit-instructions")
                 yield CommandPalette(id="command-palette")
-            yield Vertical(id="dock-bottom", classes="--dock-empty")
+            yield VerticalDockArea(id="dock-bottom")
             yield StatusBar(id="status-bar")
-        yield Vertical(id="dock-right", classes="--dock-empty")
+        yield HorizontalDockArea(id="dock-right")
 
     def on_mount(self) -> None:
         self._sync_registry_width()
@@ -305,53 +306,6 @@ class ChatPane(Widget):
     # Dock area management
     # ------------------------------------------------------------------
 
-    _DOCK_AREA_IDS = {
-        DockPosition.LEFT: "dock-left",
-        DockPosition.RIGHT: "dock-right",
-        DockPosition.BOTTOM: "dock-bottom",
-    }
-
-    def _get_dock_area(self, position: DockPosition) -> Vertical:
-        """Return the dock container for the given position."""
-        return self.query_one(f"#{self._DOCK_AREA_IDS[position]}", Vertical)
-
-    async def dock_widget(self, widget: Widget, position: DockPosition) -> None:
-        """Mount a widget into a dock area and make it visible."""
-        if hasattr(widget, "dock_position"):
-            widget.dock_position = position
-        container = self._get_dock_area(position)
-        await container.mount(widget)
-        container.remove_class("--dock-empty")
-
-    def show_dock_area(self, position: DockPosition) -> None:
-        """Show a dock area (widget must already be mounted in it)."""
-        self._get_dock_area(position).remove_class("--dock-empty")
-
-    def hide_dock_area(self, position: DockPosition) -> None:
-        """Hide a dock area without destroying its contents."""
-        self._get_dock_area(position).add_class("--dock-empty")
-
-    def is_dock_area_visible(self, position: DockPosition) -> bool:
-        """Check if a dock area is currently visible."""
-        return not self._get_dock_area(position).has_class("--dock-empty")
-
-    async def move_docked_widget(
-        self,
-        old_widget: Widget,
-        new_widget: Widget,
-        new_position: DockPosition,
-    ) -> None:
-        """Move a dockable widget to a new dock position.
-
-        Destroys the old widget and mounts the new one. Caller is responsible
-        for constructing ``new_widget`` with the appropriate view model to
-        preserve state across the move.
-        """
-        old_container = old_widget.parent
-        await old_widget.remove()
-        if old_container is not None and not old_container.children:
-            old_container.add_class("--dock-empty")
-        await self.dock_widget(new_widget, new_position)
 
     # ------------------------------------------------------------------
     # Agent session
@@ -1067,16 +1021,16 @@ class ChatPane(Widget):
 
     async def _cmd_resources(self) -> None:
         """Toggle the resources panel."""
-        pos = self._resource_viewer_dock_pos
-        if self._resource_viewer is not None and self.is_dock_area_visible(pos):
-            self.hide_dock_area(pos)
+        dock = self.get_dock_area(self._resource_viewer_dock_id)
+        if self._resource_viewer is not None and dock.visible:
+            dock.hide()
             self.query_one("#chat-input", ChatInput).focus()
         else:
             if self._resource_viewer is None:
                 self._resource_viewer = self._create_resource_viewer()
-                await self.dock_widget(self._resource_viewer, pos)
+                await self.mount_to_dock_area(self._resource_viewer, self._resource_viewer_dock_id)
             else:
-                self.show_dock_area(pos)
+                dock.show()
             self._resource_viewer.focus()
 
     async def _cmd_resources_new(self) -> None:
@@ -1539,23 +1493,21 @@ class ChatPane(Widget):
 
     def action_refocus_resources(self) -> None:
         """Ctrl+R — focus the resources panel if visible."""
-        if self._resource_viewer is not None and self.is_dock_area_visible(self._resource_viewer_dock_pos):
+        if self._resource_viewer is not None and self.get_dock_area(self._resource_viewer_dock_id).visible:
             self._resource_viewer.focus()
 
     async def action_cycle_dock_position(self) -> None:
-        """Ctrl+D — cycle the resource viewer between dock positions (temporary, for testing)."""
+        """Ctrl+D — cycle the resource viewer between dock positions."""
         if self._resource_viewer is None:
             return
         cycle = {
-            DockPosition.BOTTOM: DockPosition.LEFT,
-            DockPosition.LEFT: DockPosition.RIGHT,
-            DockPosition.RIGHT: DockPosition.BOTTOM,
+            "dock-bottom": "dock-left",
+            "dock-left": "dock-right",
+            "dock-right": "dock-bottom",
         }
-        new_pos = cycle[self._resource_viewer_dock_pos]
-        new_viewer = self._create_resource_viewer()
-        await self.move_docked_widget(self._resource_viewer, new_viewer, new_pos)
-        self._resource_viewer = new_viewer
-        self._resource_viewer_dock_pos = new_pos
+        new_dock_id = cycle[self._resource_viewer_dock_id]
+        await self.mount_to_dock_area(self._resource_viewer, new_dock_id)
+        self._resource_viewer_dock_id = new_dock_id
         self._resource_viewer.focus()
 
     async def _cmd_test_flashcards(
@@ -1872,11 +1824,11 @@ class ChatPane(Widget):
         """Route DB change notifications to data-displaying widgets."""
         for viewer in self.query(ExplorerViewer):
             viewer.run_worker(viewer.notify_database_committed(event))
-        if self._resource_viewer is not None and self.is_dock_area_visible(self._resource_viewer_dock_pos):
+        if self._resource_viewer is not None and self.get_dock_area(self._resource_viewer_dock_id).visible:
             self._resource_viewer.run_worker(self._resource_viewer.notify_database_committed(event))
 
     def on_resource_viewer_dismissed(self, event: ResourceViewer.Dismissed) -> None:
-        self.hide_dock_area(self._resource_viewer_dock_pos)
+        self.get_dock_area(self._resource_viewer_dock_id).hide()
         self._restore_chat_input()
 
     def on_options_editor_dismissed(self, event: OptionsEditor.Dismissed) -> None:

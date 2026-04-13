@@ -12,6 +12,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from rhizome.db import Resource
+from rhizome.tui.dock import DockableWidgetMixin
 from rhizome.tui.types import Arrangement
 from rhizome.tui.widgets.resource.view_model import ResourceListViewModel
 
@@ -23,7 +24,7 @@ _ALT_GREY = "rgb(180,180,180)"
 _ID_COLOR = "rgb(80,80,80)"
 
 
-class ResourceList(Widget, can_focus=True):
+class ResourceList(Widget, DockableWidgetMixin, can_focus=True):
     """Read-only resource list with detail panel for browsing Resource objects."""
 
     show_ids: reactive[bool] = reactive(False)
@@ -32,7 +33,6 @@ class ResourceList(Widget, can_focus=True):
         Binding("up", "cursor_up", show=False),
         Binding("down", "cursor_down", show=False),
         Binding("enter", "dismiss", show=False),
-        Binding("escape", "dismiss", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -90,9 +90,6 @@ class ResourceList(Widget, can_focus=True):
     }
     """
 
-    class Dismissed(Message):
-        """Posted when the user presses Escape to leave the resource list."""
-
     class CursorChanged(Message):
         """Posted when the cursor moves to a different resource."""
 
@@ -129,7 +126,7 @@ class ResourceList(Widget, can_focus=True):
     def on_mount(self) -> None:
         self.show_ids = self._vm.show_ids
         self.cursor = self._vm.cursor
-        self.set_class(self._vm.arrangement == Arrangement.VERTICAL, "--arrange-vertical")
+        self.set_class(self.dock_arrangement == Arrangement.VERTICAL, "--arrange-vertical")
         self._apply_empty_state()
         if self._resources:
             self._render_list()
@@ -201,7 +198,7 @@ class ResourceList(Widget, can_focus=True):
             self.query_one("#rl-empty", Static).update("(No resources)")
 
     def _render_list(self) -> None:
-        vertical = self._vm.arrangement == Arrangement.VERTICAL
+        vertical = self.dock_arrangement == Arrangement.VERTICAL
         num_width = len(str(len(self._resources))) + 2
 
         right_parts = [
@@ -306,6 +303,3 @@ class ResourceList(Widget, can_focus=True):
     def action_cursor_down(self) -> None:
         if self._resources and self.cursor < len(self._resources) - 1:
             self.cursor += 1
-
-    def action_dismiss(self) -> None:
-        self.post_message(self.Dismissed())

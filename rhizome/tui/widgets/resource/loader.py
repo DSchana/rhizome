@@ -24,6 +24,7 @@ from rhizome.db import Resource
 from rhizome.db.models import LoadingPreference, ResourceSection
 from rhizome.resources import LoadMode, ResourceLoadState, ResourceManager
 
+from rhizome.tui.dock import DockableWidgetMixin
 from rhizome.tui.types import Arrangement
 from rhizome.tui.widgets.resource.view_model import LoadState, ResourceLoaderViewModel
 from rhizome.tui.widgets.resource.loader_tree import (
@@ -37,7 +38,7 @@ from rhizome.tui.widgets.resource.loader_tree import (
 )
 
 
-class ResourceLoader(Widget, can_focus=True):
+class ResourceLoader(Widget, DockableWidgetMixin, can_focus=True):
     """Container widget with an inner tree and a status hint.
 
     Delegates focus to the inner ``LoaderTree`` and exposes the same
@@ -47,7 +48,6 @@ class ResourceLoader(Widget, can_focus=True):
     BINDINGS = [
         Binding("space", "toggle_default", show=False),
         Binding("ctrl+j", "toggle_context", show=False, priority=True),
-        Binding("escape", "dismiss", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -75,11 +75,6 @@ class ResourceLoader(Widget, can_focus=True):
     # Token threshold for the "auto" loading preference: resources below
     # this estimate are context-stuffed, above are vector-embedded.
     AUTO_CONTEXT_STUFF_TOKEN_LIMIT = 10_000
-
-    # -- Messages (bubbled up from this widget) ------------------------
-
-    class Dismissed(Message):
-        """Posted when the user presses Escape."""
 
     # -- Reactives -----------------------------------------------------
 
@@ -133,18 +128,18 @@ class ResourceLoader(Widget, can_focus=True):
     def on_mount(self) -> None:
         self.show_ids = self._vm.show_ids
         self.query_one("#rld-hint", LoaderHint).vertical = (
-            self._vm.arrangement == Arrangement.VERTICAL
+            self.dock_arrangement == Arrangement.VERTICAL
         )
         self._spinner_timer = self.set_interval(0.1, self._tick_spinner, pause=True)
         self._apply_empty_state()
         self._update_spinner_timer()
         if self._resources:
             self._update_hint()
-        if self._vm.arrangement == Arrangement.VERTICAL:
+        if self.dock_arrangement == Arrangement.VERTICAL:
             self.call_after_refresh(self._constrain_tree)
 
     def on_resize(self) -> None:
-        if self._vm.arrangement == Arrangement.VERTICAL:
+        if self.dock_arrangement == Arrangement.VERTICAL:
             self._constrain_tree()
 
     def _constrain_tree(self) -> None:
@@ -555,6 +550,3 @@ class ResourceLoader(Widget, can_focus=True):
             self._set_state(node, LoadState.CONTEXT_STUFFED)
         elif state == LoadState.CONTEXT_STUFFED:
             self._set_state(node, LoadState.UNLOADED)
-
-    def action_dismiss(self) -> None:
-        self.post_message(self.Dismissed())

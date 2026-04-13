@@ -294,7 +294,7 @@ class LoaderTree(Tree[NodeData]):
             name_style = style
 
         # -- Build suffix (metadata + ctx tag) so we know its width -----
-        vertical = loader._vm.arrangement == Arrangement.VERTICAL
+        vertical = loader.dock_arrangement == Arrangement.VERTICAL
         suffix = ""
         if not vertical:
             if isinstance(data, Resource):

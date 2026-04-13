@@ -17,8 +17,7 @@ from __future__ import annotations
 import enum
 
 from rhizome.db import Resource, Topic
-from rhizome.db.models import ResourceSection
-from rhizome.tui.types import Arrangement
+
 
 
 class LoadState(enum.Enum):
@@ -41,7 +40,6 @@ class ResourceListViewModel:
         self.resources: list[Resource] = []
         self.cursor: int = 0
         self.show_ids: bool = False
-        self.arrangement: Arrangement = Arrangement.HORIZONTAL
 
 
 class ResourceLinkerViewModel:
@@ -52,7 +50,6 @@ class ResourceLinkerViewModel:
         self.linked_ids: set[int] = set()
         self.cursor: int = 0
         self.show_ids: bool = False
-        self.arrangement: Arrangement = Arrangement.HORIZONTAL
 
 
 class ResourceLoaderViewModel:
@@ -67,12 +64,19 @@ class ResourceLoaderViewModel:
         self.states: dict[tuple[str, int], LoadState] = {}
         self.show_ids: bool = False
         self.spinner_frame: int = 0
-        self.arrangement: Arrangement = Arrangement.HORIZONTAL
 
 
 # ======================================================================
 # Top-level view model
 # ======================================================================
+
+
+class ResourceViewMode(enum.IntEnum):
+    """Which resource view is active in the ResourceViewer panel."""
+    TOPIC_RESOURCES = 0
+    LINK_RESOURCES = 1
+    LOAD_RESOURCES = 2
+
 
 class ResourceViewerViewModel:
     """Persistent state for the ResourceViewer panel.
@@ -84,7 +88,6 @@ class ResourceViewerViewModel:
 
     def __init__(self) -> None:
         # -- View mode & display ------------------------------------------
-        from rhizome.tui.widgets.resource.viewer import ResourceViewMode
         self.view_mode: ResourceViewMode = ResourceViewMode.TOPIC_RESOURCES
         self.show_ids: bool = False
 
