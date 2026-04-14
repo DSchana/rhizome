@@ -4,6 +4,9 @@ A terminal-based knowledge management system powered by Claude. Learn, capture, 
 
 <!-- TODO: demo gif -->
 <!-- ![Demo](assets/demo.gif) -->
+<p align="center">
+  <img src="docs/demo.gif" alt="Career-Ops Demo" width="800">
+</p>
 
 ## What This Is
 
