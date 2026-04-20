@@ -9,7 +9,17 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Widget, Wrap},
+    widgets::{
+        Block,
+        Borders,
+        Paragraph,
+        Scrollbar,
+        ScrollbarOrientation,
+        ScrollbarState,
+        StatefulWidget,
+        Widget,
+        Wrap,
+    },
 };
 
 /// The role associated with a chat message.
@@ -35,33 +45,39 @@ pub struct ChatMessage {
 ///
 /// Returns the lines and the total line count (after wrapping) so the
 /// caller can compute scroll offset.
-pub fn render_messages(messages: &[ChatMessage], width: u16) -> Vec<Line<'static>> {
+pub fn render_messages(messages: &[ChatMessage]) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let usable_width = width.saturating_sub(2) as usize; // account for block border
 
+    // TODO(dilpreet): This can be one shot with a fold
     for msg in messages {
-        let (prefix, prefix_style) = match msg.role {
+        let (prefix, prefix_style, content_style) = match msg.role {
             ChatRole::User => (
                 "you: ",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Cyan),
             ),
-            ChatRole::Assistant => ("", Style::default().fg(Color::White)),
-            ChatRole::ToolCall => ("", Style::default().fg(Color::Yellow)),
-            ChatRole::System => ("", Style::default().fg(Color::DarkGray)),
+            ChatRole::Assistant => (
+                "",
+                Style::default().fg(Color::White),
+                Style::default().fg(Color::White)
+            ),
+            ChatRole::ToolCall => (
+                "",
+                Style::default().fg(Color::Yellow),
+                Style::default().fg(Color::Yellow)
+            ),
+            ChatRole::System => (
+                "",
+                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::DarkGray)
+            ),
             ChatRole::Error => (
                 "error: ",
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red),
             ),
-        };
-
-        let content_style = match msg.role {
-            ChatRole::User => Style::default().fg(Color::Cyan),
-            ChatRole::Assistant => Style::default().fg(Color::White),
-            ChatRole::ToolCall => Style::default().fg(Color::Yellow),
-            ChatRole::System => Style::default().fg(Color::DarkGray),
-            ChatRole::Error => Style::default().fg(Color::Red),
         };
 
         // Split content into hard lines (from newlines in the text),
@@ -84,10 +100,6 @@ pub fn render_messages(messages: &[ChatMessage], width: u16) -> Vec<Line<'static
         lines.push(Line::from(""));
     }
 
-    // Estimate total rendered height accounting for soft wraps.
-    // This is approximate — ratatui's Paragraph does the real wrapping.
-    // We compute it here so the caller can set the scroll offset.
-    let _ = usable_width; // used by caller via line_count_wrapped()
     lines
 }
 
@@ -96,6 +108,7 @@ pub fn line_count_wrapped(lines: &[Line<'_>], width: u16) -> u16 {
     let w = width.saturating_sub(2).max(1) as usize; // border
     let mut count: u16 = 0;
     for line in lines {
+        // TODO(dilpreet): Line char count should be O(1)
         let char_count: usize = line.spans.iter().map(|s| s.content.len()).sum();
         let wrapped = if char_count == 0 {
             1
@@ -115,7 +128,7 @@ pub struct ChatArea<'a> {
 
 impl Widget for ChatArea<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let lines = render_messages(self.messages, area.width);
+        let lines = render_messages(self.messages);
         let total_height = line_count_wrapped(&lines, area.width);
         let visible_height = area.height.saturating_sub(2); // border
 
