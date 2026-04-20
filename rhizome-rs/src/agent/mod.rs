@@ -1,12 +1,14 @@
-//! Agent: LLM conversation loop with tool calling
+//! Agent: LLM conversation loop with tool calling.
+//!
+//! The agent sends structured `AgentEvent`s over a channel rather than
+//! printing to stdout, so any frontend (TUI, CLI, tests) can consume them.
 
 pub mod client;
 pub mod tools;
 pub mod types;
 
-use std::io::Write;
-
 use sqlx::SqlitePool;
+use tokio::sync::mpsc;
 
 use client::AnthropicClient;
 use types::{
@@ -27,7 +29,26 @@ Use the provided tools to help the user explore, search, and add to their \
 knowledge base. When creating entries, use clear and concise content. \
 Format your responses using markdown.";
 
-/// One in-progress content block being accumulated from stream events
+// ── Events emitted by the agent ──────────────────────────────────────
+
+/// Structured events sent from the agent to the UI during a turn.
+#[derive(Debug, Clone)]
+pub enum AgentEvent {
+    /// A chunk of streaming text from the LLM
+    TextDelta(String),
+    /// The LLM is calling a tool (sent before dispatch)
+    ToolCallStart { name: String },
+    /// A tool call finished (sent after dispatch)
+    ToolCallResult { name: String, result: String },
+    /// The full turn completed — no more events for this turn
+    TurnComplete,
+    /// A non-fatal error occurred
+    Error(String),
+}
+
+// ── Accumulator for in-flight content blocks ─────────────────────────
+
+/// One in-progress content block being assembled from stream events
 enum AccumulatingBlock {
     Text(String),
     ToolUse {
@@ -36,6 +57,8 @@ enum AccumulatingBlock {
         json: String,
     },
 }
+
+// ── Agent ────────────────────────────────────────────────────────────
 
 pub struct Agent {
     client: AnthropicClient,
@@ -48,14 +71,20 @@ impl Agent {
         Self {
             client: AnthropicClient::new(api_key, "claude-sonnet-4-20250514"),
             pool,
-            // Bug fix: was `history, Vec::new()` (comma instead of colon)
             history: Vec::new(),
         }
     }
 
-    /// Run one conversation turn: send user text, stream the response,
-    /// execute any tool calls, and loop until the LLM returns pure text.
-    pub async fn run_turn(&mut self, user_text: &str) -> anyhow::Result<()> {
+    /// Run one conversation turn.
+    ///
+    /// Sends `AgentEvent`s over `tx` as the LLM streams its response.
+    /// Loops internally when the LLM makes tool calls — the caller just
+    /// keeps consuming events until it receives `TurnComplete`.
+    pub async fn run_turn(
+        &mut self,
+        user_text: &str,
+        tx: &mpsc::Sender<AgentEvent>,
+    ) -> anyhow::Result<()> {
         // Add user message to history
         self.history.push(Message {
             role: Role::User,
@@ -64,11 +93,7 @@ impl Agent {
             }],
         });
 
-        // Loop: Call API -> stream response -> execute tools -> call API again.
-        // The LLM may call multiple tools before returning a final text response,
-        // so we keep looping until we get a response with no tool_use blocks.
         loop {
-            // Bug fix: was `message:` (singular), field is `messages` (plural)
             let req = MessageRequest {
                 model: self.client.model.clone(),
                 max_tokens: 8096,
@@ -80,8 +105,7 @@ impl Agent {
 
             let mut rx = self.client.stream_messages(&req).await?;
 
-            // Accumulate content blocks from the stream.
-            // Each block starts with ContentBlockStart and grows via ContentBlockDelta.
+            // Accumulate content blocks from the stream
             let mut blocks: Vec<AccumulatingBlock> = Vec::new();
 
             while let Some(event) = rx.recv().await {
@@ -89,15 +113,14 @@ impl Agent {
                     StreamEvent::ContentBlockStart { content_block, .. } => {
                         match content_block {
                             ContentBlockInfo::Text { text } => {
-                                // Print the initial text (usually empty, but included for safety)
                                 if !text.is_empty() {
-                                    print!("{}", text);
-                                    std::io::stdout().flush().ok();
+                                    tx.send(AgentEvent::TextDelta(text.clone()))
+                                        .await
+                                        .ok();
                                 }
                                 blocks.push(AccumulatingBlock::Text(text));
                             }
                             ContentBlockInfo::ToolUse { id, name } => {
-                                // Tool calls accumulate JSON input via InputJsonDelta events
                                 blocks.push(AccumulatingBlock::ToolUse {
                                     id,
                                     name,
@@ -114,16 +137,15 @@ impl Agent {
                                     AccumulatingBlock::Text(s),
                                     Delta::TextDelta { text },
                                 ) => {
-                                    // Stream text directly to stdout as it arrives
-                                    print!("{}", text);
-                                    std::io::stdout().flush().ok();
+                                    tx.send(AgentEvent::TextDelta(text.clone()))
+                                        .await
+                                        .ok();
                                     s.push_str(&text);
                                 }
                                 (
                                     AccumulatingBlock::ToolUse { json, .. },
                                     Delta::InputJsonDelta { partial_json },
                                 ) => {
-                                    // Accumulate JSON input for the tool call
                                     json.push_str(&partial_json);
                                 }
                                 _ => {}
@@ -132,21 +154,19 @@ impl Agent {
                     }
 
                     StreamEvent::Error { error } => {
-                        anyhow::bail!(
+                        let msg = format!(
                             "API error ({}): {}",
-                            error.error_type,
-                            error.message
+                            error.error_type, error.message
                         );
+                        tx.send(AgentEvent::Error(msg.clone())).await.ok();
+                        anyhow::bail!(msg);
                     }
 
-                    // MessageStop, MessageDelta, ContentBlockStop, Ping -- nothing to do
                     _ => {}
                 }
             }
 
-            // Convert the accumulated blocks into typed ContentBlocks for history.
-            // While doing so, note whether any ToolUse blocks appeared -- if none did,
-            // the LLM is done and we can break the loop.
+            // Convert accumulated blocks into ContentBlocks for history
             let mut content_blocks: Vec<ContentBlock> = Vec::new();
             let mut has_tool_use = false;
 
@@ -159,8 +179,6 @@ impl Agent {
                     }
                     AccumulatingBlock::ToolUse { id, name, json } => {
                         has_tool_use = true;
-                        // Parse the accumulated JSON; fall back to empty object on bad JSON.
-                        // Default must be `{}` not `null` — the API requires input to be a dict.
                         let input: serde_json::Value =
                             serde_json::from_str(&json).unwrap_or(serde_json::json!({}));
                         content_blocks.push(ContentBlock::ToolUse { id, name, input });
@@ -168,24 +186,37 @@ impl Agent {
                 }
             }
 
-            // Push the assistant's full response into history
+            // Push assistant response into history
             self.history.push(Message {
                 role: Role::Assistant,
                 content: content_blocks.clone(),
             });
 
-            // If the LLM returned no tool calls, it's done speaking for this turn
+            // No tool calls — turn is done
             if !has_tool_use {
-                println!(); // final newline after the streamed text
+                tx.send(AgentEvent::TurnComplete).await.ok();
                 break;
             }
 
-            // Dispatch every tool call and collect the results.
-            // Errors are returned as plain text -- the LLM sees them and can adapt.
+            // Dispatch tool calls, notify the UI for each
             let mut tool_results: Vec<ContentBlock> = Vec::new();
             for block in &content_blocks {
                 if let ContentBlock::ToolUse { id, name, input } = block {
+                    tx.send(AgentEvent::ToolCallStart {
+                        name: name.clone(),
+                    })
+                    .await
+                    .ok();
+
                     let result = tools::dispatch(&self.pool, name, input.clone()).await;
+
+                    tx.send(AgentEvent::ToolCallResult {
+                        name: name.clone(),
+                        result: result.clone(),
+                    })
+                    .await
+                    .ok();
+
                     tool_results.push(ContentBlock::ToolResult {
                         tool_use_id: id.clone(),
                         content: result,
@@ -193,7 +224,7 @@ impl Agent {
                 }
             }
 
-            // Feed tool results back as a user message, then loop to call the API again
+            // Feed tool results back, loop to call the API again
             self.history.push(Message {
                 role: Role::User,
                 content: tool_results,
