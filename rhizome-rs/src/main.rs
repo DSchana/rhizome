@@ -9,9 +9,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_path = config::get_db_path();
 
     let pool = db::init_db(&db_path).await?;
+    let tui_pool = pool.clone();
     let agent = agent::Agent::new(api_key, pool);
 
-    tui::run(agent).await?;
+    tui::run(agent, tui_pool).await?;
 
     Ok(())
 }

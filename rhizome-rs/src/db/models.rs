@@ -57,3 +57,18 @@ pub struct RelatedKnowledgeEntries {
     pub relationship_type: String,
 }
 
+// ### Resource Models ###
+
+#[derive(Debug, Clone, FromRow)]
+pub struct Resource {
+    pub id: i64,
+    pub name: String,
+    pub content_hash: Option<String>,
+    pub summary: Option<String>,
+    pub estimated_tokens: Option<i64>,
+    pub source_type: Option<String>,
+    pub loading_preference: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+

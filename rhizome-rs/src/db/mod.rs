@@ -6,8 +6,10 @@ use std::str::FromStr;
 
 // Submodule declarations
 pub mod entries;
+pub mod explorer;
 pub mod models;
 pub mod relations;
+pub mod resources;
 pub mod tags;
 pub mod topics;
 
